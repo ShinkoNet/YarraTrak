@@ -1,17 +1,18 @@
 from mcp.server.fastmcp import FastMCP
 from . import tools
+from .enums import RouteType
 
 # Initialize FastMCP
 mcp = FastMCP("ptv")
 
 @mcp.tool()
-async def get_departures(stop_id: int, route_type: int = 0) -> str:
+async def get_departures(stop_id: int, route_type: int = RouteType.TRAIN) -> str:
     """
     Get next departures for a specific stop.
     
     Args:
         stop_id: The ID of the stop (e.g., 1071 for Flinders St).
-        route_type: Transport mode (0=Train, 1=Tram, 2=Bus, 3=VLine, 4=Night Bus).
+        route_type: Transport mode enums (TRAIN, TRAM, BUS, VLINE, NIGHT_BUS). Defaults to TRAIN.
     """
     return await tools.get_departures(stop_id, route_type)
 
@@ -45,6 +46,18 @@ async def get_route_directions(route_id: int) -> str:
         route_id: The ID of the route.
     """
     return await tools.get_route_directions(route_id)
+
+@mcp.tool()
+async def search_and_get_departures(query: str, route_type: int = RouteType.TRAIN) -> str:
+    """
+    Search for a stop and immediately get departures for the first result.
+    Useful when the user specifies a clear stop name.
+    
+    Args:
+        query: The name of the stop to search for (e.g., "Flinders").
+        route_type: Transport mode enums (TRAIN, TRAM, BUS, VLINE, NIGHT_BUS). Defaults to TRAIN.
+    """
+    return await tools.search_and_get_departures(query, route_type)
 
 if __name__ == "__main__":
     mcp.run()
