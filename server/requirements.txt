@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+mcp[cli]
+httpx
+python-dotenv
+groq
+pydantic
+python-multipart
+azure-cognitiveservices-speech

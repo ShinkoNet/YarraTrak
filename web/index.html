@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Pebble PTV</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="pebble-container">
+        <div class="pebble-screen">
+            <div class="status-bar">12:00</div>
+            <div class="content">
+                <div class="scroll-content">
+                    <div id="message">Ready</div>
+
+                    <div id="stealth-controls" class="stealth-controls">
+                        <button id="btn-1" class="pebble-btn" onclick="sendStealth(1)">Button 1</button>
+                        <button id="btn-2" class="pebble-btn" onclick="sendStealth(2)">Button 2</button>
+                        <button id="btn-3" class="pebble-btn" onclick="sendStealth(3)">Button 3</button>
+                    </div>
+                </div>
+
+                <div class="fixed-footer">
+                    <button id="btn-close" class="pebble-btn back-button" style="display:none"
+                        onclick="closeConversation()">Close</button>
+
+                    <div class="agent-controls">
+                        <button class="pebble-btn mic-btn" onclick="toggleMic()">
+                            🎤
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="debug-console">
+        <div id="agent-log" class="log-box">
+            <div class="log-entry system">System: Ready. Click Mic or type below.</div>
+        </div>
+        <div class="input-group">
+            <input type="text" id="agent-input" placeholder="Ask the Agent (e.g. 'search caulfield')..."
+                onkeypress="handleInput(event)">
+            <button onclick="sendAgentQuery()">Send</button>
+        </div>
+    </div>
+    <script src="app.js?v=2"></script>
+</body>
+
+</html>
