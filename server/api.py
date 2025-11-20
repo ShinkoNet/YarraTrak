@@ -3,7 +3,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from .mcp_server import get_departures, search_stops, search_routes, get_route_directions
+
+from .enums import RouteType
 import os
 import asyncio
 import azure.cognitiveservices.speech as speechsdk
@@ -28,7 +29,7 @@ class StealthRequest(BaseModel):
     stop_name: str | None = None
     direction_id: int | None = None
     direction_name: str | None = None
-    route_type: int = 0
+    route_type: int = RouteType.TRAIN
 
 class AgentRequest(BaseModel):
     query: str
@@ -143,7 +144,13 @@ async def stealth_mode(req: StealthRequest):
             if minutes < 0: minutes = 0
             pattern = calculate_vibration(minutes)
             # Determine vehicle type label
-            vehicle_types = {0: "train", 1: "tram", 2: "bus", 3: "train", 4: "bus"}
+            vehicle_types = {
+                RouteType.TRAIN: "train",
+                RouteType.TRAM: "tram",
+                RouteType.BUS: "bus",
+                RouteType.VLINE: "train",
+                RouteType.NIGHT_BUS: "bus"
+            }
             v_type = vehicle_types.get(req.route_type, "vehicle")
 
             if minutes == 0:
@@ -214,9 +221,10 @@ tools_schema = [
                         "description": "The ID of the stop (e.g., 1071 for Flinders St)."
                     },
                     "route_type": {
-                        "type": "integer",
-                        "description": "Transport mode (0=Train, 1=Tram, 2=Bus, 3=VLine, 4=Night Bus). Default is 0.",
-                        "default": 0
+                        "type": "string",
+                        "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
+                        "description": "Transport mode. Defaults to TRAIN.",
+                        "default": "TRAIN"
                     }
                 },
                 "required": ["stop_id"]
@@ -277,6 +285,29 @@ tools_schema = [
     {
         "type": "function",
         "function": {
+            "name": "search_and_get_departures",
+            "description": "Search for a stop and immediately get departures for the first result. Useful when the user specifies a clear stop name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The name of the stop to search for (e.g., 'Flinders')."
+                    },
+                    "route_type": {
+                        "type": "string",
+                        "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
+                        "description": "Transport mode. Defaults to TRAIN.",
+                        "default": "TRAIN"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "configure_button",
             "description": "Configure one of the 3 physical buttons with a station and direction.",
             "parameters": {
@@ -287,7 +318,12 @@ tools_schema = [
                     "stop_name": {"type": "string", "description": "Name of the stop"},
                     "direction_id": {"type": "integer", "description": "The direction ID (optional, if specific direction needed)"},
                     "direction_name": {"type": "string", "description": "Name of the direction (e.g. 'City')"},
-                    "route_type": {"type": "integer", "description": "Transport mode (0=Train, 1=Tram, 2=Bus, 3=VLine). Default 0."}
+                    "route_type": {
+                        "type": "string",
+                        "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
+                        "description": "Transport mode. Default TRAIN.",
+                        "default": "TRAIN"
+                    }
                 },
                 "required": ["button_index", "stop_id", "stop_name"]
             }
@@ -437,6 +473,18 @@ GUIDELINES:
                 
                 print(f"DEBUG: Calling {function_name} with {function_args}")
                 
+                # Convert route_type string to integer if present
+                if "route_type" in function_args and isinstance(function_args["route_type"], str):
+                    try:
+                        # Convert "TRAIN" -> RouteType.TRAIN (which is 0)
+                        # We assume the LLM sends the exact enum name
+                        r_type_str = function_args["route_type"].upper()
+                        if r_type_str in RouteType.__members__:
+                            function_args["route_type"] = RouteType[r_type_str].value
+                            print(f"DEBUG: Converted route_type '{r_type_str}' to {function_args['route_type']}")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to convert route_type: {e}")
+
                 # Execute the tool
                 try:
                     if function_name == "get_departures":
@@ -447,6 +495,8 @@ GUIDELINES:
                         tool_result = await tools.search_routes(**function_args)
                     elif function_name == "get_route_directions":
                         tool_result = await tools.get_route_directions(**function_args)
+                    elif function_name == "search_and_get_departures":
+                        tool_result = await tools.search_and_get_departures(**function_args)
                     elif function_name == "configure_button":
                         pending_config = function_args
                         tool_result = json.dumps({"status": "success", "message": "Button configuration received. Tell the user it has been updated."})
