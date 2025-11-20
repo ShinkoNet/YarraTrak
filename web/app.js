@@ -1,4 +1,5 @@
 const API_BASE = "/api/v1";
+let currentSessionId = null;
 
 // --- Button Configuration Logic ---
 function saveButtonConfig(index, config) {
@@ -34,7 +35,6 @@ function getButtonConfig(index) {
 function updateButtonUI(index, config) {
     const btn = document.getElementById(`btn-${index}`);
     if (btn) {
-        // Shorten name if too long?
         let name = config.stop_name || `Button ${index}`;
         if (name.length > 15) name = name.substring(0, 13) + "..";
         btn.innerText = name;
@@ -73,7 +73,7 @@ async function sendStealth(id) {
             log(data.message || "Done", "system");
             updateStatus(data.message || "Done");
 
-            // Visual Feedback for Desktop
+            // Visual Feedback
             document.body.style.backgroundColor = "#555";
             setTimeout(() => document.body.style.backgroundColor = "#333", 200);
 
@@ -99,7 +99,6 @@ async function toggleMic() {
     const micBtn = document.querySelector('.mic-btn');
 
     if (!isRecording) {
-        // Start Recording
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
@@ -126,7 +125,6 @@ async function toggleMic() {
             log("Error: Could not access microphone.", "system");
         }
     } else {
-        // Stop Recording
         if (mediaRecorder && mediaRecorder.state !== "inactive") {
             mediaRecorder.stop();
         }
@@ -151,7 +149,6 @@ async function sendAudioToTranscribe(audioBlob) {
         const data = await res.json();
         if (data.text) {
             log(`You said: ${data.text}`, "user");
-            // Populate input and send
             const input = document.getElementById('agent-input');
             if (input) {
                 input.value = data.text;
@@ -190,67 +187,143 @@ function updateStatus(msg) {
     if (el) el.innerText = msg;
 }
 
+// --- New Agent Logic ---
 
-async function sendAgentQuery() {
+async function sendAgentQuery(overrideQuery = null) {
     const input = document.getElementById('agent-input');
-    const query = input.value.trim();
+    const query = overrideQuery || input.value.trim();
     if (!query) return;
 
-    input.value = "";
-    log(`User: ${query}`, "user");
+    if (!overrideQuery) input.value = "";
+
+    if (!overrideQuery) log(`User: ${query}`, "user"); // Don't log again if it's a chip click
     updateStatus("Thinking...");
 
+    // Show Close Button, Hide Stealth Controls
+    const closeBtn = document.getElementById('btn-close');
+    const stealthControls = document.getElementById('stealth-controls');
+    if (closeBtn) closeBtn.style.display = 'block';
+    if (stealthControls) stealthControls.style.display = 'none';
+
     try {
-        const res = await fetch(`${API_BASE}/agent`, {
+        const res = await fetch(`${API_BASE}/agent/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: query })
+            body: JSON.stringify({
+                query: query,
+                session_id: currentSessionId
+            })
         });
-        const data = await res.json();
+        const responseData = await res.json();
 
-        if (data.text) {
-            log(`Agent: ${data.text}`, "agent");
-            updateStatus(data.text);
+        // Update Session ID
+        if (responseData.session_id) {
+            currentSessionId = responseData.session_id;
+        }
 
-            // Handle Configuration Update
-            if (data.config_update) {
-                const cfg = data.config_update;
-                saveButtonConfig(cfg.button_index, cfg);
-                log(`Updated Button ${cfg.button_index}: ${cfg.stop_name}`, "system");
-            }
+        const result = responseData.data;
 
-            // Handle Vibration
-            if (data.vibration && data.vibration.length > 0) {
-                log(`Vibrating: ${JSON.stringify(data.vibration)}`, "system");
-                if (navigator.vibrate) {
-                    navigator.vibrate(data.vibration);
-                }
-                // Visual flash
+        // Handle Result Types
+        if (result.type === "RESULT") {
+            const payload = result.payload;
+            log(`Agent: ${payload.tts_text}`, "agent");
+            updateStatus(payload.tts_text);
+
+            // Vibration
+            if (payload.vibration) {
+                if (navigator.vibrate) navigator.vibrate(payload.vibration);
                 document.body.style.backgroundColor = "#ccc";
                 setTimeout(() => document.body.style.backgroundColor = "#333", 200);
             }
 
-            // Handle Audio
-            if (data.audio_base64) {
-                log("Playing audio...", "system");
-                const audio = new Audio("data:audio/wav;base64," + data.audio_base64);
-                audio.play().catch(e => console.error("Audio playback failed:", e));
-            }
+        } else if (result.type === "CLARIFICATION") {
+            const payload = result.payload;
+            log(`Agent: ${payload.question_text}`, "agent");
+            updateStatus(payload.question_text);
 
-            // Show Close Button, Hide Stealth Controls
-            const closeBtn = document.getElementById('btn-close');
-            const stealthControls = document.getElementById('stealth-controls');
-            if (closeBtn) closeBtn.style.display = 'block';
-            if (stealthControls) stealthControls.style.display = 'none';
+            // Render Chips
+            renderChips(payload.options);
 
-        } else {
-            log("No text received from agent.", "system");
-            updateStatus("No response");
+        } else if (result.type === "ERROR") {
+            const payload = result.payload;
+            log(`Error: ${payload.message}`, "system");
+            updateStatus("Error");
         }
+
+        // Play Audio (Async)
+        if (responseData.audio_ticket) {
+            playAudio(responseData.audio_ticket);
+        }
+
     } catch (e) {
         console.error(e);
         log(`Error: ${e.message}`, "system");
         updateStatus("Agent Error");
+    }
+}
+
+function renderChips(options) {
+    const box = document.getElementById('agent-log');
+    const chipContainer = document.createElement('div');
+    chipContainer.className = "chip-container";
+    chipContainer.style.marginTop = "10px";
+
+    options.forEach(opt => {
+        const chip = document.createElement('button');
+        chip.className = "chip";
+        chip.innerText = opt.label;
+        chip.style.marginRight = "5px";
+        chip.style.padding = "5px 10px";
+        chip.style.borderRadius = "15px";
+        chip.style.border = "none";
+        chip.style.background = "#4CAF50";
+        chip.style.color = "white";
+        chip.style.cursor = "pointer";
+
+        chip.onclick = () => {
+            // Remove chips after selection
+            chipContainer.remove();
+            // Send selection as new query
+            log(`Selected: ${opt.label}`, "user");
+            sendAgentQuery(opt.value); // Send the value (e.g. "inbound")
+        };
+
+        chipContainer.appendChild(chip);
+    });
+
+    box.appendChild(chipContainer);
+    box.scrollTop = box.scrollHeight;
+}
+
+async function playAudio(ticketId) {
+    const audioUrl = `${API_BASE}/media/${ticketId}`;
+    log("Fetching audio...", "system");
+
+    // Simple retry loop or just let the browser handle the stream?
+    // The browser `new Audio(url)` might fail if 202 is returned.
+    // We need to fetch() it until 200, then create blob URL.
+
+    try {
+        let attempts = 0;
+        while (attempts < 10) {
+            const res = await fetch(audioUrl);
+            if (res.status === 200) {
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audio.play().catch(e => console.error("Playback failed", e));
+                return;
+            } else if (res.status === 202) {
+                // Wait and retry
+                await new Promise(r => setTimeout(r, 500));
+                attempts++;
+            } else {
+                console.error("Audio fetch failed", res.status);
+                return;
+            }
+        }
+    } catch (e) {
+        console.error("Audio error", e);
     }
 }
 
@@ -265,13 +338,7 @@ async function closeConversation() {
     if (stealthControls) stealthControls.style.display = 'block';
 
     updateStatus("Ready");
-
-    // Reset Backend Session
-    try {
-        await fetch(`${API_BASE}/reset`, { method: 'POST' });
-    } catch (e) {
-        console.error("Failed to reset session:", e);
-    }
+    currentSessionId = null; // Reset session
 }
 
 // Expose functions to window
