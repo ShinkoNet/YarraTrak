@@ -278,7 +278,7 @@ WORKER_PROMPT = """You are a Melbourne public transport assistant. You MUST call
 RULES:
 1. Always call a tool. Never output plain text - put any explanation in tts_text or question_text.
 2. For ambiguous queries (multiple directions/lines possible), call `ask_clarification`.
-3. When you have departure data, call `return_result` with structured info.
+3. When you have departure data, call `return_result` with only ONE departure (the next one). Do not include multiple departures.
 4. If the requested service isn't available, call `return_result` with available alternatives or `return_error`.
 5. Victoria, Australia only. Trains, trams, buses, V/Line.
 6. Use conversation history to understand context (corrections, follow-ups).
@@ -289,11 +289,17 @@ DIRECTION LOGIC:
 - "Next train to the city from Richmond" → clear (city-bound)
 - "Next 96 tram" → ambiguous (St Kilda or East Brunswick?), ask clarification
 
-NO RESULTS / ASR RECOVERY:
-- If search returns no stops, the station name may be misheard (ASR error).
-- Before calling `return_error`, call `ask_clarification` to suggest similar-sounding stations.
-- Example: "Sandringam" not found → ask "Did you mean Sandringham?"
-- Only call `return_error` after clarification fails or if you're confident the station doesn't exist.
+ASR RECOVERY (CRITICAL):
+- Voice input often has spelling errors. NEVER call `return_error` on first search failure.
+- If search returns no stops, ALWAYS call `ask_clarification` with your best guess at the correct spelling.
+- Common ASR mistakes: dropped letters, phonetic spellings, word boundaries
+- Examples:
+  - "Nary Warren" → ask "Did you mean Narre Warren?"
+  - "Sandringam" → ask "Did you mean Sandringham?"
+  - "Flinder Street" → ask "Did you mean Flinders Street?"
+  - "Camber Well" → ask "Did you mean Camberwell?"
+- Think about what station SOUNDS like the input, not just exact matches.
+- Only call `return_error` if the user confirms the spelling and it still doesn't exist.
 
 ERROR HANDLING:
 - If you see [API_ERROR], tell the user there's a temporary service issue.
@@ -302,20 +308,31 @@ ERROR HANDLING:
 Use data tools to fetch information, then call a terminal tool (return_result, ask_clarification, or return_error)."""
 
 
-async def run_worker(query: str, session_id: str) -> dict:
+async def run_worker(query: str, session_id: str, prefetched_context: str = "") -> dict:
     """
     Execute the worker loop. Always returns a structured response.
     No JSON parsing - all responses come from tool calls.
     Session history provides context for multi-turn conversations.
+
+    Args:
+        query: User's query text
+        session_id: Session identifier
+        prefetched_context: Optional pre-fetched departure data to inject into prompt
     """
     history = session_store.get_history(session_id)
 
-    messages = [{"role": "system", "content": WORKER_PROMPT}]
+    # Build system prompt with optional pre-fetched context
+    system_prompt = WORKER_PROMPT
+    if prefetched_context:
+        system_prompt = f"{WORKER_PROMPT}\n\n{prefetched_context}\n\nIf the user's query matches one of these pre-fetched stops, use the data directly and call return_result without calling search_and_get_departures."
+
+    messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
     messages.append({"role": "user", "content": query})
 
     tool_use_retries = 0
     max_tool_use_retries = 3
+    learned_stop = None  # Track stop info from successful queries
 
     for turn in range(10):
         # Add prefill to nudge model toward tool use (helps with some models)
@@ -373,6 +390,9 @@ async def run_worker(query: str, session_id: str) -> dict:
                     assistant_msg = fn_args.get("tts_text", "")
                     session_store.update_history(session_id, "user", query)
                     session_store.update_history(session_id, "assistant", assistant_msg)
+                    # Include learned stop info for client to store
+                    if learned_stop:
+                        fn_args["_stop_info"] = learned_stop
                     return {"type": "RESULT", "payload": fn_args}
                 elif fn_name == "ask_clarification":
                     assistant_msg = fn_args.get("question_text", "")
@@ -391,6 +411,16 @@ async def run_worker(query: str, session_id: str) -> dict:
                     fn_args["session_id"] = session_id
                 try:
                     result = await handler(**fn_args)
+                    # Extract stop info for client to learn
+                    if "[STOP_INFO:" in str(result):
+                        import re
+                        match = re.search(r'\[STOP_INFO:(\d+):(\d+):([^\]]+)\]', str(result))
+                        if match:
+                            learned_stop = {
+                                "stop_id": int(match.group(1)),
+                                "route_type": int(match.group(2)),
+                                "stop_name": match.group(3)
+                            }
                 except Exception as e:
                     result = f"Error: {e}"
             else:
@@ -408,15 +438,20 @@ async def run_worker(query: str, session_id: str) -> dict:
 
 # --- Main Entry Point ---
 
-async def run_agent(query: str, session_id: str) -> dict:
+async def run_agent(query: str, session_id: str, prefetched_context: str = "") -> dict:
     """
     Main entry point. Runs guardrail (if enabled) and worker.
     Returns structured response dict with type and payload.
+
+    Args:
+        query: User's query text
+        session_id: Session identifier
+        prefetched_context: Optional pre-fetched departure data from speculative execution
     """
     if config.ENABLE_GUARDRAIL:
         # Run guardrail and worker in parallel
         guardrail_task = asyncio.create_task(run_guardrail(query, session_id))
-        worker_task = asyncio.create_task(run_worker(query, session_id))
+        worker_task = asyncio.create_task(run_worker(query, session_id, prefetched_context))
 
         is_allowed = await guardrail_task
 
@@ -441,7 +476,7 @@ async def run_agent(query: str, session_id: str) -> dict:
     else:
         # Guardrail disabled - run worker directly
         try:
-            return await run_worker(query, session_id)
+            return await run_worker(query, session_id, prefetched_context)
         except Exception as e:
             print(f"Worker error: {e}")
             return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}
