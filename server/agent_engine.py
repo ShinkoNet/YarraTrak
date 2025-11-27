@@ -8,7 +8,8 @@ Session context is maintained for multi-turn conversations (ASR corrections, cla
 
 import asyncio
 import json
-from groq import AsyncGroq
+import httpx
+from groq import AsyncGroq, APITimeoutError, APIConnectionError, BadRequestError
 from . import config
 from . import tools
 from . import session_store
@@ -122,7 +123,7 @@ TERMINAL_TOOLS = [
                             "type": "object",
                             "properties": {
                                 "time": {"type": "string", "description": "Departure time (HH:MM)"},
-                                "platform": {"type": "string", "description": "Platform number or null"},
+                                "platform": {"type": ["string", "integer", "null"], "description": "Platform number or null"},
                                 "minutes_to_depart": {"type": "integer", "description": "Minutes until departure"}
                             },
                             "required": ["time", "minutes_to_depart"]
@@ -203,6 +204,22 @@ def convert_route_type(args: dict) -> dict:
     return args
 
 
+def normalize_result_payload(payload: dict) -> dict:
+    """Normalize return_result payload - coerce types for robustness."""
+    if "departures" in payload:
+        for dep in payload["departures"]:
+            # Coerce platform to string (model sometimes passes int)
+            if "platform" in dep and dep["platform"] is not None:
+                dep["platform"] = str(dep["platform"])
+            # Coerce minutes_to_depart to int
+            if "minutes_to_depart" in dep:
+                try:
+                    dep["minutes_to_depart"] = int(dep["minutes_to_depart"])
+                except (ValueError, TypeError):
+                    dep["minutes_to_depart"] = 0
+    return payload
+
+
 # --- Guardrail ---
 
 GUARDRAIL_TOOLS = [
@@ -259,11 +276,12 @@ async def run_guardrail(query: str, session_id: str) -> bool:
 WORKER_PROMPT = """You are a Melbourne public transport assistant. You MUST call a tool for every response.
 
 RULES:
-1. Always call a tool. Never output plain text.
+1. Always call a tool. Never output plain text - put any explanation in tts_text or question_text.
 2. For ambiguous queries (multiple directions/lines possible), call `ask_clarification`.
 3. When you have departure data, call `return_result` with structured info.
-4. Victoria, Australia only. Trains, trams, buses, V/Line.
-5. Use conversation history to understand context (corrections, follow-ups).
+4. If the requested service isn't available, call `return_result` with available alternatives or `return_error`.
+5. Victoria, Australia only. Trains, trams, buses, V/Line.
+6. Use conversation history to understand context (corrections, follow-ups).
 
 DIRECTION LOGIC:
 - "Next train from Richmond" → ambiguous (which line?), ask clarification
@@ -271,10 +289,15 @@ DIRECTION LOGIC:
 - "Next train to the city from Richmond" → clear (city-bound)
 - "Next 96 tram" → ambiguous (St Kilda or East Brunswick?), ask clarification
 
-ASR CORRECTIONS:
-- User speech may be misrecognized. "Packingham" likely means "Pakenham".
-- If search returns no results, consider asking if they meant a similar station name.
-- Use context from previous messages to resolve ambiguity.
+NO RESULTS / ASR RECOVERY:
+- If search returns no stops, the station name may be misheard (ASR error).
+- Before calling `return_error`, call `ask_clarification` to suggest similar-sounding stations.
+- Example: "Sandringam" not found → ask "Did you mean Sandringham?"
+- Only call `return_error` after clarification fails or if you're confident the station doesn't exist.
+
+ERROR HANDLING:
+- If you see [API_ERROR], tell the user there's a temporary service issue.
+- If you see [MCP_ERROR], tell the user there was a processing error.
 
 Use data tools to fetch information, then call a terminal tool (return_result, ask_clarification, or return_error)."""
 
@@ -291,14 +314,41 @@ async def run_worker(query: str, session_id: str) -> dict:
     messages.extend(history)
     messages.append({"role": "user", "content": query})
 
-    for turn in range(5):
-        response = await groq_client.chat.completions.create(
-            model=WORKER_MODEL,
-            messages=messages,
-            tools=WORKER_TOOLS,
-            tool_choice="required",
-            temperature=0.0,
-        )
+    tool_use_retries = 0
+    max_tool_use_retries = 3
+
+    for turn in range(10):
+        # Add prefill to nudge model toward tool use (helps with some models)
+        messages_with_prefill = messages + [
+            {"role": "assistant", "content": "I'll call the appropriate tool now.\n"}
+        ]
+
+        try:
+            response = await groq_client.chat.completions.create(
+                model=WORKER_MODEL,
+                messages=messages_with_prefill,
+                tools=WORKER_TOOLS,
+                tool_choice="required",
+                temperature=0.0,
+            )
+        except APITimeoutError:
+            return {"type": "ERROR", "payload": {"message": "Request timed out. Please try again.", "tts_text": "Sorry, the request timed out. Please try again.", "error_code": "GROQ_TIMEOUT"}}
+        except APIConnectionError:
+            return {"type": "ERROR", "payload": {"message": "Could not connect to AI service.", "tts_text": "Sorry, I couldn't connect to the AI service.", "error_code": "GROQ_CONNECTION"}}
+        except BadRequestError as e:
+            # Handle tool_use_failed - model tried to output text instead of tool call
+            if "tool_use_failed" in str(e):
+                tool_use_retries += 1
+                print(f"[Turn {turn}] Tool use failed, retry {tool_use_retries}/{max_tool_use_retries}")
+                if tool_use_retries >= max_tool_use_retries:
+                    return {"type": "ERROR", "payload": {"message": "Could not process request.", "tts_text": "Sorry, I had trouble processing that request.", "error_code": "TOOL_USE_FAILED"}}
+                # Add nudge toward clarification
+                messages.append({
+                    "role": "user",
+                    "content": "Please use one of the available tools. If you're unsure what the user wants, use ask_clarification to ask them."
+                })
+                continue
+            raise
 
         msg = response.choices[0].message
         tool_calls = msg.tool_calls
@@ -319,6 +369,7 @@ async def run_worker(query: str, session_id: str) -> dict:
             if fn_name in TERMINAL_TOOL_NAMES:
                 # Build a summary of the assistant's response for history
                 if fn_name == "return_result":
+                    fn_args = normalize_result_payload(fn_args)
                     assistant_msg = fn_args.get("tts_text", "")
                     session_store.update_history(session_id, "user", query)
                     session_store.update_history(session_id, "assistant", assistant_msg)
@@ -335,6 +386,9 @@ async def run_worker(query: str, session_id: str) -> dict:
             handler = TOOL_HANDLERS.get(fn_name)
             if handler:
                 fn_args = convert_route_type(fn_args)
+                # Inject session_id for tools that need it
+                if fn_name == "search_and_get_departures":
+                    fn_args["session_id"] = session_id
                 try:
                     result = await handler(**fn_args)
                 except Exception as e:
@@ -356,29 +410,38 @@ async def run_worker(query: str, session_id: str) -> dict:
 
 async def run_agent(query: str, session_id: str) -> dict:
     """
-    Main entry point. Runs guardrail and worker in parallel.
+    Main entry point. Runs guardrail (if enabled) and worker.
     Returns structured response dict with type and payload.
     """
-    guardrail_task = asyncio.create_task(run_guardrail(query, session_id))
-    worker_task = asyncio.create_task(run_worker(query, session_id))
+    if config.ENABLE_GUARDRAIL:
+        # Run guardrail and worker in parallel
+        guardrail_task = asyncio.create_task(run_guardrail(query, session_id))
+        worker_task = asyncio.create_task(run_worker(query, session_id))
 
-    is_allowed = await guardrail_task
+        is_allowed = await guardrail_task
 
-    if not is_allowed:
-        worker_task.cancel()
-        return {
-            "type": "ERROR",
-            "payload": {
-                "message": "I can only help with public transport queries.",
-                "tts_text": "I can only help with public transport queries.",
-                "error_code": "GUARDRAIL_BLOCK"
+        if not is_allowed:
+            worker_task.cancel()
+            return {
+                "type": "ERROR",
+                "payload": {
+                    "message": "I can only help with public transport queries.",
+                    "tts_text": "I can only help with public transport queries.",
+                    "error_code": "GUARDRAIL_BLOCK"
+                }
             }
-        }
 
-    try:
-        return await worker_task
-    except asyncio.CancelledError:
-        return {"type": "ERROR", "payload": {"message": "Cancelled", "tts_text": "Request cancelled."}}
-    except Exception as e:
-        print(f"Worker error: {e}")
-        return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}
+        try:
+            return await worker_task
+        except asyncio.CancelledError:
+            return {"type": "ERROR", "payload": {"message": "Cancelled", "tts_text": "Request cancelled."}}
+        except Exception as e:
+            print(f"Worker error: {e}")
+            return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}
+    else:
+        # Guardrail disabled - run worker directly
+        try:
+            return await run_worker(query, session_id)
+        except Exception as e:
+            print(f"Worker error: {e}")
+            return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}

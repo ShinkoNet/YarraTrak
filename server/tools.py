@@ -1,3 +1,5 @@
+import re
+import httpx
 from .ptv_client import PTVClient
 from .enums import RouteType
 from datetime import datetime
@@ -5,6 +7,18 @@ from zoneinfo import ZoneInfo
 
 # Initialize PTV Client
 client = PTVClient()
+
+
+def sanitize_query(query: str) -> str:
+    """Sanitize search query - remove/replace problematic characters."""
+    # Remove periods (St. Kilda -> St Kilda)
+    query = query.replace('.', ' ')
+    # Replace curly apostrophes with straight ones, then remove all apostrophes
+    query = query.replace(''', "'").replace(''', "'")
+    query = query.replace("'", "")
+    # Collapse multiple spaces
+    query = re.sub(r'\s+', ' ', query).strip()
+    return query
 
 def to_melbourne_time(utc_str: str) -> str:
     """Converts UTC ISO string to Melbourne time ISO string."""
@@ -28,13 +42,14 @@ async def get_departures(stop_id: int, route_type: int = RouteType.TRAIN) -> str
         route_type: Transport mode enums (TRAIN, TRAM, BUS, VLINE, NIGHT_BUS). Defaults to TRAIN.
     """
     try:
-        # Fetch departures with direction, route, stop, and run info
-        data = await client.get_departures(route_type, stop_id, expand=["Direction", "Route", "Stop", "Run"])
+        # Fetch departures with direction, route, stop, run and disruption info
+        data = await client.get_departures(route_type, stop_id, expand=["Direction", "Route", "Stop", "Run", "Disruption"])
         departures = data.get("departures", [])
         directions = data.get("directions", {})
         routes = data.get("routes", {})
         stops = data.get("stops", {})
         runs = data.get("runs", {})
+        disruptions = data.get("disruptions", {})
         
         if not departures:
             return "No upcoming departures found."
@@ -54,8 +69,11 @@ async def get_departures(stop_id: int, route_type: int = RouteType.TRAIN) -> str
         suffix = type_suffixes.get(route_type, "Stop")
         
         result = [f"Departures for {stop_name} ({suffix}):"]
-        
-        for d in departures[:5]:
+
+        # Sort by departure time and show more results to cover different lines
+        departures.sort(key=lambda x: x.get('scheduled_departure_utc') or '')
+
+        for d in departures[:15]:
             route_id = d.get('route_id')
             direction_id = d.get('direction_id')
             run_ref = d.get('run_ref')
@@ -103,22 +121,52 @@ async def get_departures(stop_id: int, route_type: int = RouteType.TRAIN) -> str
             
             if dir_desc:
                 info += f" [{dir_desc}]"
-                
+
             result.append(info)
-            
+
+        # Add disruptions only for routes shown in departures
+        if disruptions:
+            # Get route IDs from shown departures
+            shown_route_ids = set(d.get('route_id') for d in departures[:15])
+
+            relevant_disruptions = []
+            for d_id, d in disruptions.items():
+                if d.get('disruption_status') != 'Current':
+                    continue
+
+                # Check if disruption affects any shown route
+                affected_routes = set(r.get('route_id') for r in d.get('routes', []))
+                if not affected_routes.intersection(shown_route_ids):
+                    continue
+
+                title = d.get('title', '').lower()
+                # Only show service-affecting disruptions
+                if 'terminate' in title or 'replace' in title or 'delay' in title:
+                    relevant_disruptions.append(f"[!] {d.get('title', '')}")
+
+            if relevant_disruptions:
+                result.append("")
+                result.append("DISRUPTIONS:")
+                result.extend(relevant_disruptions[:3])
+
         return "\n".join(result)
+    except httpx.HTTPStatusError as e:
+        return f"[API_ERROR] PTV API returned status {e.response.status_code}: {str(e)}"
+    except httpx.RequestError as e:
+        return f"[API_ERROR] Failed to connect to PTV API: {str(e)}"
     except Exception as e:
-        return f"Error fetching departures: {str(e)}"
+        return f"[MCP_ERROR] Error processing departures: {str(e)}"
 
 async def search_stops(query: str) -> str:
     """
     Search for public transport stops by name.
     Filters for Trains (Metro/VLine) and Trams. Excludes buses.
-    
+
     Args:
         query: The name of the stop to search for (e.g., "Flinders").
     """
     try:
+        query = sanitize_query(query)
         data = await client.search(query)
         stops = data.get("stops", [])
         
@@ -160,14 +208,19 @@ async def search_stops(query: str) -> str:
             result.append(f"{name} ({type_str}, Type {rtype}) [ID: {sid}]")
             
         return "\n".join(result)
+    except httpx.HTTPStatusError as e:
+        return f"[API_ERROR] PTV API returned status {e.response.status_code}"
+    except httpx.RequestError as e:
+        return f"[API_ERROR] Failed to connect to PTV API: {str(e)}"
     except Exception as e:
-        return f"Error searching stops: {str(e)}"
+        return f"[MCP_ERROR] Error searching stops: {str(e)}"
 
 async def search_routes(query: str) -> str:
     """
     Search for public transport routes by name.
     """
     try:
+        query = sanitize_query(query)
         data = await client.search(query)
         routes = data.get("routes", [])
         
@@ -193,8 +246,12 @@ async def search_routes(query: str) -> str:
             result.append(f"{name} ({type_str}, Type {rtype}) [ID: {rid}]")
             
         return "\n".join(result)
+    except httpx.HTTPStatusError as e:
+        return f"[API_ERROR] PTV API returned status {e.response.status_code}"
+    except httpx.RequestError as e:
+        return f"[API_ERROR] Failed to connect to PTV API: {str(e)}"
     except Exception as e:
-        return f"Error searching routes: {str(e)}"
+        return f"[MCP_ERROR] Error searching routes: {str(e)}"
 
 async def get_route_directions(route_id: int) -> str:
     """
@@ -219,43 +276,106 @@ async def get_route_directions(route_id: int) -> str:
             result.append(info)
             
         return "\n".join(result)
+    except httpx.HTTPStatusError as e:
+        return f"[API_ERROR] PTV API returned status {e.response.status_code}"
+    except httpx.RequestError as e:
+        return f"[API_ERROR] Failed to connect to PTV API: {str(e)}"
     except Exception as e:
-        return f"Error fetching directions: {str(e)}"
+        return f"[MCP_ERROR] Error fetching directions: {str(e)}"
 
-async def search_and_get_departures(query: str, route_type: int = RouteType.TRAIN) -> str:
+# Track repeated searches within a session to detect when model is struggling
+_search_cache: dict[str, set[str]] = {}  # session_id -> set of queries
+
+
+def _rank_stop(stop: dict, query: str) -> int:
+    """Rank a stop by how well it matches the query. Lower = better."""
+    name = stop.get('stop_name', '').lower()
+    query_lower = query.lower().strip()
+
+    # Exact match: "Richmond" matches "Richmond Station" or "Richmond"
+    name_base = name.replace(' station', '').strip()
+    if name_base == query_lower:
+        return 0
+    # Starts with query as a word: "Richmond Station" for "Richmond"
+    if name.startswith(query_lower + ' ') or name.startswith(query_lower + '/'):
+        return 1
+    # Contains query as a word
+    if f' {query_lower} ' in f' {name} ':
+        return 2
+    # Starts with query
+    if name.startswith(query_lower):
+        return 3
+    # Contains query anywhere
+    if query_lower in name:
+        return 4
+    return 5
+
+
+def clear_search_cache(session_id: str) -> None:
+    """Clear search cache for a session (call when session ends or on new user message)."""
+    _search_cache.pop(session_id, None)
+
+
+async def search_and_get_departures(query: str, route_type: int = RouteType.TRAIN, session_id: str = "") -> str:
     """
-    Search for a stop and immediately get departures for the first result.
-    Useful when the user specifies a clear stop name.
-    
+    Search for a stop and get departures. Uses smart ranking to pick the best match.
+    If called repeatedly with the same query, returns multiple options.
+
     Args:
         query: The name of the stop to search for.
         route_type: Transport mode enums (TRAIN, TRAM, BUS, VLINE, NIGHT_BUS). Defaults to TRAIN.
+        session_id: Optional session ID to track repeated searches.
     """
     try:
+        query = sanitize_query(query)
+        cache_key = f"{query.lower()}:{route_type}"
+
+        # Check if this is a repeated search
+        is_repeat = False
+        if session_id:
+            if session_id not in _search_cache:
+                _search_cache[session_id] = set()
+            if cache_key in _search_cache[session_id]:
+                is_repeat = True
+            _search_cache[session_id].add(cache_key)
+
         # 1. Search for the stop
         data = await client.search(query)
         stops = data.get("stops", [])
-        
+
         if not stops:
             return f"No stops found matching '{query}'."
-            
+
         # Filter by route_type
         filtered_stops = [s for s in stops if s.get('route_type') == route_type]
-        
+
         if not filtered_stops:
             return f"No stops of type {route_type} found matching '{query}'."
-            
-        # Pick the first result
+
+        # Rank stops by match quality
+        filtered_stops.sort(key=lambda s: _rank_stop(s, query))
+
         best_match = filtered_stops[0]
+        best_rank = _rank_stop(best_match, query)
+
+        # If repeated search OR no clear best match, return options
+        if is_repeat or (len(filtered_stops) > 1 and best_rank > 1):
+            result = [f"Multiple stops match '{query}'. Use get_departures with the correct stop_id:"]
+            for s in filtered_stops[:6]:
+                result.append(f"- {s.get('stop_name')} [ID: {s.get('stop_id')}]")
+            return "\n".join(result)
+
+        # Clear best match - get departures directly
         stop_id = best_match.get('stop_id')
         stop_name = best_match.get('stop_name')
-        
-        # 2. Get departures for this stop
-        # We reuse the existing get_departures logic by calling it directly
-        # Note: get_departures is async, so we await it
+
         departures_output = await get_departures(stop_id, route_type)
-        
+
         return f"Found stop '{stop_name}' (ID: {stop_id}).\n\n{departures_output}"
-        
+
+    except httpx.HTTPStatusError as e:
+        return f"[API_ERROR] PTV API returned status {e.response.status_code}"
+    except httpx.RequestError as e:
+        return f"[API_ERROR] Failed to connect to PTV API: {str(e)}"
     except Exception as e:
-        return f"Error in search_and_get_departures: {str(e)}"
+        return f"[MCP_ERROR] Error in search_and_get_departures: {str(e)}"
