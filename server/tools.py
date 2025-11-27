@@ -371,7 +371,10 @@ async def search_and_get_departures(query: str, route_type: int = RouteType.TRAI
 
         departures_output = await get_departures(stop_id, route_type)
 
-        return f"Found stop '{stop_name}' (ID: {stop_id}).\n\n{departures_output}"
+        # Include stop info for client to learn (will be extracted by API)
+        stop_info_line = f"[STOP_INFO:{stop_id}:{route_type}:{stop_name}]"
+
+        return f"Found stop '{stop_name}' (ID: {stop_id}).\n{stop_info_line}\n\n{departures_output}"
 
     except httpx.HTTPStatusError as e:
         return f"[API_ERROR] PTV API returned status {e.response.status_code}"
@@ -379,3 +382,64 @@ async def search_and_get_departures(query: str, route_type: int = RouteType.TRAI
         return f"[API_ERROR] Failed to connect to PTV API: {str(e)}"
     except Exception as e:
         return f"[MCP_ERROR] Error in search_and_get_departures: {str(e)}"
+
+
+async def speculative_fetch(query_history: list[dict], max_stops: int = 3) -> list[dict]:
+    """
+    Pre-fetch departures for stops from client-provided history.
+    Called in parallel with ASR to reduce latency.
+
+    Args:
+        query_history: List of {stop_id, stop_name, route_type} from client localStorage
+
+    Returns list of {stop_name, route_type_name, departures_text} for injection into prompt.
+    """
+    import asyncio
+
+    if not query_history:
+        return []
+
+    async def fetch_one(query_info: dict) -> dict | None:
+        try:
+            stop_id = query_info["stop_id"]
+            stop_name = query_info["stop_name"]
+            route_type = query_info["route_type"]
+
+            departures_text = await get_departures(stop_id, route_type)
+
+            if "[API_ERROR]" in departures_text or "[MCP_ERROR]" in departures_text:
+                return None
+
+            route_type_name = {
+                RouteType.TRAIN: "train",
+                RouteType.TRAM: "tram",
+                RouteType.BUS: "bus",
+                RouteType.VLINE: "V/Line",
+                RouteType.NIGHT_BUS: "night bus"
+            }.get(route_type, "transport")
+
+            return {
+                "stop_name": stop_name,
+                "route_type_name": route_type_name,
+                "departures_text": departures_text
+            }
+        except Exception:
+            return None
+
+    tasks = [fetch_one(h) for h in query_history[:max_stops]]
+    results = await asyncio.gather(*tasks)
+
+    return [r for r in results if r is not None]
+
+
+def format_speculative_context(prefetched: list[dict]) -> str:
+    """Format pre-fetched departures for injection into the system prompt."""
+    if not prefetched:
+        return ""
+
+    lines = ["PRE-FETCHED DEPARTURES (stops this user has asked about before):"]
+    for item in prefetched:
+        lines.append(f"\n### {item['stop_name']} ({item['route_type_name']})")
+        lines.append(item['departures_text'])
+
+    return "\n".join(lines)

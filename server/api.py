@@ -17,6 +17,7 @@ import html
 from .enums import RouteType
 from . import agent_engine
 from . import config
+from . import tools
 from .ptv_client import PTVClient
 
 app = FastAPI(title="PTV Notify", version="1.0.0")
@@ -39,9 +40,15 @@ class StealthRequest(BaseModel):
     direction_name: str | None = None
     route_type: int = RouteType.TRAIN
 
+class StopHistory(BaseModel):
+    stop_id: int
+    stop_name: str
+    route_type: int
+
 class AgentRequest(BaseModel):
     query: str
     session_id: str | None = None
+    query_history: list[StopHistory] | None = None
 
 # --- Initialization ---
 
@@ -193,17 +200,41 @@ async def stealth_mode(req: StealthRequest):
         return {"vibration": [500, 100, 500], "message": "Error"}
 
 
-@app.post("/api/v1/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    """Transcribe audio using Groq Whisper."""
+@app.post("/api/v1/voice")
+async def voice_query(
+    file: UploadFile = File(...),
+    session_id: str | None = None,
+    query_history: str | None = None,  # JSON string of [{stop_id, stop_name, route_type}, ...]
+    background_tasks: BackgroundTasks = None
+):
+    """
+    Voice query endpoint with speculative execution.
+    Runs ASR and speculative departure fetch in parallel for lower latency.
+
+    Args:
+        file: Audio file (webm/wav)
+        session_id: Session ID for conversation context
+        query_history: JSON array of previous stops for speculative fetch
+    """
     from groq import AsyncGroq
+    import json
 
     if not config.GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="Groq API key not configured")
 
-    try:
+    session_id = session_id or str(uuid.uuid4())
+    content = await file.read()
+
+    # Parse query_history from JSON string
+    history_list = []
+    if query_history:
+        try:
+            history_list = json.loads(query_history)
+        except json.JSONDecodeError:
+            pass
+
+    async def run_asr():
         groq = AsyncGroq(api_key=config.GROQ_API_KEY)
-        content = await file.read()
         result = await groq.audio.transcriptions.create(
             file=(file.filename, content),
             model="whisper-large-v3",
@@ -211,19 +242,24 @@ async def transcribe_audio(file: UploadFile = File(...)):
             language="en",
             temperature=0.0
         )
-        return {"text": result.text}
+        return result.text
+
+    async def run_speculative():
+        prefetched = await tools.speculative_fetch(history_list)
+        return tools.format_speculative_context(prefetched)
+
+    try:
+        # Run ASR and speculative fetch in parallel
+        transcript, prefetched_context = await asyncio.gather(
+            run_asr(),
+            run_speculative()
+        )
     except Exception as e:
-        print(f"Transcription error: {e}")
+        print(f"Voice query error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/api/v1/agent/query")
-async def agent_query(request: AgentRequest, background_tasks: BackgroundTasks):
-    """
-    Main agent endpoint. Returns structured response with optional audio ticket.
-    """
-    session_id = request.session_id or str(uuid.uuid4())
-    result = await agent_engine.run_agent(request.query, session_id)
+    # Run agent with pre-fetched context
+    result = await agent_engine.run_agent(transcript, session_id, prefetched_context)
 
     # Extract TTS text based on response type
     payload = result.get("payload", {})
@@ -236,16 +272,76 @@ async def agent_query(request: AgentRequest, background_tasks: BackgroundTasks):
         _audio_store[audio_ticket] = {"status": "pending", "created_at": time.time()}
         background_tasks.add_task(_generate_audio, audio_ticket, tts_text)
 
-    # Add vibration pattern for results
+    # Add vibration pattern for results and trim to first departure only
+    # Extract learned_stop if this was a successful query
+    learned_stop = None
     if result.get("type") == "RESULT":
         departures = payload.get("departures", [])
-        if departures and departures[0].get("minutes_to_depart") is not None:
-            payload["vibration"] = calculate_vibration(departures[0]["minutes_to_depart"])
+        if departures:
+            payload["departures"] = [departures[0]]
+            if departures[0].get("minutes_to_depart") is not None:
+                payload["vibration"] = calculate_vibration(departures[0]["minutes_to_depart"])
+
+        # Return learned stop for client to store
+        if payload.get("_stop_info"):
+            learned_stop = payload.pop("_stop_info")
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "transcript": transcript,
+        "audio_ticket": audio_ticket,
+        "learned_stop": learned_stop,
+        "data": result
+    }
+
+
+@app.post("/api/v1/query")
+async def text_query(request: AgentRequest, background_tasks: BackgroundTasks):
+    """
+    Text-only agent endpoint for debugging. No ASR, just sends text to agent.
+    Uses client-provided query_history for speculative fetch.
+    """
+    session_id = request.session_id or str(uuid.uuid4())
+
+    # Convert query_history from Pydantic models to dicts
+    history_list = [h.model_dump() for h in request.query_history] if request.query_history else []
+
+    # Run speculative fetch with client-provided history
+    prefetched = await tools.speculative_fetch(history_list)
+    prefetched_context = tools.format_speculative_context(prefetched)
+
+    result = await agent_engine.run_agent(request.query, session_id, prefetched_context)
+
+    # Extract TTS text based on response type
+    payload = result.get("payload", {})
+    tts_text = payload.get("tts_text") or payload.get("question_text") or payload.get("message", "")
+
+    # Start TTS generation in background
+    audio_ticket = None
+    if tts_text and speech_config:
+        audio_ticket = f"aud_{uuid.uuid4().hex[:8]}"
+        _audio_store[audio_ticket] = {"status": "pending", "created_at": time.time()}
+        background_tasks.add_task(_generate_audio, audio_ticket, tts_text)
+
+    # Add vibration pattern for results and trim to first departure only
+    learned_stop = None
+    if result.get("type") == "RESULT":
+        departures = payload.get("departures", [])
+        if departures:
+            payload["departures"] = [departures[0]]
+            if departures[0].get("minutes_to_depart") is not None:
+                payload["vibration"] = calculate_vibration(departures[0]["minutes_to_depart"])
+
+        # Return learned stop for client to store
+        if payload.get("_stop_info"):
+            learned_stop = payload.pop("_stop_info")
 
     return {
         "status": "success",
         "session_id": session_id,
         "audio_ticket": audio_ticket,
+        "learned_stop": learned_stop,
         "data": result
     }
 

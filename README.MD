@@ -8,6 +8,7 @@ A voice-enabled public transport assistant for Melbourne, Australia. Get real-ti
 - **Real-time Departures** - Live data from PTV (Public Transport Victoria) API
 - **Smart Search** - Fuzzy matching handles typos and ASR errors ("Sandringam" → "Sandringham")
 - **Multi-turn Conversations** - Context-aware follow-ups and clarifications
+- **Speculative Execution** - Pre-fetches departures for frequently queried stops, reducing latency by ~55%
 - **Disruption Alerts** - Bus replacements, delays, and service changes
 - **Haptic Feedback** - Vibration patterns encode departure times for discreet use
 - **MCP Integration** - Use with Claude Desktop via Model Context Protocol
@@ -70,12 +71,13 @@ pytest tests/ -v
 ┌─────────────────────────────────────────────────────────────┐
 │                        Frontend                              │
 │  web/app.js - Voice I/O, clarification chips, haptic feedback│
+│  localStorage: session_id, query_history, button configs     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                     FastAPI Server                           │
-│  server/api.py - /query, /transcribe, /tts endpoints        │
+│  server/api.py - /voice, /query, /stealth endpoints         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼

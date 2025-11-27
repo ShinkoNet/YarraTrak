@@ -34,13 +34,34 @@ pip install -r server/requirements.txt
 
 ```
 User Voice/Text → FastAPI → Agent Engine → Tools → PTV API
-                     ↓
-              Session Store (context)
-                     ↓
-              Groq LLM (worker)
-                     ↓
-              Tool Calls → Terminal Tool → Response
+                     │
+    ┌────────────────┼────────────────┐
+    │                │                │
+    ▼                ▼                ▼
+Session Store   Speculative      Groq LLM
+(conversation)  Fetch (parallel)  (worker)
+                     │                │
+                     └───► Pre-fetched data injected into prompt
+                                      │
+                                      ▼
+                          Tool Calls → Terminal Tool → Response
 ```
+
+### Speculative Execution
+
+On repeat queries to previously searched stops, the server pre-fetches departure data in parallel with ASR. This reduces agent latency by ~55% on warm requests:
+
+- **Cold request**: 2000-2500ms (LLM calls `search_and_get_departures` → PTV API)
+- **Warm request**: 900-1000ms (LLM uses pre-fetched data → direct `return_result`)
+
+**How it works:**
+
+1. Client stores successful stop queries in `localStorage` (`query_history`)
+2. Client sends `query_history` with each `/voice` or `/query` request
+3. Server pre-fetches departures for those stops in parallel with ASR
+4. Pre-fetched data is injected into the LLM prompt
+5. LLM can skip the `search_and_get_departures` call and return directly
+6. Server returns `learned_stop` for client to store
 
 ### Pure Tool-Call Agent
 
@@ -84,18 +105,32 @@ When `ENABLE_GUARDRAIL = True`, a guardrail model runs in parallel with the work
 
 | File | Purpose |
 |------|---------|
-| `server/api.py` | FastAPI endpoints (`/query`, `/transcribe`, `/tts`), vibration encoding |
+| `server/api.py` | FastAPI endpoints (`/voice`, `/query`, `/stealth`), vibration encoding, speculative fetch |
 | `server/agent_engine.py` | Guardrail + worker, tool definitions, session handling, prefill logic |
-| `server/tools.py` | PTV API tool implementations, query sanitization, disruption filtering |
+| `server/tools.py` | PTV API tool implementations, query sanitization, speculative fetch, disruption filtering |
 | `server/ptv_client.py` | PTV API client with HMAC-SHA1 signing |
 | `server/session_store.py` | In-memory conversation history (4-turn, 120s TTL) |
 | `server/mcp_server.py` | MCP protocol wrapper for Claude Desktop |
 | `server/config.py` | Environment variables and feature flags |
 | `server/enums.py` | RouteType enum (TRAIN=0, TRAM=1, BUS=2, VLINE=3, NIGHT_BUS=4) |
 
+### API Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/v1/voice` | Voice input: ASR + speculative fetch (parallel) + Agent. Accepts `file`, `session_id`, `query_history` |
+| `POST /api/v1/query` | Text input: speculative fetch + Agent. Accepts JSON `{query, session_id, query_history}` |
+| `POST /api/v1/stealth` | Direct PTV lookup for pre-configured buttons (no LLM) |
+| `GET /api/v1/media/{ticket}` | Retrieve TTS audio by ticket ID |
+
 ### Frontend
 
 `web/app.js` - Vanilla JS SPA with stealth buttons, voice I/O, clarification chips.
+
+**localStorage keys:**
+- `ptv_session_id` - Persistent session ID (survives page refresh)
+- `ptv_query_history` - Array of learned stops for speculative fetch (max 10)
+- `ptv_btn_1/2/3` - Stealth button configurations
 
 ## Environment Variables
 
@@ -108,6 +143,25 @@ In `server/config.py`:
 - `ENABLE_GUARDRAIL` - Set to `False` to disable the guardrail agent (currently False)
 
 ## Key Implementation Details
+
+### Speculative Fetch (tools.py, api.py)
+
+```python
+# tools.py
+async def speculative_fetch(query_history: list[dict], max_stops: int = 3) -> list[dict]:
+    """Pre-fetch departures for stops from client-provided history."""
+    # Fetches in parallel, returns formatted departure data
+
+# api.py - /voice endpoint
+async def run_speculative():
+    prefetched = await tools.speculative_fetch(history_list)
+    return tools.format_speculative_context(prefetched)
+
+# ASR and speculative fetch run in parallel
+transcript, prefetched_context = await asyncio.gather(run_asr(), run_speculative())
+```
+
+The `learned_stop` is extracted from tool output via `[STOP_INFO:stop_id:route_type:stop_name]` marker and returned to client.
 
 ### Smart Stop Ranking (tools.py)
 
@@ -178,8 +232,19 @@ Minutes encoded as haptic patterns:
 Tests hit the real Groq API (no mocking). Key test files:
 - `tests/test_conversations.py` - Agent scenarios, multi-turn, tool selection
 - `tests/conftest.py` - Loads `.env` for tests
+- `test_latency.py` - End-to-end latency testing for voice pipeline and speculative execution
 
 Guardrail tests skip when `ENABLE_GUARDRAIL = False`.
+
+### Latency Testing
+
+```bash
+python test_latency.py
+```
+
+Tests the full voice pipeline with two requests:
+1. Cold request (no history) - measures baseline latency
+2. Warm request (with query_history) - measures speculative fetch benefit
 
 ## Models Used
 

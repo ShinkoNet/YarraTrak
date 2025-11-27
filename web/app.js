@@ -1,5 +1,40 @@
 const API_BASE = "/api/v1";
-let currentSessionId = null;
+const SESSION_KEY = "ptv_session_id";
+const QUERY_HISTORY_KEY = "ptv_query_history";
+const MAX_QUERY_HISTORY = 10;
+
+let currentSessionId = localStorage.getItem(SESSION_KEY) || crypto.randomUUID();
+localStorage.setItem(SESSION_KEY, currentSessionId);
+
+// --- Query History for Speculative Fetch ---
+function getQueryHistory() {
+    try {
+        return JSON.parse(localStorage.getItem(QUERY_HISTORY_KEY)) || [];
+    } catch {
+        return [];
+    }
+}
+
+function addToQueryHistory(stopInfo) {
+    if (!stopInfo || !stopInfo.stop_id) return;
+
+    let history = getQueryHistory();
+
+    // Remove duplicate if exists
+    history = history.filter(h =>
+        !(h.stop_id === stopInfo.stop_id && h.route_type === stopInfo.route_type)
+    );
+
+    // Add to front (most recent)
+    history.unshift(stopInfo);
+
+    // Trim to max size
+    if (history.length > MAX_QUERY_HISTORY) {
+        history = history.slice(0, MAX_QUERY_HISTORY);
+    }
+
+    localStorage.setItem(QUERY_HISTORY_KEY, JSON.stringify(history));
+}
 
 // --- Button Configuration Logic ---
 function saveButtonConfig(index, config) {
@@ -110,7 +145,7 @@ async function toggleMic() {
 
             mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                await sendAudioToTranscribe(audioBlob);
+                await sendAudioToVoice(audioBlob);
             };
 
             mediaRecorder.start();
@@ -135,32 +170,73 @@ async function toggleMic() {
     }
 }
 
-async function sendAudioToTranscribe(audioBlob) {
+async function sendAudioToVoice(audioBlob) {
     const formData = new FormData();
     formData.append("file", audioBlob, "recording.webm");
+    formData.append("session_id", currentSessionId);
+    formData.append("query_history", JSON.stringify(getQueryHistory()));
+
+    // Show Close Button, Hide Stealth Controls
+    const closeBtn = document.getElementById('btn-close');
+    const stealthControls = document.getElementById('stealth-controls');
+    if (closeBtn) closeBtn.style.display = 'block';
+    if (stealthControls) stealthControls.style.display = 'none';
 
     try {
-        log("System: Transcribing...", "system");
-        const res = await fetch(`${API_BASE}/transcribe`, {
+        log("Processing...", "system");
+        updateStatus("Processing...");
+
+        const res = await fetch(`${API_BASE}/voice`, {
             method: 'POST',
             body: formData
         });
 
-        const data = await res.json();
-        if (data.text) {
-            log(`You said: ${data.text}`, "user");
-            const input = document.getElementById('agent-input');
-            if (input) {
-                input.value = data.text;
-                sendAgentQuery();
-            }
-        } else {
-            log("System: No speech detected.", "system");
-            updateStatus("Ready");
+        const responseData = await res.json();
+
+        // Store learned stop for future speculative fetches
+        if (responseData.learned_stop) {
+            addToQueryHistory(responseData.learned_stop);
         }
+
+        // Show transcript
+        if (responseData.transcript) {
+            log(`You: ${responseData.transcript}`, "user");
+        }
+
+        const result = responseData.data;
+
+        // Handle Result Types
+        if (result.type === "RESULT") {
+            const payload = result.payload;
+            log(`Agent: ${payload.tts_text}`, "agent");
+            updateStatus(payload.tts_text);
+
+            if (payload.vibration) {
+                if (navigator.vibrate) navigator.vibrate(payload.vibration);
+                document.body.style.backgroundColor = "#ccc";
+                setTimeout(() => document.body.style.backgroundColor = "#333", 200);
+            }
+
+        } else if (result.type === "CLARIFICATION") {
+            const payload = result.payload;
+            log(`Agent: ${payload.question_text}`, "agent");
+            updateStatus(payload.question_text);
+            renderChips(payload.options);
+
+        } else if (result.type === "ERROR") {
+            const payload = result.payload;
+            log(`Error: ${payload.message}`, "system");
+            updateStatus("Error");
+        }
+
+        // Play Audio (Async)
+        if (responseData.audio_ticket) {
+            playAudio(responseData.audio_ticket);
+        }
+
     } catch (e) {
-        console.error("Transcription failed:", e);
-        log("Error: Transcription failed.", "system");
+        console.error("Voice query failed:", e);
+        log("Error: Voice query failed.", "system");
         updateStatus("Error");
     }
 }
@@ -206,19 +282,20 @@ async function sendAgentQuery(overrideQuery = null) {
     if (stealthControls) stealthControls.style.display = 'none';
 
     try {
-        const res = await fetch(`${API_BASE}/agent/query`, {
+        const res = await fetch(`${API_BASE}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: query,
-                session_id: currentSessionId
+                session_id: currentSessionId,
+                query_history: getQueryHistory()
             })
         });
         const responseData = await res.json();
 
-        // Update Session ID
-        if (responseData.session_id) {
-            currentSessionId = responseData.session_id;
+        // Store learned stop for future speculative fetches
+        if (responseData.learned_stop) {
+            addToQueryHistory(responseData.learned_stop);
         }
 
         const result = responseData.data;
@@ -338,7 +415,8 @@ async function closeConversation() {
     if (stealthControls) stealthControls.style.display = 'block';
 
     updateStatus("Ready");
-    currentSessionId = null; // Reset session
+    // Note: session ID persists for query history (speculative fetch)
+    // Only the UI/conversation context is cleared
 }
 
 // Expose functions to window

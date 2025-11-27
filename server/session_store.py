@@ -1,6 +1,7 @@
 import time
 
-# Simple in-memory store: {session_id: {"history": [], "last_active": timestamp}}
+# Simple in-memory store for conversation context: {session_id: {"history": [], "last_active": timestamp}}
+# Query history for speculative fetch is now client-side (localStorage)
 _sessions = {}
 
 MAX_HISTORY = 4
@@ -35,6 +36,7 @@ def update_history(session_id: str, role: str, content: str):
 
 def get_history(session_id: str):
     return get_session(session_id)["history"]
+
 
 def _cleanup_sessions(now):
     """Remove expired sessions."""
