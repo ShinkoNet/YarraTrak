@@ -1,37 +1,87 @@
+"""
+Agent Engine - Pure Tool-Call Architecture
+
+The worker model MUST always call a tool. No JSON parsing required.
+Terminal tools (return_result, ask_clarification, return_error) end the loop.
+Session context is maintained for multi-turn conversations (ASR corrections, clarifications).
+"""
+
 import asyncio
 import json
-import os
 from groq import AsyncGroq
 from . import config
 from . import tools
 from . import session_store
 from .enums import RouteType
 
-# Initialize Groq Client
 groq_client = AsyncGroq(api_key=config.GROQ_API_KEY)
 
 # Models
 GUARDRAIL_MODEL = "openai/gpt-oss-safeguard-20b"
 WORKER_MODEL = "moonshotai/kimi-k2-instruct"
 
-# Tool Definitions (Moved from api.py)
-tools_schema = [
+# --- Tool Definitions ---
+
+DATA_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_and_get_departures",
+            "description": "Search for a stop by name and get upcoming departures. Use when user specifies a stop.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Stop name (e.g., 'Richmond', 'Flinders Street')"},
+                    "route_type": {
+                        "type": "string",
+                        "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
+                        "default": "TRAIN"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_stops",
+            "description": "Search for stops by name. Returns stop IDs and types.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Stop name to search"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_routes",
+            "description": "Search for routes/lines by name (e.g., 'Pakenham', 'Sandringham').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Route name to search"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
             "name": "get_departures",
-            "description": "Get next departures for a specific stop.",
+            "description": "Get departures for a known stop ID.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "stop_id": {
-                        "type": "integer",
-                        "description": "The ID of the stop (e.g., 1071 for Flinders St)."
-                    },
+                    "stop_id": {"type": "integer", "description": "PTV stop ID"},
                     "route_type": {
                         "type": "string",
                         "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
-                        "description": "Transport mode. Defaults to TRAIN.",
                         "default": "TRAIN"
                     }
                 },
@@ -42,98 +92,46 @@ tools_schema = [
     {
         "type": "function",
         "function": {
-            "name": "search_stops",
-            "description": "Search for public transport stops by name. Filters for Trains (Metro/VLine) and Trams.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The name of the stop to search for (e.g., 'Flinders')."
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_routes",
-            "description": "Search for public transport routes by name.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The name of the route to search for (e.g., 'Belgrave')."
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "get_route_directions",
-            "description": "Get directions for a specific route.",
+            "description": "Get available directions for a route ID.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "route_id": {
-                        "type": "integer",
-                        "description": "The ID of the route."
-                    }
+                    "route_id": {"type": "integer", "description": "PTV route ID"}
                 },
                 "required": ["route_id"]
             }
         }
     },
+]
+
+TERMINAL_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_and_get_departures",
-            "description": "Search for a stop and immediately get departures for the first result. Useful when the user specifies a clear stop name.",
+            "name": "return_result",
+            "description": "Return departure information to the user. Call this when you have the data.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The name of the stop to search for (e.g., 'Flinders')."
+                    "destination": {"type": "string", "description": "Where the service is heading"},
+                    "line": {"type": "string", "description": "Line/route name (e.g., 'Pakenham Line', 'Route 96')"},
+                    "departures": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "time": {"type": "string", "description": "Departure time (HH:MM)"},
+                                "platform": {"type": "string", "description": "Platform number or null"},
+                                "minutes_to_depart": {"type": "integer", "description": "Minutes until departure"}
+                            },
+                            "required": ["time", "minutes_to_depart"]
+                        },
+                        "minItems": 1
                     },
-                    "route_type": {
-                        "type": "string",
-                        "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
-                        "description": "Transport mode. Defaults to TRAIN.",
-                        "default": "TRAIN"
-                    }
+                    "tts_text": {"type": "string", "description": "Natural speech for TTS (e.g., 'Next train in 5 minutes from platform 3')"}
                 },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "configure_button",
-            "description": "Configure one of the 3 physical buttons with a station and direction.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "button_index": {"type": "integer", "description": "Button number (1, 2, or 3)"},
-                    "stop_id": {"type": "integer", "description": "The PTV stop ID"},
-                    "stop_name": {"type": "string", "description": "Name of the stop"},
-                    "direction_id": {"type": "integer", "description": "The direction ID (optional, if specific direction needed)"},
-                    "direction_name": {"type": "string", "description": "Name of the direction (e.g. 'City')"},
-                    "route_type": {
-                        "type": "string",
-                        "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
-                        "description": "Transport mode. Default TRAIN.",
-                        "default": "TRAIN"
-                    }
-                },
-                "required": ["button_index", "stop_id", "stop_name"]
+                "required": ["destination", "line", "departures", "tts_text"]
             }
         }
     },
@@ -141,309 +139,246 @@ tools_schema = [
         "type": "function",
         "function": {
             "name": "ask_clarification",
-            "description": "Ask the user for clarification when multiple options exist.",
+            "description": "Ask user to choose when query is ambiguous (e.g., which direction, which line).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "question_text": {"type": "string", "description": "The question to ask (e.g. 'Which direction?')"},
-                    "missing_entity": {"type": "string", "description": "The concept missing (e.g. 'direction', 'line')"},
+                    "question_text": {"type": "string", "description": "Question to ask (e.g., 'Which direction?')"},
+                    "missing_entity": {"type": "string", "description": "What's missing: 'direction', 'line', 'stop'"},
                     "options": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "label": {"type": "string", "description": "Display text (e.g. 'City')"},
-                                "value": {"type": "string", "description": "Internal value (e.g. 'inbound')"}
+                                "label": {"type": "string", "description": "Display text"},
+                                "value": {"type": "string", "description": "Value to use if selected"}
                             },
                             "required": ["label", "value"]
-                        }
+                        },
+                        "minItems": 2,
+                        "maxItems": 6
                     }
                 },
                 "required": ["question_text", "missing_entity", "options"]
             }
         }
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "return_error",
+            "description": "Return an error when the request cannot be fulfilled.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "description": "Error message for the user"},
+                    "tts_text": {"type": "string", "description": "Spoken error message"}
+                },
+                "required": ["message", "tts_text"]
+            }
+        }
+    },
 ]
 
-async def run_speculative_race(query: str, session_id: str):
-    """
-    Run Guardrail and Worker in parallel.
-    """
-    print(f"Starting Race for: {query}")
-    
-    guardrail_task = asyncio.create_task(run_guardrail(query, session_id))
-    worker_task = asyncio.create_task(run_worker(query, session_id))
-    
-    # Safety First
-    is_safe, refusal_reason = await guardrail_task
-    
-    if not is_safe:
-        print(f"Guardrail BLOCKED: {refusal_reason}")
-        worker_task.cancel()
-        return {
-            "status": "success",
-            "type": "ERROR",
-            "payload": {
-                "message": "I can only help with public transport queries.",
-                "error_code": "GUARDRAIL_BLOCK"
-            }
+WORKER_TOOLS = DATA_TOOLS + TERMINAL_TOOLS
+TERMINAL_TOOL_NAMES = {"return_result", "ask_clarification", "return_error"}
+
+# --- Tool Handlers ---
+
+TOOL_HANDLERS = {
+    "search_and_get_departures": tools.search_and_get_departures,
+    "search_stops": tools.search_stops,
+    "search_routes": tools.search_routes,
+    "get_departures": tools.get_departures,
+    "get_route_directions": tools.get_route_directions,
+}
+
+
+def convert_route_type(args: dict) -> dict:
+    """Convert string route_type to integer enum value."""
+    if "route_type" in args and isinstance(args["route_type"], str):
+        rt = args["route_type"].upper()
+        if rt in RouteType.__members__:
+            args["route_type"] = RouteType[rt].value
+    return args
+
+
+# --- Guardrail ---
+
+GUARDRAIL_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "allow",
+            "description": "Allow: transport queries, greetings, time/weather questions.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
         }
-        
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "block",
+            "description": "Block: coding, creative writing, general knowledge, harmful content.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+]
+
+GUARDRAIL_PROMPT = """You are a content classifier for a Melbourne public transport assistant.
+Call `allow` for transport queries, greetings, time/weather, or responses that make sense in the conversation context.
+Call `block` for coding, trivia, creative writing, or harmful content.
+
+IMPORTANT: Consider conversation history. A reply like "Yes", "The second one", or a station name may seem off-topic in isolation but is valid if it follows a transport-related question."""
+
+
+async def run_guardrail(query: str, session_id: str) -> bool:
+    """Returns True if query is allowed, False if blocked."""
     try:
-        result = await worker_task
-        return result
-    except asyncio.CancelledError:
-        return {"status": "error", "type": "ERROR", "payload": {"message": "Task cancelled"}}
-    except Exception as e:
-        print(f"Worker Failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "status": "success", 
-            "type": "ERROR", 
-            "payload": {
-                "message": "Sorry, I encountered an error processing your request.",
-                "debug": str(e)
-            }
-        }
-
-async def run_guardrail(query: str, session_id: str):
-    """
-    Uses GPT-OSS-Safeguard with Tool Calling to strictly classify requests.
-    """
-    guardrail_tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "allow_request",
-                "description": "Allow the request to proceed if it is related to public transport, travel, time, or general conversation.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "rationale": {"type": "string", "description": "Why this request is safe."}
-                    },
-                    "required": ["rationale"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "block_request",
-                "description": "Block the request if it is unrelated to transport (e.g. coding, creative writing, general knowledge).",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "rationale": {"type": "string", "description": "Why this request is unsafe."}
-                    },
-                    "required": ["rationale"]
-                }
-            }
-        }
-    ]
-
-    try:
-        policy = """# Public Transport Agent Scope Policy
-
-## INSTRUCTIONS
-You are a strict content classifier. You MUST call either `allow_request` or `block_request`.
-
-## DEFINITIONS
-- **Transport Query**: Requests for schedules, departures, routes, directions, or stop locations.
-- **General Interaction**: Greetings, thanks, or simple conversational openers.
-- **Out of Scope**: Requests for coding, creative writing, general knowledge (history, math), or sensitive topics.
-
-## VIOLATES (Call block_request)
-- Requests to write code or explain programming concepts.
-- Requests for creative writing (poems, stories, jokes).
-- General knowledge questions unrelated to travel.
-- Malicious or sensitive content.
-
-## SAFE (Call allow_request)
-- Questions about trains, trams, buses, V/Line.
-- Questions about time, dates, or weather.
-- Navigation or location questions.
-- Standard greetings ("Hi", "Hello")."""
-        
-        messages = [{"role": "system", "content": policy}]
-        
-        # Add History for Context
         history = session_store.get_history(session_id)
+
+        messages = [{"role": "system", "content": GUARDRAIL_PROMPT}]
         messages.extend(history)
-        
         messages.append({"role": "user", "content": query})
 
-        chat_completion = await groq_client.chat.completions.create(
+        response = await groq_client.chat.completions.create(
             model=GUARDRAIL_MODEL,
             messages=messages,
-            tools=guardrail_tools,
-            tool_choice="required", # Force tool use
+            tools=GUARDRAIL_TOOLS,
+            tool_choice="required",
             temperature=0.0,
         )
-        
-        tool_calls = chat_completion.choices[0].message.tool_calls
-        
-        if tool_calls:
-            fn_name = tool_calls[0].function.name
-            args = json.loads(tool_calls[0].function.arguments)
-            rationale = args.get("rationale", "No rationale")
-            print(f"Guardrail Decision: {fn_name} ({rationale})")
-            
-            if fn_name == "allow_request":
-                return True, None
-            elif fn_name == "block_request":
-                return False, rationale
-        
-        print("Guardrail Error: No tool called.")
-        return True, None # Fail Open
-            
+        tool_call = response.choices[0].message.tool_calls[0]
+        return tool_call.function.name == "allow"
     except Exception as e:
-        print(f"Guardrail Error: {e}")
-        return True, None # Fail Open
+        print(f"Guardrail error: {e}")
+        return True  # Fail open
 
-async def run_worker(query: str, session_id: str):
+
+# --- Worker ---
+
+WORKER_PROMPT = """You are a Melbourne public transport assistant. You MUST call a tool for every response.
+
+RULES:
+1. Always call a tool. Never output plain text.
+2. For ambiguous queries (multiple directions/lines possible), call `ask_clarification`.
+3. When you have departure data, call `return_result` with structured info.
+4. Victoria, Australia only. Trains, trams, buses, V/Line.
+5. Use conversation history to understand context (corrections, follow-ups).
+
+DIRECTION LOGIC:
+- "Next train from Richmond" → ambiguous (which line?), ask clarification
+- "Next Pakenham train from Richmond" → clear (Pakenham line = away from city)
+- "Next train to the city from Richmond" → clear (city-bound)
+- "Next 96 tram" → ambiguous (St Kilda or East Brunswick?), ask clarification
+
+ASR CORRECTIONS:
+- User speech may be misrecognized. "Packingham" likely means "Pakenham".
+- If search returns no results, consider asking if they meant a similar station name.
+- Use context from previous messages to resolve ambiguity.
+
+Use data tools to fetch information, then call a terminal tool (return_result, ask_clarification, or return_error)."""
+
+
+async def run_worker(query: str, session_id: str) -> dict:
     """
-    The main agent logic using Kimi-k2.
+    Execute the worker loop. Always returns a structured response.
+    No JSON parsing - all responses come from tool calls.
+    Session history provides context for multi-turn conversations.
     """
     history = session_store.get_history(session_id)
-    
-    system_prompt = """You are a semantic router for a Headless Transport Agent in Melbourne, Australia.
-Your output MUST be a JSON object describing the next state.
-You have access to tools to fetch real-time data.
 
-**CORE RULES:**
-1. **Strict Determinism:** Do not output conversational filler. Output ONLY JSON or Tool Calls.
-2. **Single Direction:** Never provide multiple directions. If ambiguous, use `ask_clarification`.
-3. **Vic Only:** You operate in Victoria, Australia.
-4. **Tram vs Train:** Trams often don't have platform numbers.
-5. **Ambiguity:** If a user says "Next train" and there are multiple lines/directions, you MUST ask for clarification.
-
-**OUTPUT SCHEMA (Final Response):**
-You must eventually output one of these JSON structures:
-
-TYPE A: RESULT (When you have data)
-{
-  "type": "RESULT",
-  "payload": {
-    "destination": "Flinders Street",
-    "departures": [
-      {
-        "time": "10:05",
-        "platform": "4", // or null
-        "status": "ON TIME",
-        "line": "Frankston Line",
-        "minutes_to_depart": 12 // Calculated integer
-      }
-    ],
-    "tts_text": "The next train to Flinders Street departs in 12 minutes from Platform 1."
-  }
-}
-
-TYPE B: CLARIFICATION (When you need more info)
-{
-  "type": "CLARIFICATION",
-  "payload": {
-    "question_text": "Which direction?",
-    "missing_entity": "direction",
-    "options": [
-      { "label": "City", "value": "inbound" },
-      { "label": "Outbound", "value": "outbound" }
-    ]
-  }
-}
-"""
-
-    messages = [{"role": "system", "content": system_prompt}]
+    messages = [{"role": "system", "content": WORKER_PROMPT}]
     messages.extend(history)
     messages.append({"role": "user", "content": query})
-    
-    for _ in range(5): # Max 5 turns
+
+    for turn in range(5):
         response = await groq_client.chat.completions.create(
             model=WORKER_MODEL,
             messages=messages,
-            tools=tools_schema,
-            tool_choice="auto",
-            temperature=0.1
+            tools=WORKER_TOOLS,
+            tool_choice="required",
+            temperature=0.0,
         )
-        
+
         msg = response.choices[0].message
         tool_calls = msg.tool_calls
-        
-        if not tool_calls:
-            content = msg.content
-            try:
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0].strip()
-                
-                data = json.loads(content)
-                
-                session_store.update_history(session_id, "user", query)
-                session_store.update_history(session_id, "assistant", content)
-                
-                return {"status": "success", **data}
-                
-            except json.JSONDecodeError:
-                print(f"JSON Parse Error: {content}")
-                return {
-                    "status": "success",
-                    "type": "ERROR",
-                    "payload": {"message": "Agent output invalid format."}
-                }
-        
-        messages.append(msg)
-        
-        for tool_call in tool_calls:
-            fn_name = tool_call.function.name
-            fn_args = json.loads(tool_call.function.arguments)
-            print(f"Tool Call: {fn_name}({fn_args})")
-            
-            # RouteType Conversion
-            if "route_type" in fn_args and isinstance(fn_args["route_type"], str):
-                try:
-                    r_type_str = fn_args["route_type"].upper()
-                    if r_type_str in RouteType.__members__:
-                        fn_args["route_type"] = RouteType[r_type_str].value
-                        print(f"DEBUG: Converted route_type '{r_type_str}' to {fn_args['route_type']}")
-                except Exception as e:
-                    print(f"DEBUG: Failed to convert route_type: {e}")
 
-            result_str = ""
-            try:
-                if fn_name == "get_departures":
-                    result_str = await tools.get_departures(**fn_args)
-                elif fn_name == "search_stops":
-                    result_str = await tools.search_stops(**fn_args)
-                elif fn_name == "search_routes":
-                    result_str = await tools.search_routes(**fn_args)
-                elif fn_name == "get_route_directions":
-                    result_str = await tools.get_route_directions(**fn_args)
-                elif fn_name == "search_and_get_departures":
-                    result_str = await tools.search_and_get_departures(**fn_args)
+        if not tool_calls:
+            # Should not happen with tool_choice="required"
+            return {"type": "ERROR", "payload": {"message": "No tool called", "tts_text": "Sorry, something went wrong."}}
+
+        messages.append(msg)
+
+        for tc in tool_calls:
+            fn_name = tc.function.name
+            fn_args = json.loads(tc.function.arguments)
+
+            print(f"[Turn {turn}] Tool: {fn_name}({fn_args})")
+
+            # Terminal tools - save to history and return
+            if fn_name in TERMINAL_TOOL_NAMES:
+                # Build a summary of the assistant's response for history
+                if fn_name == "return_result":
+                    assistant_msg = fn_args.get("tts_text", "")
+                    session_store.update_history(session_id, "user", query)
+                    session_store.update_history(session_id, "assistant", assistant_msg)
+                    return {"type": "RESULT", "payload": fn_args}
                 elif fn_name == "ask_clarification":
-                    # Immediate Return for Clarification
-                    return {
-                        "status": "success",
-                        "type": "CLARIFICATION",
-                        "payload": fn_args
-                    }
-                elif fn_name == "configure_button":
-                     result_str = json.dumps({"status": "success", "msg": "Button configured"})
-                else:
-                    result_str = json.dumps({"error": "Unknown tool"})
-            except Exception as e:
-                result_str = json.dumps({"error": str(e)})
-                
+                    assistant_msg = fn_args.get("question_text", "")
+                    session_store.update_history(session_id, "user", query)
+                    session_store.update_history(session_id, "assistant", assistant_msg)
+                    return {"type": "CLARIFICATION", "payload": fn_args}
+                elif fn_name == "return_error":
+                    return {"type": "ERROR", "payload": fn_args}
+
+            # Data tools - execute and continue
+            handler = TOOL_HANDLERS.get(fn_name)
+            if handler:
+                fn_args = convert_route_type(fn_args)
+                try:
+                    result = await handler(**fn_args)
+                except Exception as e:
+                    result = f"Error: {e}"
+            else:
+                result = f"Unknown tool: {fn_name}"
+
             messages.append({
-                "tool_call_id": tool_call.id,
+                "tool_call_id": tc.id,
                 "role": "tool",
                 "name": fn_name,
-                "content": result_str
+                "content": str(result)
             })
-            
-    return {
-        "status": "success",
-        "type": "ERROR",
-        "payload": {"message": "Agent loop limit reached."}
-    }
+
+    return {"type": "ERROR", "payload": {"message": "Max turns reached", "tts_text": "Sorry, I couldn't complete your request."}}
+
+
+# --- Main Entry Point ---
+
+async def run_agent(query: str, session_id: str) -> dict:
+    """
+    Main entry point. Runs guardrail and worker in parallel.
+    Returns structured response dict with type and payload.
+    """
+    guardrail_task = asyncio.create_task(run_guardrail(query, session_id))
+    worker_task = asyncio.create_task(run_worker(query, session_id))
+
+    is_allowed = await guardrail_task
+
+    if not is_allowed:
+        worker_task.cancel()
+        return {
+            "type": "ERROR",
+            "payload": {
+                "message": "I can only help with public transport queries.",
+                "tts_text": "I can only help with public transport queries.",
+                "error_code": "GUARDRAIL_BLOCK"
+            }
+        }
+
+    try:
+        return await worker_task
+    except asyncio.CancelledError:
+        return {"type": "ERROR", "payload": {"message": "Cancelled", "tts_text": "Request cancelled."}}
+    except Exception as e:
+        print(f"Worker error: {e}")
+        return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}
