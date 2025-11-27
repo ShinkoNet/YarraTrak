@@ -7,3 +7,5 @@ groq
 pydantic
 python-multipart
 azure-cognitiveservices-speech
+pytest
+pytest-asyncio
