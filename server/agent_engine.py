@@ -4,16 +4,23 @@ Agent Engine - Pure Tool-Call Architecture
 The worker model MUST always call a tool. No JSON parsing required.
 Terminal tools (return_result, ask_clarification, return_error) end the loop.
 Session context is maintained for multi-turn conversations (ASR corrections, clarifications).
+
+Strict JSON Schema Enforcement:
+- All tool parameters use `additionalProperties: false` for strict validation
+- Terminal tool responses are validated with Pydantic before returning
+- Ensures type-safe, predictable responses from the agent
 """
 
 import asyncio
 import json
 import httpx
 from groq import AsyncGroq, APITimeoutError, APIConnectionError, BadRequestError
+from pydantic import ValidationError
 from . import config
 from . import tools
 from . import session_store
 from .enums import RouteType
+from . import schemas
 
 groq_client = AsyncGroq(api_key=config.GROQ_API_KEY)
 
@@ -21,7 +28,8 @@ groq_client = AsyncGroq(api_key=config.GROQ_API_KEY)
 GUARDRAIL_MODEL = "openai/gpt-oss-safeguard-20b"
 WORKER_MODEL = "moonshotai/kimi-k2-instruct"
 
-# --- Tool Definitions ---
+# --- Tool Definitions with Strict Schemas ---
+# All schemas use `additionalProperties: false` for strict JSON validation
 
 DATA_TOOLS = [
     {
@@ -29,18 +37,8 @@ DATA_TOOLS = [
         "function": {
             "name": "search_and_get_departures",
             "description": "Search for a stop by name and get upcoming departures. Use when user specifies a stop.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Stop name (e.g., 'Richmond', 'Flinders Street')"},
-                    "route_type": {
-                        "type": "string",
-                        "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
-                        "default": "TRAIN"
-                    }
-                },
-                "required": ["query"]
-            }
+            "parameters": schemas.SEARCH_AND_GET_DEPARTURES_SCHEMA,
+            "strict": True
         }
     },
     {
@@ -48,13 +46,8 @@ DATA_TOOLS = [
         "function": {
             "name": "search_stops",
             "description": "Search for stops by name. Returns stop IDs and types.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Stop name to search"}
-                },
-                "required": ["query"]
-            }
+            "parameters": schemas.SEARCH_STOPS_SCHEMA,
+            "strict": True
         }
     },
     {
@@ -62,13 +55,8 @@ DATA_TOOLS = [
         "function": {
             "name": "search_routes",
             "description": "Search for routes/lines by name (e.g., 'Pakenham', 'Sandringham').",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Route name to search"}
-                },
-                "required": ["query"]
-            }
+            "parameters": schemas.SEARCH_ROUTES_SCHEMA,
+            "strict": True
         }
     },
     {
@@ -76,18 +64,8 @@ DATA_TOOLS = [
         "function": {
             "name": "get_departures",
             "description": "Get departures for a known stop ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "stop_id": {"type": "integer", "description": "PTV stop ID"},
-                    "route_type": {
-                        "type": "string",
-                        "enum": ["TRAIN", "TRAM", "BUS", "VLINE", "NIGHT_BUS"],
-                        "default": "TRAIN"
-                    }
-                },
-                "required": ["stop_id"]
-            }
+            "parameters": schemas.GET_DEPARTURES_SCHEMA,
+            "strict": True
         }
     },
     {
@@ -95,13 +73,8 @@ DATA_TOOLS = [
         "function": {
             "name": "get_route_directions",
             "description": "Get available directions for a route ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "route_id": {"type": "integer", "description": "PTV route ID"}
-                },
-                "required": ["route_id"]
-            }
+            "parameters": schemas.GET_ROUTE_DIRECTIONS_SCHEMA,
+            "strict": True
         }
     },
 ]
@@ -112,28 +85,8 @@ TERMINAL_TOOLS = [
         "function": {
             "name": "return_result",
             "description": "Return departure information to the user. Call this when you have the data.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "destination": {"type": "string", "description": "Where the service is heading"},
-                    "line": {"type": "string", "description": "Line/route name (e.g., 'Pakenham Line', 'Route 96')"},
-                    "departures": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "time": {"type": "string", "description": "Departure time (HH:MM)"},
-                                "platform": {"type": ["string", "integer", "null"], "description": "Platform number or null"},
-                                "minutes_to_depart": {"type": "integer", "description": "Minutes until departure"}
-                            },
-                            "required": ["time", "minutes_to_depart"]
-                        },
-                        "minItems": 1
-                    },
-                    "tts_text": {"type": "string", "description": "Natural speech for TTS (e.g., 'Next train in 5 minutes from platform 3')"}
-                },
-                "required": ["destination", "line", "departures", "tts_text"]
-            }
+            "parameters": schemas.RETURN_RESULT_SCHEMA,
+            "strict": True
         }
     },
     {
@@ -141,27 +94,8 @@ TERMINAL_TOOLS = [
         "function": {
             "name": "ask_clarification",
             "description": "Ask user to choose when query is ambiguous (e.g., which direction, which line).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "question_text": {"type": "string", "description": "Question to ask (e.g., 'Which direction?')"},
-                    "missing_entity": {"type": "string", "description": "What's missing: 'direction', 'line', 'stop'"},
-                    "options": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "label": {"type": "string", "description": "Display text"},
-                                "value": {"type": "string", "description": "Value to use if selected"}
-                            },
-                            "required": ["label", "value"]
-                        },
-                        "minItems": 2,
-                        "maxItems": 6
-                    }
-                },
-                "required": ["question_text", "missing_entity", "options"]
-            }
+            "parameters": schemas.ASK_CLARIFICATION_SCHEMA,
+            "strict": True
         }
     },
     {
@@ -169,14 +103,8 @@ TERMINAL_TOOLS = [
         "function": {
             "name": "return_error",
             "description": "Return an error when the request cannot be fulfilled.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "message": {"type": "string", "description": "Error message for the user"},
-                    "tts_text": {"type": "string", "description": "Spoken error message"}
-                },
-                "required": ["message", "tts_text"]
-            }
+            "parameters": schemas.RETURN_ERROR_SCHEMA,
+            "strict": True
         }
     },
 ]
@@ -204,20 +132,39 @@ def convert_route_type(args: dict) -> dict:
     return args
 
 
-def normalize_result_payload(payload: dict) -> dict:
-    """Normalize return_result payload - coerce types for robustness."""
-    if "departures" in payload:
-        for dep in payload["departures"]:
-            # Coerce platform to string (model sometimes passes int)
-            if "platform" in dep and dep["platform"] is not None:
-                dep["platform"] = str(dep["platform"])
-            # Coerce minutes_to_depart to int
-            if "minutes_to_depart" in dep:
-                try:
-                    dep["minutes_to_depart"] = int(dep["minutes_to_depart"])
-                except (ValueError, TypeError):
-                    dep["minutes_to_depart"] = 0
-    return payload
+def validate_terminal_response(fn_name: str, payload: dict) -> tuple[dict, list[str]]:
+    """
+    Validate terminal tool response against strict schema using Pydantic.
+    
+    Returns:
+        Tuple of (validated_payload, validation_errors)
+        - validated_payload: The normalized payload (may have coerced types)
+        - validation_errors: List of validation error messages (empty if valid)
+    """
+    errors = []
+    
+    try:
+        if fn_name == "return_result":
+            validated = schemas.validate_return_result(payload)
+            # Convert back to dict, now with validated/coerced types
+            return validated.model_dump(), errors
+        elif fn_name == "ask_clarification":
+            validated = schemas.validate_ask_clarification(payload)
+            return validated.model_dump(), errors
+        elif fn_name == "return_error":
+            validated = schemas.validate_return_error(payload)
+            return validated.model_dump(), errors
+        else:
+            return payload, [f"Unknown terminal tool: {fn_name}"]
+    except ValidationError as e:
+        # Collect all validation errors
+        for err in e.errors():
+            loc = ".".join(str(x) for x in err["loc"])
+            errors.append(f"{loc}: {err['msg']}")
+        # Return original payload with errors
+        return payload, errors
+
+
 
 
 # --- Guardrail ---
@@ -278,7 +225,7 @@ WORKER_PROMPT = """You are a Melbourne public transport assistant. You MUST call
 RULES:
 1. Always call a tool. Never output plain text - put any explanation in tts_text or question_text.
 2. For ambiguous queries (multiple directions/lines possible), call `ask_clarification`.
-3. When you have departure data, call `return_result` with only ONE departure (the next one). Do not include multiple departures.
+3. When you have departure data, call `return_result` with ONLY the single next departure.
 4. If the requested service isn't available, call `return_result` with available alternatives or `return_error`.
 5. Victoria, Australia only. Trains, trams, buses, V/Line.
 6. Use conversation history to understand context (corrections, follow-ups).
@@ -382,25 +329,38 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
 
             print(f"[Turn {turn}] Tool: {fn_name}({fn_args})")
 
-            # Terminal tools - save to history and return
+            # Terminal tools - validate with Pydantic and return
             if fn_name in TERMINAL_TOOL_NAMES:
+                # Validate response against strict schema
+                validated_payload, validation_errors = validate_terminal_response(fn_name, fn_args)
+                
+                if validation_errors:
+                    print(f"[Turn {turn}] Schema validation errors for {fn_name}: {validation_errors}")
+                    # Log but continue with best-effort response
+                
                 # Build a summary of the assistant's response for history
                 if fn_name == "return_result":
-                    fn_args = normalize_result_payload(fn_args)
-                    assistant_msg = fn_args.get("tts_text", "")
+                    assistant_msg = validated_payload.get("tts_text", "")
                     session_store.update_history(session_id, "user", query)
                     session_store.update_history(session_id, "assistant", assistant_msg)
                     # Include learned stop info for client to store
                     if learned_stop:
-                        fn_args["_stop_info"] = learned_stop
-                    return {"type": "RESULT", "payload": fn_args}
+                        validated_payload["_stop_info"] = learned_stop
+                    # Include validation status for debugging
+                    if validation_errors:
+                        validated_payload["_validation_errors"] = validation_errors
+                    return {"type": "RESULT", "payload": validated_payload}
                 elif fn_name == "ask_clarification":
-                    assistant_msg = fn_args.get("question_text", "")
+                    assistant_msg = validated_payload.get("question_text", "")
                     session_store.update_history(session_id, "user", query)
                     session_store.update_history(session_id, "assistant", assistant_msg)
-                    return {"type": "CLARIFICATION", "payload": fn_args}
+                    if validation_errors:
+                        validated_payload["_validation_errors"] = validation_errors
+                    return {"type": "CLARIFICATION", "payload": validated_payload}
                 elif fn_name == "return_error":
-                    return {"type": "ERROR", "payload": fn_args}
+                    if validation_errors:
+                        validated_payload["_validation_errors"] = validation_errors
+                    return {"type": "ERROR", "payload": validated_payload}
 
             # Data tools - execute and continue
             handler = TOOL_HANDLERS.get(fn_name)

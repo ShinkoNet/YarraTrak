@@ -276,11 +276,14 @@ async def voice_query(
     # Extract learned_stop if this was a successful query
     learned_stop = None
     if result.get("type") == "RESULT":
-        departures = payload.get("departures", [])
-        if departures:
-            payload["departures"] = [departures[0]]
-            if departures[0].get("minutes_to_depart") is not None:
-                payload["vibration"] = calculate_vibration(departures[0]["minutes_to_depart"])
+        departure = payload.get("departure")
+        if departure:
+            # Ensure it's a dict (Pydantic model dump)
+            if hasattr(departure, "model_dump"):
+                departure = departure.model_dump()
+            
+            if departure.get("minutes_to_depart") is not None:
+                payload["vibration"] = calculate_vibration(departure["minutes_to_depart"])
 
         # Return learned stop for client to store
         if payload.get("_stop_info"):
@@ -327,11 +330,14 @@ async def text_query(request: AgentRequest, background_tasks: BackgroundTasks):
     # Add vibration pattern for results and trim to first departure only
     learned_stop = None
     if result.get("type") == "RESULT":
-        departures = payload.get("departures", [])
-        if departures:
-            payload["departures"] = [departures[0]]
-            if departures[0].get("minutes_to_depart") is not None:
-                payload["vibration"] = calculate_vibration(departures[0]["minutes_to_depart"])
+        departure = payload.get("departure")
+        if departure:
+            # Ensure it's a dict
+            if hasattr(departure, "model_dump"):
+                departure = departure.model_dump()
+
+            if departure.get("minutes_to_depart") is not None:
+                payload["vibration"] = calculate_vibration(departure["minutes_to_depart"])
 
         # Return learned stop for client to store
         if payload.get("_stop_info"):
