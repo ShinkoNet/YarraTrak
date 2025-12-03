@@ -101,6 +101,10 @@ class TestAgentScenarios:
         Run a single scenario and verify the response type.
         Hits the real Groq API.
         """
+        # Skip guardrail tests if disabled
+        if scenario["name"].startswith("guardrail_") and not config.ENABLE_GUARDRAIL:
+            pytest.skip("Guardrail tests skipped when ENABLE_GUARDRAIL=False")
+
         result = await run_agent(scenario["query"], session_id)
 
         # Check response type
@@ -112,8 +116,6 @@ class TestAgentScenarios:
 
         # Check error code if specified (only when guardrail is enabled)
         if "expected_error_code" in scenario:
-            if not config.ENABLE_GUARDRAIL:
-                pytest.skip("Guardrail tests skipped when ENABLE_GUARDRAIL=False")
             assert result["payload"].get("error_code") == scenario["expected_error_code"]
 
         # Check entity type for clarifications
