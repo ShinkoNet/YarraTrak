@@ -225,3 +225,33 @@ button {
 .chip:hover {
     background-color: #45a049;
 }
+
+/* Clarification Options (Pebble style) */
+.clarify-options {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 10px;
+}
+
+.clarify-btn {
+    background-color: #000;
+    color: #fff;
+    border: none;
+    padding: 8px 5px;
+    font-family: inherit;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    font-size: 12px;
+    transition: background-color 0.1s;
+}
+
+.clarify-btn:active,
+.clarify-btn:hover {
+    background-color: #333;
+}
+
+.clarify-btn::before {
+    content: "▸ ";
+}

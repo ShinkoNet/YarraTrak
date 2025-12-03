@@ -176,11 +176,12 @@ async function sendAudioToVoice(audioBlob) {
     formData.append("session_id", currentSessionId);
     formData.append("query_history", JSON.stringify(getQueryHistory()));
 
-    // Show Close Button, Hide Stealth Controls
+    // Show Close Button, Hide Stealth Controls and previous clarify options
     const closeBtn = document.getElementById('btn-close');
     const stealthControls = document.getElementById('stealth-controls');
     if (closeBtn) closeBtn.style.display = 'block';
     if (stealthControls) stealthControls.style.display = 'none';
+    clearClarifyOptions();
 
     try {
         log("Processing...", "system");
@@ -275,11 +276,12 @@ async function sendAgentQuery(overrideQuery = null) {
     if (!overrideQuery) log(`User: ${query}`, "user"); // Don't log again if it's a chip click
     updateStatus("Thinking...");
 
-    // Show Close Button, Hide Stealth Controls
+    // Show Close Button, Hide Stealth Controls and previous clarify options
     const closeBtn = document.getElementById('btn-close');
     const stealthControls = document.getElementById('stealth-controls');
     if (closeBtn) closeBtn.style.display = 'block';
     if (stealthControls) stealthControls.style.display = 'none';
+    clearClarifyOptions();
 
     try {
         const res = await fetch(`${API_BASE}/query`, {
@@ -340,29 +342,42 @@ async function sendAgentQuery(overrideQuery = null) {
 }
 
 function renderChips(options) {
+    // Render in Pebble screen (clarify-options container)
+    const clarifyContainer = document.getElementById('clarify-options');
+    clarifyContainer.innerHTML = '';
+    clarifyContainer.style.display = 'flex';
+
+    options.forEach(opt => {
+        const btn = document.createElement('button');
+        btn.className = "clarify-btn";
+        btn.innerText = opt.label;
+
+        btn.onclick = () => {
+            // Hide options after selection
+            clearClarifyOptions();
+            // Send selection as new query
+            log(`Selected: ${opt.label}`, "user");
+            sendAgentQuery(opt.value);
+        };
+
+        clarifyContainer.appendChild(btn);
+    });
+
+    // Also render in debug console for reference
     const box = document.getElementById('agent-log');
     const chipContainer = document.createElement('div');
     chipContainer.className = "chip-container";
-    chipContainer.style.marginTop = "10px";
 
     options.forEach(opt => {
         const chip = document.createElement('button');
         chip.className = "chip";
         chip.innerText = opt.label;
-        chip.style.marginRight = "5px";
-        chip.style.padding = "5px 10px";
-        chip.style.borderRadius = "15px";
-        chip.style.border = "none";
-        chip.style.background = "#4CAF50";
-        chip.style.color = "white";
-        chip.style.cursor = "pointer";
 
         chip.onclick = () => {
-            // Remove chips after selection
             chipContainer.remove();
-            // Send selection as new query
+            clearClarifyOptions();
             log(`Selected: ${opt.label}`, "user");
-            sendAgentQuery(opt.value); // Send the value (e.g. "inbound")
+            sendAgentQuery(opt.value);
         };
 
         chipContainer.appendChild(chip);
@@ -370,6 +385,14 @@ function renderChips(options) {
 
     box.appendChild(chipContainer);
     box.scrollTop = box.scrollHeight;
+}
+
+function clearClarifyOptions() {
+    const clarifyContainer = document.getElementById('clarify-options');
+    if (clarifyContainer) {
+        clarifyContainer.innerHTML = '';
+        clarifyContainer.style.display = 'none';
+    }
 }
 
 async function playAudio(ticketId) {
@@ -414,6 +437,7 @@ async function closeConversation() {
     if (closeBtn) closeBtn.style.display = 'none';
     if (stealthControls) stealthControls.style.display = 'block';
 
+    clearClarifyOptions();
     updateStatus("Ready");
     // Note: session ID persists for query history (speculative fetch)
     // Only the UI/conversation context is cleared
