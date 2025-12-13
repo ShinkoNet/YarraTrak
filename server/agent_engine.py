@@ -271,6 +271,20 @@ ERROR HANDLING:
 
 Use data tools to fetch information, then call a terminal tool (return_result, ask_clarification, or return_error)."""
 
+# Inject known station names to help with spelling/ASR
+try:
+    _db_path = os.path.join(os.path.dirname(__file__), "stations_db.json")
+    if os.path.exists(_db_path):
+        with open(_db_path, "r") as f:
+            _st_data = json.load(f)
+            # Just names, comma separated
+            _st_names = [s["name"].replace(" Station", "") for s in _st_data.get("stations", [])]
+            # Limit to ~300 to be safe (we have ~250)
+            _st_list = ", ".join(_st_names[:300])
+            WORKER_PROMPT += f"\n\nKNOWN STATIONS (for spelling correction):\n{_st_list}"
+except Exception as e:
+    print(f"Failed to load station names for prompt: {e}")
+
 
 async def run_worker(query: str, session_id: str, prefetched_context: str = "") -> dict:
     """

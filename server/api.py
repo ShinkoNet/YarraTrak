@@ -219,6 +219,8 @@ async def get_stations(type: str = "train"):
         target_types = [0, 3] # Default to Train+Vline
         if type == "tram":
             target_types = [1]
+        elif type == "all":
+            target_types = [0, 1, 3]
             
         filtered = [
             s for s in stations 

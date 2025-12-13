@@ -172,62 +172,71 @@
             font-size: 13px;
             padding: 10px;
         }
+
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .header-row h1 {
+            margin: 0;
+        }
+
+        .small-btn {
+            width: auto;
+            padding: 8px 12px;
+            font-size: 13px;
+            margin-top: 0;
+        }
+
+        .form-row {
+            margin-bottom: 15px;
+        }
+
+        select {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid #444;
+            border-radius: 8px;
+            background: #2a2a2a;
+            color: #fff;
+            -webkit-appearance: none;
+            /* Remove default arrow on iOS */
+            -moz-appearance: none;
+            /* Remove default arrow on Firefox */
+            appearance: none;
+            /* Remove default arrow */
+            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13.2-5.4H18.6c-5%200-9.3%201.8-13.2%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2013.2l128%20128c3.9%203.9%208.7%205.8%2013.2%205.8s9.3-1.9%2013.2-5.8l128-128c3.8-3.9%205.7-8.7%205.7-13.2%200-5-1.9-9.3-5.7-13.2z%22%2F%3E%3C%2Fsvg%3E');
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 12px;
+        }
     </style>
 </head>
 
 <body>
-    <h1>🚆 PTV Notify</h1>
+    <div class="header-row">
+        <h1>🚆 PTV Notify</h1>
+        <button id="update_data_btn" class="small-btn">Update Station Data</button>
+    </div>
 
     <div class="form-group">
         <label for="server_url">Server URL</label>
         <input type="text" id="server_url" placeholder="http://192.168.1.100:8000">
-        <div class="hint">Your PTV Notify server address</div>
     </div>
 
     <h2>Configure Buttons</h2>
 
-    <div class="button-config" id="btn1_config">
-        <div class="button-header">
-            <h3>Button 1</h3>
-            <span class="button-status" id="btn1_status">Not set</span>
-        </div>
-        <div class="search-box">
-            <input type="text" id="btn1_search" placeholder="Search station...">
-            <button onclick="searchStop(1)">🔍</button>
-        </div>
-        <div class="search-results" id="btn1_results"></div>
-    </div>
-
-    <div class="button-config" id="btn2_config">
-        <div class="button-header">
-            <h3>Button 2</h3>
-            <span class="button-status" id="btn2_status">Not set</span>
-        </div>
-        <div class="search-box">
-            <input type="text" id="btn2_search" placeholder="Search station...">
-            <button onclick="searchStop(2)">🔍</button>
-        </div>
-        <div class="search-results" id="btn2_results"></div>
-    </div>
-
-    <div class="button-config" id="btn3_config">
-        <div class="button-header">
-            <h3>Button 3</h3>
-            <span class="button-status" id="btn3_status">Not set</span>
-        </div>
-        <div class="search-box">
-            <input type="text" id="btn3_search" placeholder="Search station...">
-            <button onclick="searchStop(3)">🔍</button>
-        </div>
-        <div class="search-results" id="btn3_results"></div>
-    </div>
+    <div id="buttons_container"></div>
 
     <button id="save">Save Settings</button>
 
     <script>
-        // Get server URL from current page or use default
         var serverBase = window.location.origin;
-        var stations = []; // Local cache of stations
+        var stations = [];
 
         function getOptions() {
             try {
@@ -239,150 +248,223 @@
 
         var options = getOptions();
 
-        // Load existing values
+        // Init UI
         var serverUrlEl = document.getElementById('server_url');
         if (options.server_url) {
             serverUrlEl.value = options.server_url;
             serverBase = options.server_url;
         }
 
-        // Display configured buttons
+        // Render Button Configs
+        var container = document.getElementById('buttons_container');
         for (var i = 1; i <= 3; i++) {
-            updateButtonStatus(i);
+            var html = `
+                <div class="button-config" id="btn${i}_config">
+                    <div class="button-header">
+                        <h3>Button ${i}</h3>
+                        <span class="button-status" id="btn${i}_status">Not set</span>
+                    </div>
+                    
+                    <div class="form-row">
+                        <label>Type</label>
+                        <select id="btn${i}_type" onchange="updateType(${i})">
+                            <option value="0">Metro Train</option>
+                            <option value="3">V/Line Train</option>
+                            <option value="1">Tram</option>
+                        </select>
+                    </div>
+
+                    <div class="form-row">
+                        <label>Start Station</label>
+                        <div class="search-box">
+                            <input type="text" id="btn${i}_start_search" placeholder="Search start..." autocomplete="off">
+                            <div class="search-results" id="btn${i}_start_results"></div>
+                            <input type="hidden" id="btn${i}_start_id">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <label>Destination (Optional)</label>
+                        <div class="search-box">
+                            <input type="text" id="btn${i}_dest_search" placeholder="Search destination..." autocomplete="off">
+                            <div class="search-results" id="btn${i}_dest_results"></div>
+                            <input type="hidden" id="btn${i}_dest_id">
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', html);
         }
 
-        // Initial load of station data
-        loadStationData();
-
-        async function loadStationData() {
-            var base = serverUrlEl.value.trim() || serverBase;
-            // Remove trailing slash if present
-            if (base.endsWith('/')) base = base.slice(0, -1);
-
-            console.log("Loading stations from " + base);
-            try {
-                var res = await fetch(base + '/api/v1/stations');
-                var data = await res.json();
-                if (data.stations) {
-                    stations = data.stations;
-                    console.log("Loaded " + stations.length + " stations");
-                }
-            } catch (e) {
-                console.error("Failed to load stations:", e);
-                // Don't alert on load, just log
-            }
-        }
-
-        function updateButtonStatus(btnNum) {
-            var name = options['btn' + btnNum + '_name'];
-            var statusEl = document.getElementById('btn' + btnNum + '_status');
-            if (name) {
-                statusEl.textContent = name;
-                statusEl.classList.add('configured');
-            } else {
-                statusEl.textContent = 'Not set';
-                statusEl.classList.remove('configured');
-            }
-        }
-
-        // Client-side search
-        function searchStop(btnNum) {
-            var searchEl = document.getElementById('btn' + btnNum + '_search');
-            var resultsEl = document.getElementById('btn' + btnNum + '_results');
-            var query = searchEl.value.trim().toLowerCase();
-
-            if (stations.length === 0) {
-                resultsEl.innerHTML = '<div class="loading">No station data loaded. <button class="clear-btn" onclick="loadStationData()">Reload Data</button></div>';
-                return;
-            }
-
-            if (query.length < 2) {
-                resultsEl.innerHTML = '<div class="loading">Enter at least 2 characters</div>';
-                return;
-            }
-
-            // Filter stations locally
-            var matches = stations.filter(function (s) {
-                return s.name.toLowerCase().includes(query);
-            });
-
-            // Limit to 10
-            matches = matches.slice(0, 10);
-
-            if (matches.length > 0) {
-                resultsEl.innerHTML = matches.map(function (stop) {
-                    var typeName = stop.route_type === 0 ? "Train" : (stop.route_type === 1 ? "Tram" : "V/Line");
-                    // Escape single quotes in name for the onclick handler
-                    var safeStop = JSON.stringify(stop).replace(/'/g, "&#39;");
-                    return '<div class="search-result" onclick=\'selectStop(' + btnNum + ',' + safeStop + ')\'>' +
-                        '<span class="name">' + stop.name + '</span>' +
-                        '<span class="type">' + typeName + '</span>' +
-                        '</div>';
-                }).join('');
-            } else {
-                resultsEl.innerHTML = '<div class="loading">No stations found</div>';
-            }
-        }
-
-        function selectStop(btnNum, stop) {
-            options['btn' + btnNum + '_name'] = stop.name;
-            options['btn' + btnNum + '_stop_id'] = stop.stop_id;
-            options['btn' + btnNum + '_route_type'] = stop.route_type;
-            // Clear direction_id for simplicity (gets all directions)
-            delete options['btn' + btnNum + '_direction_id'];
-
-            // Store coordinates as well if we have them, could be useful later
-            if (stop.latitude) options['btn' + btnNum + '_lat'] = stop.latitude;
-            if (stop.longitude) options['btn' + btnNum + '_lon'] = stop.longitude;
-
-            updateButtonStatus(btnNum);
-            document.getElementById('btn' + btnNum + '_results').innerHTML =
-                '<div class="loading">✓ Selected: ' + stop.name + '</div>' +
-                '<button class="clear-btn" onclick="clearButton(' + btnNum + ')">Clear</button>';
-            document.getElementById('btn' + btnNum + '_search').value = '';
-        }
-
-        function clearButton(btnNum) {
-            delete options['btn' + btnNum + '_name'];
-            delete options['btn' + btnNum + '_stop_id'];
-            delete options['btn' + btnNum + '_route_type'];
-            delete options['btn' + btnNum + '_direction_id'];
-            updateButtonStatus(btnNum);
-            document.getElementById('btn' + btnNum + '_results').innerHTML = '';
-        }
-
-        // Handle Enter key in search boxes
+        // Restore values
         for (var i = 1; i <= 3; i++) {
-            (function (btnNum) {
-                document.getElementById('btn' + btnNum + '_search').addEventListener('keypress', function (e) {
-                    if (e.key === 'Enter') searchStop(btnNum);
-                });
-                // Also search on input for "autocomplete" feel
-                document.getElementById('btn' + btnNum + '_search').addEventListener('input', function (e) {
-                    if (this.value.length >= 2) searchStop(btnNum);
-                });
-            })(i);
+            if (options['btn' + i + '_route_type'] !== undefined) {
+                document.getElementById('btn' + i + '_type').value = options['btn' + i + '_route_type'];
+            }
+            if (options['btn' + i + '_stop_id']) {
+                document.getElementById('btn' + i + '_start_id').value = options['btn' + i + '_stop_id'];
+                document.getElementById('btn' + i + '_start_search').value = options['btn' + i + '_name'] || '';
+            }
+            // We interpret "Destination" as a second station for now, storing as _dest_id
+            if (options['btn' + i + '_dest_id']) {
+                document.getElementById('btn' + i + '_dest_id').value = options['btn' + i + '_dest_id'];
+                document.getElementById('btn' + i + '_dest_search').value = options['btn' + i + '_dest_name'] || '';
+            }
+            updateStatus(i);
         }
 
-        // Reload data if server URL changes (on blur)
-        serverUrlEl.addEventListener('blur', function () {
-            var url = this.value.trim();
-            if (url && url !== serverBase) {
-                loadStationData();
-            }
-        });
+        // Event Listeners
+        document.getElementById('update_data_btn').addEventListener('click', loadStationData);
 
         document.getElementById('save').addEventListener('click', function () {
             var serverUrl = serverUrlEl.value.trim();
-
             if (!serverUrl) {
                 alert('Please enter a server URL');
                 return;
             }
 
-            options.server_url = serverUrl;
-            location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(options));
+            var newOptions = { server_url: serverUrl };
+            for (var i = 1; i <= 3; i++) {
+                var startId = document.getElementById('btn' + i + '_start_id').value;
+                if (startId) {
+                    newOptions['btn' + i + '_stop_id'] = parseInt(startId);
+                    newOptions['btn' + i + '_name'] = document.getElementById('btn' + i + '_start_search').value;
+                    newOptions['btn' + i + '_route_type'] = parseInt(document.getElementById('btn' + i + '_type').value);
+
+                    var destId = document.getElementById('btn' + i + '_dest_id').value;
+                    if (destId) {
+                        newOptions['btn' + i + '_dest_id'] = parseInt(destId);
+                        newOptions['btn' + i + '_dest_name'] = document.getElementById('btn' + i + '_dest_search').value;
+                    }
+                }
+            }
+
+            location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
         });
+
+        // Search Logic
+        function setupSearch(input, results, hiddenId, btnNum) {
+            input.addEventListener('input', function () {
+                var query = this.value.trim().toLowerCase();
+                var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
+
+                if (query.length < 2) {
+                    results.innerHTML = '';
+                    results.style.display = 'none';
+                    return;
+                }
+
+                if (stations.length === 0) {
+                    results.innerHTML = '<div class="loading">No data</div>';
+                    results.style.display = 'block';
+                    return;
+                }
+
+                var matches = stations.filter(function (s) {
+                    return s.route_type === type && s.name.toLowerCase().includes(query);
+                }).slice(0, 10);
+
+                if (matches.length > 0) {
+                    results.innerHTML = matches.map(function (s) {
+                        var safeS = JSON.stringify(s).replace(/'/g, "&#39;");
+                        return `<div class="search-result" onclick='selectStation("${input.id}", "${results.id}", "${hiddenId.id}", ${safeS}, ${btnNum})'>
+                            <span class="name">${s.name}</span>
+                        </div>`;
+                    }).join('');
+                    results.style.display = 'block';
+                } else {
+                    results.innerHTML = '<div class="loading">No matches</div>';
+                    results.style.display = 'block';
+                }
+            });
+
+            // Hide on blur (delayed)
+            input.addEventListener('blur', function () {
+                setTimeout(() => results.style.display = 'none', 200);
+            });
+
+            // Clear hidden ID on execute edit
+            input.addEventListener('keydown', function () {
+                hiddenId.value = '';
+                updateStatus(btnNum);
+            });
+        }
+
+        // Apply setup to all inputs
+        for (var i = 1; i <= 3; i++) {
+            setupSearch(
+                document.getElementById(`btn${i}_start_search`),
+                document.getElementById(`btn${i}_start_results`),
+                document.getElementById(`btn${i}_start_id`),
+                i
+            );
+            setupSearch(
+                document.getElementById(`btn${i}_dest_search`),
+                document.getElementById(`btn${i}_dest_results`),
+                document.getElementById(`btn${i}_dest_id`),
+                i
+            );
+        }
+
+        window.selectStation = function (inputId, resultsId, hiddenIdStr, stop, btnNum) {
+            document.getElementById(inputId).value = stop.name;
+            document.getElementById(hiddenIdStr).value = stop.stop_id;
+            document.getElementById(resultsId).style.display = 'none';
+            updateStatus(btnNum);
+        };
+
+        window.updateType = function (btnNum) {
+            // Clear selections if type changes?
+            // Maybe not, but they might be invalid.
+            // For now just let user search again.
+            document.getElementById(`btn${btnNum}_start_search`).value = '';
+            document.getElementById(`btn${btnNum}_start_id`).value = '';
+            document.getElementById(`btn${btnNum}_dest_search`).value = '';
+            document.getElementById(`btn${btnNum}_dest_id`).value = '';
+            updateStatus(btnNum);
+        };
+
+        function updateStatus(i) {
+            var start = document.getElementById(`btn${i}_start_id`).value;
+            var status = document.getElementById(`btn${i}_status`);
+
+            if (start) {
+                status.textContent = "Configured";
+                status.classList.add('configured');
+            } else {
+                status.textContent = "Not set";
+                status.classList.remove('configured');
+            }
+        }
+
+        async function loadStationData() {
+            var btn = document.getElementById('update_data_btn');
+            btn.textContent = "Loading...";
+            btn.disabled = true;
+
+            var base = serverUrlEl.value.trim() || serverBase;
+            if (base.endsWith('/')) base = base.slice(0, -1);
+
+            try {
+                var res = await fetch(base + '/api/v1/stations?type=all'); // Fetch all (train+tram+vline)
+                var data = await res.json();
+                if (data.stations) {
+                    stations = data.stations;
+                    console.log("Loaded " + stations.length + " stations");
+                    btn.textContent = "Data Updated (" + stations.length + ")";
+                } else {
+                    btn.textContent = "No Data Found";
+                }
+            } catch (e) {
+                console.error(e);
+                btn.textContent = "Update Failed";
+            }
+            setTimeout(() => { btn.disabled = false; btn.textContent = "Update Station Data"; }, 2000);
+        }
+
+        // Auto load on start
+        loadStationData();
+
     </script>
 </body>
 
