@@ -238,10 +238,8 @@
         <button id="debug_defaults" style="background: #444; margin-top: 0;">Load Dev Defaults</button>
     </div>
 
-    <div class="form-group">
-        <label for="server_url">Server URL</label>
-        <input type="text" id="server_url" placeholder="http://192.168.1.100:8000">
-    </div>
+    <!-- Server URL is auto-detected, hidden from user -->
+    <input type="hidden" id="server_url">
 
     <h2>Configure Buttons</h2>
 
@@ -251,7 +249,9 @@
 
     <script>
         var serverBase = window.location.origin;
-        var stations = [];
+        // Separate station arrays by route type for lazy loading
+        var stationsByType = { 0: [], 1: [], 3: [] }; // 0=train, 1=tram, 3=vline
+        var loadedTypes = {};
 
         function getOptions() {
             try {
@@ -301,9 +301,10 @@
                     <div class="form-row">
                         <label>Destination</label>
                         <div class="search-box">
-                            <input type="text" id="btn${i}_dest_search" placeholder="Search destination..." autocomplete="off">
+                            <input type="text" id="btn${i}_dest_search" placeholder="Select start first..." autocomplete="off" disabled>
                             <div class="search-results" id="btn${i}_dest_results"></div>
                             <input type="hidden" id="btn${i}_dest_id">
+                            <input type="hidden" id="btn${i}_direction_id">
                         </div>
                     </div>
                 </div>
@@ -320,16 +321,21 @@
                 document.getElementById('btn' + i + '_start_id').value = options['btn' + i + '_stop_id'];
                 document.getElementById('btn' + i + '_start_search').value = options['btn' + i + '_name'] || '';
             }
-            // We interpret "Destination" as a second station for now, storing as _dest_id
             if (options['btn' + i + '_dest_id']) {
                 document.getElementById('btn' + i + '_dest_id').value = options['btn' + i + '_dest_id'];
                 document.getElementById('btn' + i + '_dest_search').value = options['btn' + i + '_dest_name'] || '';
+                document.getElementById('btn' + i + '_dest_search').disabled = false;
+            }
+            if (options['btn' + i + '_direction_id']) {
+                document.getElementById('btn' + i + '_direction_id').value = options['btn' + i + '_direction_id'];
             }
             updateStatus(i);
         }
 
         // Event Listeners
-        document.getElementById('update_data_btn').addEventListener('click', loadStationData);
+        document.getElementById('update_data_btn').addEventListener('click', function () {
+            loadStationData(0); // Load train by default
+        });
 
         // Helper to get query parameters
         function getQueryParam(name) {
@@ -348,6 +354,7 @@
             for (var i = 1; i <= 3; i++) {
                 var startId = document.getElementById('btn' + i + '_start_id').value;
                 var destId = document.getElementById('btn' + i + '_dest_id').value;
+                var directionId = document.getElementById('btn' + i + '_direction_id').value;
 
                 if (startId) {
                     if (!destId) {
@@ -360,6 +367,11 @@
 
                     newOptions['btn' + i + '_dest_id'] = parseInt(destId);
                     newOptions['btn' + i + '_dest_name'] = document.getElementById('btn' + i + '_dest_search').value;
+
+                    // Include resolved direction_id!
+                    if (directionId) {
+                        newOptions['btn' + i + '_direction_id'] = parseInt(directionId);
+                    }
                 }
             }
 
@@ -371,11 +383,71 @@
             }
         });
 
-        // Search Logic
-        function setupSearch(input, results, hiddenId, btnNum) {
+        // Get stations for a start station that share a route (for destination filtering)
+        function getDestinationsForStart(startStopId, routeType) {
+            var stations = stationsByType[routeType] || [];
+            var startStation = stations.find(s => s.stop_id == startStopId);
+            if (!startStation || !startStation.routes) return [];
+
+            // Get all route IDs the start station is on
+            var startRouteIds = Object.keys(startStation.routes);
+
+            // Find all OTHER stations on these routes
+            var destinations = [];
+            stations.forEach(function (s) {
+                if (s.stop_id == startStopId) return; // Skip start itself
+                if (!s.routes) return;
+
+                // Check if this station shares any route with start
+                var sharedRoute = startRouteIds.find(r => s.routes[r]);
+                if (sharedRoute) {
+                    destinations.push({
+                        ...s,
+                        _sharedRoute: sharedRoute // Track which route they share
+                    });
+                }
+            });
+
+            return destinations;
+        }
+
+        // Resolve direction_id based on stop sequences
+        function resolveDirection(startStopId, destStopId, routeType) {
+            var stations = stationsByType[routeType] || [];
+            var startStation = stations.find(s => s.stop_id == startStopId);
+            var destStation = stations.find(s => s.stop_id == destStopId);
+
+            if (!startStation || !destStation || !startStation.routes || !destStation.routes) {
+                return null;
+            }
+
+            // Find a shared route
+            var startRoutes = Object.keys(startStation.routes);
+            var sharedRoute = startRoutes.find(r => destStation.routes[r]);
+            if (!sharedRoute) return null;
+
+            // Get directions for this route from start station
+            var dirs = startStation.routes[sharedRoute].dirs;
+
+            // Find direction where start.seq < dest.seq
+            for (var dirId in dirs) {
+                var startSeq = dirs[dirId].seq;
+                var destSeq = destStation.routes[sharedRoute]?.dirs?.[dirId]?.seq;
+
+                if (startSeq !== undefined && destSeq !== undefined && startSeq < destSeq) {
+                    return parseInt(dirId);
+                }
+            }
+
+            return null;
+        }
+
+        // Search Logic - for START station (searches all stations of type)
+        function setupStartSearch(input, results, hiddenId, btnNum) {
             input.addEventListener('input', function () {
                 var query = this.value.trim().toLowerCase();
                 var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
+                var stations = stationsByType[type] || [];
 
                 if (query.length < 2) {
                     results.innerHTML = '';
@@ -384,50 +456,126 @@
                 }
 
                 if (stations.length === 0) {
-                    results.innerHTML = '<div class="loading">No data</div>';
+                    results.innerHTML = '<div class="loading">Loading data...</div>';
                     results.style.display = 'block';
+                    loadStationData(type);
                     return;
                 }
 
                 var matches = stations.filter(function (s) {
-                    return s.route_type === type && s.name.toLowerCase().includes(query);
+                    return s.name.toLowerCase().includes(query);
                 }).slice(0, 10);
 
                 if (matches.length > 0) {
                     results.innerHTML = matches.map(function (s) {
-                        var safeS = JSON.stringify(s).replace(/'/g, "&#39;");
-                        return `<div class="search-result" onclick='selectStation("${input.id}", "${results.id}", "${hiddenId.id}", ${safeS}, ${btnNum})'>
+                        return `<div class="search-result" data-stop-id="${s.stop_id}">
                             <span class="name">${s.name}</span>
+                            <span class="type">${s.suburb || ''}</span>
                         </div>`;
                     }).join('');
                     results.style.display = 'block';
+
+                    // Add click handlers
+                    results.querySelectorAll('.search-result').forEach(function (el) {
+                        el.addEventListener('click', function () {
+                            var stopId = this.dataset.stopId;
+                            var stop = stations.find(s => s.stop_id == stopId);
+                            if (stop) {
+                                selectStartStation(input.id, results.id, hiddenId.id, stop, btnNum);
+                            }
+                        });
+                    });
                 } else {
                     results.innerHTML = '<div class="loading">No matches</div>';
                     results.style.display = 'block';
                 }
             });
 
-            // Hide on blur (delayed)
             input.addEventListener('blur', function () {
                 setTimeout(() => results.style.display = 'none', 200);
             });
 
-            // Clear hidden ID on execute edit
             input.addEventListener('keydown', function () {
                 hiddenId.value = '';
+                // Also clear destination when start changes
+                document.getElementById('btn' + btnNum + '_dest_search').value = '';
+                document.getElementById('btn' + btnNum + '_dest_id').value = '';
+                document.getElementById('btn' + btnNum + '_dest_search').disabled = true;
+                document.getElementById('btn' + btnNum + '_direction_id').value = '';
+                updateStatus(btnNum);
+            });
+        }
+
+        // Search Logic - for DESTINATION (only shows stations on same route as start)
+        function setupDestSearch(input, results, hiddenId, btnNum) {
+            input.addEventListener('input', function () {
+                var query = this.value.trim().toLowerCase();
+                var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
+                var startId = document.getElementById('btn' + btnNum + '_start_id').value;
+
+                if (!startId) {
+                    results.innerHTML = '<div class="loading">Select start first</div>';
+                    results.style.display = 'block';
+                    return;
+                }
+
+                if (query.length < 1) {
+                    results.innerHTML = '';
+                    results.style.display = 'none';
+                    return;
+                }
+
+                var destinations = getDestinationsForStart(parseInt(startId), type);
+
+                var matches = destinations.filter(function (s) {
+                    return s.name.toLowerCase().includes(query);
+                }).slice(0, 10);
+
+                if (matches.length > 0) {
+                    results.innerHTML = matches.map(function (s) {
+                        var routeName = s.routes[s._sharedRoute]?.name || '';
+                        return `<div class="search-result" data-stop-id="${s.stop_id}">
+                            <span class="name">${s.name}</span>
+                            <span class="type">${routeName}</span>
+                        </div>`;
+                    }).join('');
+                    results.style.display = 'block';
+
+                    results.querySelectorAll('.search-result').forEach(function (el) {
+                        el.addEventListener('click', function () {
+                            var stopId = this.dataset.stopId;
+                            var stop = destinations.find(s => s.stop_id == stopId);
+                            if (stop) {
+                                selectDestStation(input.id, results.id, hiddenId.id, stop, btnNum);
+                            }
+                        });
+                    });
+                } else {
+                    results.innerHTML = '<div class="loading">No destinations on this route</div>';
+                    results.style.display = 'block';
+                }
+            });
+
+            input.addEventListener('blur', function () {
+                setTimeout(() => results.style.display = 'none', 200);
+            });
+
+            input.addEventListener('keydown', function () {
+                hiddenId.value = '';
+                document.getElementById('btn' + btnNum + '_direction_id').value = '';
                 updateStatus(btnNum);
             });
         }
 
         // Apply setup to all inputs
         for (var i = 1; i <= 3; i++) {
-            setupSearch(
+            setupStartSearch(
                 document.getElementById(`btn${i}_start_search`),
                 document.getElementById(`btn${i}_start_results`),
                 document.getElementById(`btn${i}_start_id`),
                 i
             );
-            setupSearch(
+            setupDestSearch(
                 document.getElementById(`btn${i}_dest_search`),
                 document.getElementById(`btn${i}_dest_results`),
                 document.getElementById(`btn${i}_dest_id`),
@@ -435,30 +583,68 @@
             );
         }
 
-        window.selectStation = function (inputId, resultsId, hiddenIdStr, stop, btnNum) {
+        window.selectStartStation = function (inputId, resultsId, hiddenIdStr, stop, btnNum) {
             document.getElementById(inputId).value = stop.name;
             document.getElementById(hiddenIdStr).value = stop.stop_id;
             document.getElementById(resultsId).style.display = 'none';
+
+            // Enable destination search
+            var destInput = document.getElementById('btn' + btnNum + '_dest_search');
+            destInput.disabled = false;
+            destInput.placeholder = 'Search destination...';
+            destInput.value = '';
+            document.getElementById('btn' + btnNum + '_dest_id').value = '';
+            document.getElementById('btn' + btnNum + '_direction_id').value = '';
+
+            updateStatus(btnNum);
+        };
+
+        window.selectDestStation = function (inputId, resultsId, hiddenIdStr, stop, btnNum) {
+            document.getElementById(inputId).value = stop.name;
+            document.getElementById(hiddenIdStr).value = stop.stop_id;
+            document.getElementById(resultsId).style.display = 'none';
+
+            // Auto-resolve direction_id!
+            var startId = parseInt(document.getElementById('btn' + btnNum + '_start_id').value);
+            var destId = stop.stop_id;
+            var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
+
+            var directionId = resolveDirection(startId, destId, type);
+            if (directionId !== null) {
+                document.getElementById('btn' + btnNum + '_direction_id').value = directionId;
+                console.log('Resolved direction_id:', directionId);
+            }
+
             updateStatus(btnNum);
         };
 
         window.updateType = function (btnNum) {
-            // Clear selections if type changes?
-            // Maybe not, but they might be invalid.
-            // For now just let user search again.
             document.getElementById(`btn${btnNum}_start_search`).value = '';
             document.getElementById(`btn${btnNum}_start_id`).value = '';
             document.getElementById(`btn${btnNum}_dest_search`).value = '';
             document.getElementById(`btn${btnNum}_dest_id`).value = '';
+            document.getElementById(`btn${btnNum}_dest_search`).disabled = true;
+            document.getElementById(`btn${btnNum}_direction_id`).value = '';
             updateStatus(btnNum);
+
+            // Lazy load this type if not loaded
+            var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
+            if (!loadedTypes[type]) {
+                loadStationData(type);
+            }
         };
 
         function updateStatus(i) {
             var start = document.getElementById(`btn${i}_start_id`).value;
             var dest = document.getElementById(`btn${i}_dest_id`).value;
+            var dir = document.getElementById(`btn${i}_direction_id`).value;
             var status = document.getElementById(`btn${i}_status`);
 
-            if (start && dest) {
+            if (start && dest && dir) {
+                status.textContent = "Ready ✓";
+                status.classList.add('configured');
+                status.classList.remove('incomplete');
+            } else if (start && dest) {
                 status.textContent = "Configured";
                 status.classList.add('configured');
                 status.classList.remove('incomplete');
@@ -473,7 +659,7 @@
             }
         }
 
-        async function loadStationData() {
+        async function loadStationData(routeType) {
             var btn = document.getElementById('update_data_btn');
             btn.textContent = "Loading...";
             btn.disabled = true;
@@ -481,13 +667,19 @@
             var base = serverUrlEl.value.trim() || serverBase;
             if (base.endsWith('/')) base = base.slice(0, -1);
 
+            // Map route_type to API type param
+            var typeParam = 'train';
+            if (routeType === 1) typeParam = 'tram';
+            else if (routeType === 3) typeParam = 'vline';
+
             try {
-                var res = await fetch(base + '/api/v1/stations?type=all'); // Fetch all (train+tram+vline)
+                var res = await fetch(base + '/api/v1/stations?type=' + typeParam);
                 var data = await res.json();
                 if (data.stations) {
-                    stations = data.stations;
-                    console.log("Loaded " + stations.length + " stations");
-                    btn.textContent = "Data Updated (" + stations.length + ")";
+                    stationsByType[routeType] = data.stations;
+                    loadedTypes[routeType] = true;
+                    console.log("Loaded " + data.stations.length + " " + typeParam + " stations");
+                    btn.textContent = "Loaded (" + data.stations.length + ")";
                 } else {
                     btn.textContent = "No Data Found";
                 }
@@ -498,20 +690,27 @@
             setTimeout(() => { btn.disabled = false; btn.textContent = "Update Station Data"; }, 2000);
         }
 
-        // Auto load on start
-        loadStationData();
+        // Auto load train data on start
+        loadStationData(0);
 
         // Debug Defaults
-        document.getElementById('debug_defaults').addEventListener('click', function () {
+        document.getElementById('debug_defaults').addEventListener('click', async function () {
+            // Ensure train data is loaded
+            if (!loadedTypes[0]) {
+                await loadStationData(0);
+            }
+
             // Server
             document.getElementById('server_url').value = 'http://10.1.0.88:8000';
 
             // Button 1: Narre Warren -> Flinders
-            document.getElementById('btn1_type').value = '0'; // Metro
+            document.getElementById('btn1_type').value = '0';
             document.getElementById('btn1_start_search').value = 'Narre Warren Station';
             document.getElementById('btn1_start_id').value = '1139';
             document.getElementById('btn1_dest_search').value = 'Flinders Street Station';
+            document.getElementById('btn1_dest_search').disabled = false;
             document.getElementById('btn1_dest_id').value = '1071';
+            document.getElementById('btn1_direction_id').value = '1'; // City direction
             updateStatus(1);
 
             // Button 2: Flinders -> Narre Warren
@@ -519,7 +718,9 @@
             document.getElementById('btn2_start_search').value = 'Flinders Street Station';
             document.getElementById('btn2_start_id').value = '1071';
             document.getElementById('btn2_dest_search').value = 'Narre Warren Station';
+            document.getElementById('btn2_dest_search').disabled = false;
             document.getElementById('btn2_dest_id').value = '1139';
+            document.getElementById('btn2_direction_id').value = '10'; // Pakenham direction
             updateStatus(2);
 
             // Button 3: Southern Cross -> Brunswick
@@ -527,7 +728,9 @@
             document.getElementById('btn3_start_search').value = 'Southern Cross Station';
             document.getElementById('btn3_start_id').value = '1181';
             document.getElementById('btn3_dest_search').value = 'Brunswick Station';
+            document.getElementById('btn3_dest_search').disabled = false;
             document.getElementById('btn3_dest_id').value = '1029';
+            document.getElementById('btn3_direction_id').value = '15'; // Upfield direction
             updateStatus(3);
 
             // Auto Save

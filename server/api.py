@@ -5,6 +5,7 @@ PTV Notify API - FastAPI server for public transport queries.
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response, StreamingResponse
 import json
 from pydantic import BaseModel
@@ -22,6 +23,9 @@ from . import tools
 from .ptv_client import PTVClient
 
 app = FastAPI(title="PTV Notify", version="1.0.0")
+
+# GZip compression for large responses (station databases)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,
@@ -159,78 +163,40 @@ def calculate_vibration(minutes: int) -> list[int]:
 
 # --- Endpoints ---
 
-@app.get("/api/v1/search")
-async def search_stops_api(q: str):
-    """
-    Search for stops by name. Used by settings page for button configuration.
-    Returns simplified results suitable for the config UI.
-    """
-    if not q or len(q) < 2:
-        return {"stops": []}
-    
-    try:
-        data = await ptv_client.search(q)
-        stops = data.get("stops", [])
-        
-        # Filter for trains/trams only, format for config page
-        type_names = {
-            RouteType.TRAIN: "Train",
-            RouteType.TRAM: "Tram",
-            RouteType.VLINE: "V/Line",
-        }
-        
-        results = []
-        for s in stops[:10]:
-            route_type = s.get("route_type")
-            if route_type in type_names:
-                results.append({
-                    "name": s.get("stop_name"),
-                    "stop_id": s.get("stop_id"),
-                    "route_type": route_type,
-                    "type_name": type_names[route_type]
-                })
-        
-        return {"stops": results}
-    except Exception as e:
-        print(f"Search error: {e}")
-        return {"stops": [], "error": str(e)}
+
 
 
 @app.get("/api/v1/stations")
 async def get_stations(type: str = "train"):
     """
-    Get all stations from the baked-in database.
-    type: 'train' or 'tram' (default: train)
+    Get stations from the database.
+    type: 'train' (metro), 'vline', 'tram', or 'all'
+    Returns schema with route/direction data for filtering.
     """
-    db_path = os.path.join(os.path.dirname(__file__), "stations_db.json")
-    if not os.path.exists(db_path):
-        return {"stations": []}
-        
-    try:
-        with open(db_path, "r") as f:
-            data = json.load(f)
-            
-        stations = data.get("stations", [])
-        
-        # Filter if needed (currently DB is mostly train/vline)
-        # We might want to filter by route_type if we mix them later
-        # 0=Train, 1=Tram, 3=VLine
-        
-        target_types = [0, 3] # Default to Train+Vline
-        if type == "tram":
-            target_types = [1]
-        elif type == "all":
-            target_types = [0, 1, 3]
-            
-        filtered = [
-            s for s in stations 
-            if s.get("route_type") in target_types
-        ]
-        
-        return {"stations": filtered}
-    except Exception as e:
-        print(f"Error reading station DB: {e}")
-        return {"stations": [], "error": str(e)}
+    base_dir = os.path.dirname(__file__)
+    
+    # Map type to file(s)
+    type_files = {
+        "train": ["stations_train.json"],
+        "vline": ["stations_vline.json"],
+        "tram": ["stops_tram.json"],
+        "all": ["stations_train.json", "stations_vline.json", "stops_tram.json"],
+    }
+    
+    files = type_files.get(type, ["stations_train.json"])
+    all_stops = []
+    
+    for filename in files:
+        filepath = os.path.join(base_dir, filename)
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    data = json.load(f)
+                    all_stops.extend(data.get("stops", []))
+            except Exception as e:
+                print(f"Error reading {filename}: {e}")
+    
+    return {"stations": all_stops}
 
 
 @app.post("/api/v1/stealth")

@@ -199,16 +199,30 @@ function runStealthQuery(buttonIndex) {
     loadingCard.show();
 
     sendStealthQuery(stopId, routeType, directionId, function (response) {
-        loadingCard.hide();
+        // Show the result message before hiding
+        if (response.message) {
+            loadingCard.title(name || 'Result');
+            loadingCard.body(response.message);
+        }
 
         if (response.vibration) {
             Vibe.vibrate(response.vibration);
         } else {
             Vibe.vibrate('short');
         }
+
+        // Auto-hide after 3 seconds so user can see the message
+        setTimeout(function () {
+            loadingCard.hide();
+        }, 3000);
     }, function (error) {
-        loadingCard.hide();
+        loadingCard.title('Error');
+        loadingCard.body(error || 'Connection failed');
         Vibe.vibrate('double');
+
+        setTimeout(function () {
+            loadingCard.hide();
+        }, 2000);
     });
 }
 

@@ -1,0 +1,7541 @@
+{
+  "stops": [
+    {
+      "name": "Aircraft Station",
+      "stop_id": 1220,
+      "route_type": 0,
+      "lat": -37.8666039,
+      "lon": 144.7608,
+      "suburb": "Laverton",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Alamein Station",
+      "stop_id": 1002,
+      "route_type": 0,
+      "lat": -37.8683167,
+      "lon": 145.079666,
+      "suburb": "Ashburton",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 18
+            },
+            "1": {
+              "name": "City",
+              "seq": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Albion Station",
+      "stop_id": 1003,
+      "route_type": 0,
+      "lat": -37.7776566,
+      "lon": 144.8247,
+      "suburb": "Sunshine North",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Alphington Station",
+      "stop_id": 1004,
+      "route_type": 0,
+      "lat": -37.7783966,
+      "lon": 145.03125,
+      "suburb": "Alphington",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Altona Station",
+      "stop_id": 1005,
+      "route_type": 0,
+      "lat": -37.86715,
+      "lon": 144.829651,
+      "suburb": "Altona",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Anstey Station",
+      "stop_id": 1006,
+      "route_type": 0,
+      "lat": -37.76124,
+      "lon": 144.9607,
+      "suburb": "Brunswick",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Anzac Station",
+      "stop_id": 1236,
+      "route_type": 0,
+      "lat": -37.8333244,
+      "lon": 144.9728,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 29
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 7
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 34
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Arden Station",
+      "stop_id": 1232,
+      "route_type": 0,
+      "lat": -37.8012428,
+      "lon": 144.941254,
+      "suburb": "North Melbourne",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Armadale Station",
+      "stop_id": 1008,
+      "route_type": 0,
+      "lat": -37.8564529,
+      "lon": 145.019333,
+      "suburb": "Armadale",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 13
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 23
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 7
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 24
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ascot Vale Station",
+      "stop_id": 1009,
+      "route_type": 0,
+      "lat": -37.77531,
+      "lon": 144.921829,
+      "suburb": "Ascot Vale",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ashburton Station",
+      "stop_id": 1010,
+      "route_type": 0,
+      "lat": -37.86197,
+      "lon": 145.081345,
+      "suburb": "Ashburton",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 17
+            },
+            "1": {
+              "name": "City",
+              "seq": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Aspendale Station",
+      "stop_id": 1011,
+      "route_type": 0,
+      "lat": -38.02722,
+      "lon": 145.102158,
+      "suburb": "Aspendale",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 22
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Auburn Station",
+      "stop_id": 1012,
+      "route_type": 0,
+      "lat": -37.8224,
+      "lon": 145.045837,
+      "suburb": "Hawthorn East",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 11
+            },
+            "1": {
+              "name": "City",
+              "seq": 8
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 11
+            },
+            "1": {
+              "name": "City",
+              "seq": 21
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Balaclava Station",
+      "stop_id": 1013,
+      "route_type": 0,
+      "lat": -37.8694878,
+      "lon": 144.993515,
+      "suburb": "Balaclava",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Batman Station",
+      "stop_id": 1014,
+      "route_type": 0,
+      "lat": -37.7335243,
+      "lon": 144.96283,
+      "suburb": "Coburg North",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Baxter Station",
+      "stop_id": 1015,
+      "route_type": 0,
+      "lat": -38.194046,
+      "lon": 145.160522,
+      "suburb": "Baxter",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 8
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Bayswater Station",
+      "stop_id": 1016,
+      "route_type": 0,
+      "lat": -37.84173,
+      "lon": 145.268143,
+      "suburb": "Bayswater",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 25
+            },
+            "1": {
+              "name": "City",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Beaconsfield Station",
+      "stop_id": 1017,
+      "route_type": 0,
+      "lat": -38.050827,
+      "lon": 145.366074,
+      "suburb": "Beaconsfield",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 32
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Belgrave Station",
+      "stop_id": 1018,
+      "route_type": 0,
+      "lat": -37.9091,
+      "lon": 145.355286,
+      "suburb": "Belgrave",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 31
+            },
+            "1": {
+              "name": "City",
+              "seq": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Bell Station",
+      "stop_id": 1019,
+      "route_type": 0,
+      "lat": -37.7455673,
+      "lon": 145.000153,
+      "suburb": "Preston",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Bentleigh Station",
+      "stop_id": 1020,
+      "route_type": 0,
+      "lat": -37.9174271,
+      "lon": 145.036987,
+      "suburb": "Bentleigh",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Berwick Station",
+      "stop_id": 1021,
+      "route_type": 0,
+      "lat": -38.04041,
+      "lon": 145.345718,
+      "suburb": "Berwick",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 31
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Bittern Station",
+      "stop_id": 1022,
+      "route_type": 0,
+      "lat": -38.33739,
+      "lon": 145.178024,
+      "suburb": "Bittern",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 4
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Blackburn Station",
+      "stop_id": 1023,
+      "route_type": 0,
+      "lat": -37.82007,
+      "lon": 145.150009,
+      "suburb": "Blackburn",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 19
+            },
+            "1": {
+              "name": "City",
+              "seq": 13
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Bonbeach Station",
+      "stop_id": 1024,
+      "route_type": 0,
+      "lat": -38.0629463,
+      "lon": 145.119675,
+      "suburb": "Bonbeach",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 25
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Boronia Station",
+      "stop_id": 1025,
+      "route_type": 0,
+      "lat": -37.8604546,
+      "lon": 145.284378,
+      "suburb": "Boronia",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 26
+            },
+            "1": {
+              "name": "City",
+              "seq": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Box Hill Station",
+      "stop_id": 1026,
+      "route_type": 0,
+      "lat": -37.8192177,
+      "lon": 145.121429,
+      "suburb": "Box Hill",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 17
+            },
+            "1": {
+              "name": "City",
+              "seq": 15
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Brighton Beach Station",
+      "stop_id": 1027,
+      "route_type": 0,
+      "lat": -37.9264832,
+      "lon": 144.989151,
+      "suburb": "Brighton",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Broadmeadows Station",
+      "stop_id": 1028,
+      "route_type": 0,
+      "lat": -37.6830521,
+      "lon": 144.919617,
+      "suburb": "Broadmeadows",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Brunswick Station",
+      "stop_id": 1029,
+      "route_type": 0,
+      "lat": -37.76772,
+      "lon": 144.9596,
+      "suburb": "Brunswick",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Burnley Station",
+      "stop_id": 1030,
+      "route_type": 0,
+      "lat": -37.8275566,
+      "lon": 145.007553,
+      "suburb": "Burnley",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 8
+            },
+            "1": {
+              "name": "City",
+              "seq": 11
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 8
+            },
+            "1": {
+              "name": "City",
+              "seq": 24
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 27
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 3
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 8
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Burwood Station",
+      "stop_id": 1031,
+      "route_type": 0,
+      "lat": -37.8515625,
+      "lon": 145.0805,
+      "suburb": "Glen Iris",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 16
+            },
+            "1": {
+              "name": "City",
+              "seq": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Camberwell Station",
+      "stop_id": 1032,
+      "route_type": 0,
+      "lat": -37.8265648,
+      "lon": 145.058685,
+      "suburb": "Camberwell",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 12
+            },
+            "1": {
+              "name": "City",
+              "seq": 7
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 12
+            },
+            "1": {
+              "name": "City",
+              "seq": 20
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Canterbury Station",
+      "stop_id": 1033,
+      "route_type": 0,
+      "lat": -37.82449,
+      "lon": 145.081223,
+      "suburb": "Canterbury",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 14
+            },
+            "1": {
+              "name": "City",
+              "seq": 18
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Cardinia Road Station",
+      "stop_id": 1223,
+      "route_type": 0,
+      "lat": -38.07129,
+      "lon": 145.43779,
+      "suburb": "Pakenham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 34
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Carnegie Station",
+      "stop_id": 1034,
+      "route_type": 0,
+      "lat": -37.88624,
+      "lon": 145.058578,
+      "suburb": "Carnegie",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 17
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Carrum Station",
+      "stop_id": 1035,
+      "route_type": 0,
+      "lat": -38.0765038,
+      "lon": 145.122833,
+      "suburb": "Carrum",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 26
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Caulfield Station",
+      "stop_id": 1036,
+      "route_type": 0,
+      "lat": -37.8774567,
+      "lon": 145.042526,
+      "suburb": "Caulfield East",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 16
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 21
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 9
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 21
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Chatham Station",
+      "stop_id": 1037,
+      "route_type": 0,
+      "lat": -37.8243027,
+      "lon": 145.088654,
+      "suburb": "Surrey Hills",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 15
+            },
+            "1": {
+              "name": "City",
+              "seq": 17
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Chelsea Station",
+      "stop_id": 1038,
+      "route_type": 0,
+      "lat": -38.05196,
+      "lon": 145.116043,
+      "suburb": "Chelsea",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 24
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Cheltenham Station",
+      "stop_id": 1039,
+      "route_type": 0,
+      "lat": -37.9666519,
+      "lon": 145.05455,
+      "suburb": "Cheltenham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Clayton Station",
+      "stop_id": 1040,
+      "route_type": 0,
+      "lat": -37.9246826,
+      "lon": 145.120529,
+      "suburb": "Clayton",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 22
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 22
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Clifton Hill Station",
+      "stop_id": 1041,
+      "route_type": 0,
+      "lat": -37.7886543,
+      "lon": 144.995422,
+      "suburb": "Clifton Hill",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 11
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Coburg Station",
+      "stop_id": 1042,
+      "route_type": 0,
+      "lat": -37.74234,
+      "lon": 144.963348,
+      "suburb": "Coburg",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Collingwood Station",
+      "stop_id": 1043,
+      "route_type": 0,
+      "lat": -37.8045235,
+      "lon": 144.993744,
+      "suburb": "Abbotsford",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 21
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 9
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Coolaroo Station",
+      "stop_id": 1221,
+      "route_type": 0,
+      "lat": -37.661,
+      "lon": 144.926056,
+      "suburb": "Coolaroo",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Craigieburn Station",
+      "stop_id": 1044,
+      "route_type": 0,
+      "lat": -37.60192,
+      "lon": 144.943466,
+      "suburb": "Craigieburn",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 21
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Cranbourne Station",
+      "stop_id": 1045,
+      "route_type": 0,
+      "lat": -38.09954,
+      "lon": 145.2806,
+      "suburb": "Cranbourne",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 31
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Crib Point Station",
+      "stop_id": 1046,
+      "route_type": 0,
+      "lat": -38.36612,
+      "lon": 145.204041,
+      "suburb": "Crib Point",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 2
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Croxton Station",
+      "stop_id": 1047,
+      "route_type": 0,
+      "lat": -37.7641,
+      "lon": 144.997055,
+      "suburb": "Northcote",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Croydon Station",
+      "stop_id": 1048,
+      "route_type": 0,
+      "lat": -37.79544,
+      "lon": 145.2806,
+      "suburb": "Croydon",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 25
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Dandenong Station",
+      "stop_id": 1049,
+      "route_type": 0,
+      "lat": -37.98966,
+      "lon": 145.209061,
+      "suburb": "Dandenong",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 28
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 28
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Darebin Station",
+      "stop_id": 1050,
+      "route_type": 0,
+      "lat": -37.7749634,
+      "lon": 145.038483,
+      "suburb": "Ivanhoe",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Darling Station",
+      "stop_id": 1051,
+      "route_type": 0,
+      "lat": -37.8689575,
+      "lon": 145.062943,
+      "suburb": "Malvern East",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 15
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 14
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 22
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Dennis Station",
+      "stop_id": 1053,
+      "route_type": 0,
+      "lat": -37.7791824,
+      "lon": 145.00824,
+      "suburb": "Northcote",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Diamond Creek Station",
+      "stop_id": 1054,
+      "route_type": 0,
+      "lat": -37.6732941,
+      "lon": 145.158508,
+      "suburb": "Diamond Creek",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 26
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Diggers Rest Station",
+      "stop_id": 1055,
+      "route_type": 0,
+      "lat": -37.6270142,
+      "lon": 144.719925,
+      "suburb": "Diggers Rest",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 21
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Eaglemont Station",
+      "stop_id": 1056,
+      "route_type": 0,
+      "lat": -37.7635841,
+      "lon": 145.05394,
+      "suburb": "Eaglemont",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "East Camberwell Station",
+      "stop_id": 1057,
+      "route_type": 0,
+      "lat": -37.8258934,
+      "lon": 145.068192,
+      "suburb": "Camberwell",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 13
+            },
+            "1": {
+              "name": "City",
+              "seq": 19
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "East Malvern Station",
+      "stop_id": 1058,
+      "route_type": 0,
+      "lat": -37.87693,
+      "lon": 145.0694,
+      "suburb": "Malvern East",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "East Pakenham Station",
+      "stop_id": 1230,
+      "route_type": 0,
+      "lat": -38.0842857,
+      "lon": 145.506317,
+      "suburb": "Pakenham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 36
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "East Richmond Station",
+      "stop_id": 1059,
+      "route_type": 0,
+      "lat": -37.8264046,
+      "lon": 144.99707,
+      "suburb": "Richmond",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 7
+            },
+            "1": {
+              "name": "City",
+              "seq": 12
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 7
+            },
+            "1": {
+              "name": "City",
+              "seq": 25
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 7
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 21
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Edithvale Station",
+      "stop_id": 1060,
+      "route_type": 0,
+      "lat": -38.0380554,
+      "lon": 145.108536,
+      "suburb": "Edithvale",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 23
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Elsternwick Station",
+      "stop_id": 1061,
+      "route_type": 0,
+      "lat": -37.88475,
+      "lon": 145.0009,
+      "suburb": "Elsternwick",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Eltham Station",
+      "stop_id": 1062,
+      "route_type": 0,
+      "lat": -37.71355,
+      "lon": 145.147827,
+      "suburb": "Eltham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 25
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Epping Station",
+      "stop_id": 1063,
+      "route_type": 0,
+      "lat": -37.6521873,
+      "lon": 145.031067,
+      "suburb": "Epping",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 25
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Essendon Station",
+      "stop_id": 1064,
+      "route_type": 0,
+      "lat": -37.75601,
+      "lon": 144.9162,
+      "suburb": "Essendon",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Fairfield Station",
+      "stop_id": 1065,
+      "route_type": 0,
+      "lat": -37.7791748,
+      "lon": 145.0169,
+      "suburb": "Fairfield",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Fawkner Station",
+      "stop_id": 1066,
+      "route_type": 0,
+      "lat": -37.7146225,
+      "lon": 144.960556,
+      "suburb": "Fawkner",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ferntree Gully Station",
+      "stop_id": 1067,
+      "route_type": 0,
+      "lat": -37.8817,
+      "lon": 145.295258,
+      "suburb": "Ferntree Gully",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 27
+            },
+            "1": {
+              "name": "City",
+              "seq": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Flagstaff Station",
+      "stop_id": 1068,
+      "route_type": 0,
+      "lat": -37.8119774,
+      "lon": 144.955658,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 3
+            },
+            "1": {
+              "name": "City",
+              "seq": 16
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 3
+            },
+            "1": {
+              "name": "City",
+              "seq": 29
+            }
+          }
+        },
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 2
+            }
+          }
+        },
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 26
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 3
+            }
+          }
+        },
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 27
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 3
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 3
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 27
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 3
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 25
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 3
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 31
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 3
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 1
+            }
+          }
+        },
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 2
+            }
+          }
+        },
+        "1482": {
+          "name": "Flemington Racecourse",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "11": {
+              "name": "Flemington Racecourse",
+              "seq": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Flemington Bridge Station",
+      "stop_id": 1069,
+      "route_type": 0,
+      "lat": -37.7881355,
+      "lon": 144.939316,
+      "suburb": "North Melbourne",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Flemington Racecourse Station",
+      "stop_id": 1070,
+      "route_type": 0,
+      "lat": -37.7871971,
+      "lon": 144.9076,
+      "suburb": "Flemington",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1482": {
+          "name": "Flemington Racecourse",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "11": {
+              "name": "Flemington Racecourse",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Flinders Street Station",
+      "stop_id": 1071,
+      "route_type": 0,
+      "lat": -37.81831,
+      "lon": 144.966965,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 5
+            },
+            "1": {
+              "name": "City",
+              "seq": 18
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 5
+            },
+            "1": {
+              "name": "City",
+              "seq": 31
+            }
+          }
+        },
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 21
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 5
+            }
+          }
+        },
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 28
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 8
+            }
+          }
+        },
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 29
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 5
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 29
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 1
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 5
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 24
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 5
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 27
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 5
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 33
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 8
+            }
+          }
+        },
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 1
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 4
+            }
+          }
+        },
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 5
+            }
+          }
+        },
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 2
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 2
+            }
+          }
+        },
+        "1482": {
+          "name": "Flemington Racecourse",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "11": {
+              "name": "Flemington Racecourse",
+              "seq": 4
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Footscray Station",
+      "stop_id": 1072,
+      "route_type": 0,
+      "lat": -37.8010864,
+      "lon": 144.9032,
+      "suburb": "Footscray",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 11
+            }
+          }
+        },
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 5
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Frankston Station",
+      "stop_id": 1073,
+      "route_type": 0,
+      "lat": -38.1429863,
+      "lon": 145.12616,
+      "suburb": "Frankston",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 29
+            }
+          }
+        },
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 10
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Gardenvale Station",
+      "stop_id": 1074,
+      "route_type": 0,
+      "lat": -37.8966942,
+      "lon": 145.004166,
+      "suburb": "Brighton",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Gardiner Station",
+      "stop_id": 1075,
+      "route_type": 0,
+      "lat": -37.8532829,
+      "lon": 145.051666,
+      "suburb": "Glen Iris",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ginifer Station",
+      "stop_id": 1076,
+      "route_type": 0,
+      "lat": -37.760067,
+      "lon": 144.811356,
+      "suburb": "St Albans",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Glen Huntly Station",
+      "stop_id": 1081,
+      "route_type": 0,
+      "lat": -37.8897171,
+      "lon": 145.042221,
+      "suburb": "Glen Huntly",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Glen Iris Station",
+      "stop_id": 1077,
+      "route_type": 0,
+      "lat": -37.8593063,
+      "lon": 145.058228,
+      "suburb": "Glen Iris",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Glen Waverley Station",
+      "stop_id": 1078,
+      "route_type": 0,
+      "lat": -37.8797836,
+      "lon": 145.163055,
+      "suburb": "Glen Waverley",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Glenbervie Station",
+      "stop_id": 1079,
+      "route_type": 0,
+      "lat": -37.7472153,
+      "lon": 144.920944,
+      "suburb": "Essendon",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Glenferrie Station",
+      "stop_id": 1080,
+      "route_type": 0,
+      "lat": -37.8214645,
+      "lon": 145.036438,
+      "suburb": "Hawthorn",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 10
+            },
+            "1": {
+              "name": "City",
+              "seq": 9
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 10
+            },
+            "1": {
+              "name": "City",
+              "seq": 22
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Glenroy Station",
+      "stop_id": 1082,
+      "route_type": 0,
+      "lat": -37.7045326,
+      "lon": 144.917221,
+      "suburb": "Glenroy",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Gowrie Station",
+      "stop_id": 1083,
+      "route_type": 0,
+      "lat": -37.700676,
+      "lon": 144.958878,
+      "suburb": "Glenroy",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Greensborough Station",
+      "stop_id": 1084,
+      "route_type": 0,
+      "lat": -37.70395,
+      "lon": 145.108246,
+      "suburb": "Greensborough",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 23
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hallam Station",
+      "stop_id": 1085,
+      "route_type": 0,
+      "lat": -38.0177422,
+      "lon": 145.269775,
+      "suburb": "Hallam",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 29
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hampton Station",
+      "stop_id": 1086,
+      "route_type": 0,
+      "lat": -37.937973,
+      "lon": 145.001465,
+      "suburb": "Hampton",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hartwell Station",
+      "stop_id": 1087,
+      "route_type": 0,
+      "lat": -37.8439827,
+      "lon": 145.075562,
+      "suburb": "Camberwell",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 15
+            },
+            "1": {
+              "name": "City",
+              "seq": 4
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hastings Station",
+      "stop_id": 1088,
+      "route_type": 0,
+      "lat": -38.30566,
+      "lon": 145.185974,
+      "suburb": "Hastings",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 5
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hawksburn Station",
+      "stop_id": 1089,
+      "route_type": 0,
+      "lat": -37.844593,
+      "lon": 145.002136,
+      "suburb": "South Yarra",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 21
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 11
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 25
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 5
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 26
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hawkstowe Station",
+      "stop_id": 1227,
+      "route_type": 0,
+      "lat": -37.6229935,
+      "lon": 145.0974,
+      "suburb": "South Morang",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 28
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hawthorn Station",
+      "stop_id": 1090,
+      "route_type": 0,
+      "lat": -37.8218231,
+      "lon": 145.0229,
+      "suburb": "Hawthorn",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 9
+            },
+            "1": {
+              "name": "City",
+              "seq": 10
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 9
+            },
+            "1": {
+              "name": "City",
+              "seq": 23
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Heatherdale Station",
+      "stop_id": 1091,
+      "route_type": 0,
+      "lat": -37.81884,
+      "lon": 145.213547,
+      "suburb": "Ringwood",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 22
+            },
+            "1": {
+              "name": "City",
+              "seq": 10
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 22
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Heathmont Station",
+      "stop_id": 1092,
+      "route_type": 0,
+      "lat": -37.82832,
+      "lon": 145.244553,
+      "suburb": "Heathmont",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 24
+            },
+            "1": {
+              "name": "City",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Heidelberg Station",
+      "stop_id": 1093,
+      "route_type": 0,
+      "lat": -37.7570763,
+      "lon": 145.060684,
+      "suburb": "Heidelberg",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Heyington Station",
+      "stop_id": 1094,
+      "route_type": 0,
+      "lat": -37.83467,
+      "lon": 145.022629,
+      "suburb": "Toorak",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Highett Station",
+      "stop_id": 1095,
+      "route_type": 0,
+      "lat": -37.9484253,
+      "lon": 145.04187,
+      "suburb": "Highett",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Holmesglen Station",
+      "stop_id": 1096,
+      "route_type": 0,
+      "lat": -37.8744,
+      "lon": 145.090652,
+      "suburb": "Malvern East",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hoppers Crossing Station",
+      "stop_id": 1097,
+      "route_type": 0,
+      "lat": -37.8837967,
+      "lon": 144.699738,
+      "suburb": "Hoppers Crossing",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hughesdale Station",
+      "stop_id": 1098,
+      "route_type": 0,
+      "lat": -37.89488,
+      "lon": 145.077637,
+      "suburb": "Hughesdale",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 19
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Huntingdale Station",
+      "stop_id": 1099,
+      "route_type": 0,
+      "lat": -37.91102,
+      "lon": 145.102371,
+      "suburb": "Oakleigh",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 21
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 21
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Hurstbridge Station",
+      "stop_id": 1100,
+      "route_type": 0,
+      "lat": -37.6394,
+      "lon": 145.192017,
+      "suburb": "Hurstbridge",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 28
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ivanhoe Station",
+      "stop_id": 1101,
+      "route_type": 0,
+      "lat": -37.768898,
+      "lon": 145.045425,
+      "suburb": "Ivanhoe",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Jacana Station",
+      "stop_id": 1102,
+      "route_type": 0,
+      "lat": -37.6951332,
+      "lon": 144.915848,
+      "suburb": "Glenroy",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Jewell Station",
+      "stop_id": 1103,
+      "route_type": 0,
+      "lat": -37.7749825,
+      "lon": 144.95871,
+      "suburb": "Brunswick",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Jolimont-MCG Station",
+      "stop_id": 1104,
+      "route_type": 0,
+      "lat": -37.81653,
+      "lon": 144.9841,
+      "suburb": "East Melbourne",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 24
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 6
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 23
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Jordanville Station",
+      "stop_id": 1105,
+      "route_type": 0,
+      "lat": -37.8736,
+      "lon": 145.112091,
+      "suburb": "Mount Waverley",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Kananook Station",
+      "stop_id": 1106,
+      "route_type": 0,
+      "lat": -38.12174,
+      "lon": 145.135284,
+      "suburb": "Seaford",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 28
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Keilor Plains Station",
+      "stop_id": 1107,
+      "route_type": 0,
+      "lat": -37.7292747,
+      "lon": 144.793732,
+      "suburb": "St Albans",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Kensington Station",
+      "stop_id": 1108,
+      "route_type": 0,
+      "lat": -37.7937775,
+      "lon": 144.930527,
+      "suburb": "Kensington",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Keon Park Station",
+      "stop_id": 1109,
+      "route_type": 0,
+      "lat": -37.6948662,
+      "lon": 145.011887,
+      "suburb": "Thomastown",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 22
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Kooyong Station",
+      "stop_id": 1110,
+      "route_type": 0,
+      "lat": -37.8399277,
+      "lon": 145.033554,
+      "suburb": "Kooyong",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Laburnum Station",
+      "stop_id": 1111,
+      "route_type": 0,
+      "lat": -37.8207779,
+      "lon": 145.1407,
+      "suburb": "Blackburn",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 18
+            },
+            "1": {
+              "name": "City",
+              "seq": 14
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Lalor Station",
+      "stop_id": 1112,
+      "route_type": 0,
+      "lat": -37.66585,
+      "lon": 145.0172,
+      "suburb": "Lalor",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 24
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Laverton Station",
+      "stop_id": 1113,
+      "route_type": 0,
+      "lat": -37.8636932,
+      "lon": 144.772614,
+      "suburb": "Laverton",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Leawarra Station",
+      "stop_id": 1114,
+      "route_type": 0,
+      "lat": -38.1520348,
+      "lon": 145.139542,
+      "suburb": "Frankston",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 9
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Lilydale Station",
+      "stop_id": 1115,
+      "route_type": 0,
+      "lat": -37.75722,
+      "lon": 145.34581,
+      "suburb": "Lilydale",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 27
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Lynbrook Station",
+      "stop_id": 1222,
+      "route_type": 0,
+      "lat": -38.0573463,
+      "lon": 145.249283,
+      "suburb": "Lynbrook",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 29
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Macaulay Station",
+      "stop_id": 1116,
+      "route_type": 0,
+      "lat": -37.7942619,
+      "lon": 144.936172,
+      "suburb": "North Melbourne",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Macleod Station",
+      "stop_id": 1117,
+      "route_type": 0,
+      "lat": -37.72601,
+      "lon": 145.069153,
+      "suburb": "Macleod",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 21
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Malvern Station",
+      "stop_id": 1118,
+      "route_type": 0,
+      "lat": -37.86625,
+      "lon": 145.0293,
+      "suburb": "Malvern",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 14
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 22
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 8
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 23
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "McKinnon Station",
+      "stop_id": 1119,
+      "route_type": 0,
+      "lat": -37.910305,
+      "lon": 145.0383,
+      "suburb": "Mckinnon",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Melbourne Central Station",
+      "stop_id": 1120,
+      "route_type": 0,
+      "lat": -37.8099365,
+      "lon": 144.9626,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 2
+            },
+            "1": {
+              "name": "City",
+              "seq": 15
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 2
+            },
+            "1": {
+              "name": "City",
+              "seq": 28
+            }
+          }
+        },
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 3
+            }
+          }
+        },
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 25
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 2
+            }
+          }
+        },
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 26
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 2
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 2
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 26
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 2
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 24
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 2
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 30
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 2
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 2
+            }
+          }
+        },
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 3
+            }
+          }
+        },
+        "1482": {
+          "name": "Flemington Racecourse",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "11": {
+              "name": "Flemington Racecourse",
+              "seq": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Mentone Station",
+      "stop_id": 1122,
+      "route_type": 0,
+      "lat": -37.98297,
+      "lon": 145.066,
+      "suburb": "Mentone",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Merinda Park Station",
+      "stop_id": 1123,
+      "route_type": 0,
+      "lat": -38.0790024,
+      "lon": 145.2635,
+      "suburb": "Cranbourne North",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 30
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Merlynston Station",
+      "stop_id": 1124,
+      "route_type": 0,
+      "lat": -37.7209358,
+      "lon": 144.961319,
+      "suburb": "Coburg North",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Mernda Station",
+      "stop_id": 1228,
+      "route_type": 0,
+      "lat": -37.60255,
+      "lon": 145.100876,
+      "suburb": "Mernda",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 29
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Merri Station",
+      "stop_id": 1125,
+      "route_type": 0,
+      "lat": -37.7778435,
+      "lon": 144.992981,
+      "suburb": "Northcote",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Middle Brighton Station",
+      "stop_id": 1126,
+      "route_type": 0,
+      "lat": -37.9151344,
+      "lon": 144.996292,
+      "suburb": "Brighton",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Middle Footscray Station",
+      "stop_id": 1127,
+      "route_type": 0,
+      "lat": -37.8025,
+      "lon": 144.891479,
+      "suburb": "Footscray",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Middle Gorge Station",
+      "stop_id": 1226,
+      "route_type": 0,
+      "lat": -37.644062,
+      "lon": 145.092133,
+      "suburb": "South Morang",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 27
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Mitcham Station",
+      "stop_id": 1128,
+      "route_type": 0,
+      "lat": -37.8180122,
+      "lon": 145.191971,
+      "suburb": "Mitcham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 21
+            },
+            "1": {
+              "name": "City",
+              "seq": 11
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 21
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Montmorency Station",
+      "stop_id": 1130,
+      "route_type": 0,
+      "lat": -37.7152977,
+      "lon": 145.1215,
+      "suburb": "Montmorency",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 24
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Moonee Ponds Station",
+      "stop_id": 1131,
+      "route_type": 0,
+      "lat": -37.7657051,
+      "lon": 144.919159,
+      "suburb": "Moonee Ponds",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Moorabbin Station",
+      "stop_id": 1132,
+      "route_type": 0,
+      "lat": -37.93435,
+      "lon": 145.036743,
+      "suburb": "Moorabbin",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Mooroolbark Station",
+      "stop_id": 1133,
+      "route_type": 0,
+      "lat": -37.7847481,
+      "lon": 145.312408,
+      "suburb": "Mooroolbark",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 26
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Mordialloc Station",
+      "stop_id": 1134,
+      "route_type": 0,
+      "lat": -38.006588,
+      "lon": 145.087662,
+      "suburb": "Mordialloc",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 21
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Moreland Station",
+      "stop_id": 1135,
+      "route_type": 0,
+      "lat": -37.7544823,
+      "lon": 144.961823,
+      "suburb": "Coburg",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Morradoo Station",
+      "stop_id": 1136,
+      "route_type": 0,
+      "lat": -38.3540344,
+      "lon": 145.1896,
+      "suburb": "Crib Point",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 3
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Mount Waverley Station",
+      "stop_id": 1137,
+      "route_type": 0,
+      "lat": -37.87525,
+      "lon": 145.128052,
+      "suburb": "Mount Waverley",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Murrumbeena Station",
+      "stop_id": 1138,
+      "route_type": 0,
+      "lat": -37.8901978,
+      "lon": 145.067383,
+      "suburb": "Murrumbeena",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 18
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Narre Warren Station",
+      "stop_id": 1139,
+      "route_type": 0,
+      "lat": -38.02781,
+      "lon": 145.30397,
+      "suburb": "Narre Warren",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 30
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Newmarket Station",
+      "stop_id": 1140,
+      "route_type": 0,
+      "lat": -37.7873268,
+      "lon": 144.928986,
+      "suburb": "Flemington",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Newport Station",
+      "stop_id": 1141,
+      "route_type": 0,
+      "lat": -37.8427124,
+      "lon": 144.8836,
+      "suburb": "Newport",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 9
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Noble Park Station",
+      "stop_id": 1142,
+      "route_type": 0,
+      "lat": -37.9672356,
+      "lon": 145.176941,
+      "suburb": "Noble Park",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 26
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 26
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "North Brighton Station",
+      "stop_id": 1143,
+      "route_type": 0,
+      "lat": -37.9048843,
+      "lon": 145.002609,
+      "suburb": "Brighton",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "North Melbourne Station",
+      "stop_id": 1144,
+      "route_type": 0,
+      "lat": -37.807415,
+      "lon": 144.942566,
+      "suburb": "West Melbourne",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 6
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 10
+            }
+          }
+        },
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 6
+            }
+          }
+        },
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 3
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 3
+            }
+          }
+        },
+        "1482": {
+          "name": "Flemington Racecourse",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "11": {
+              "name": "Flemington Racecourse",
+              "seq": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "North Richmond Station",
+      "stop_id": 1145,
+      "route_type": 0,
+      "lat": -37.8103943,
+      "lon": 144.9925,
+      "suburb": "Richmond",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 22
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 8
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 21
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "North Williamstown Station",
+      "stop_id": 1146,
+      "route_type": 0,
+      "lat": -37.85733,
+      "lon": 144.889069,
+      "suburb": "Williamstown",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Northcote Station",
+      "stop_id": 1147,
+      "route_type": 0,
+      "lat": -37.7698631,
+      "lon": 144.995285,
+      "suburb": "Northcote",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Nunawading Station",
+      "stop_id": 1148,
+      "route_type": 0,
+      "lat": -37.8202972,
+      "lon": 145.177078,
+      "suburb": "Nunawading",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 20
+            },
+            "1": {
+              "name": "City",
+              "seq": 12
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Oak Park Station",
+      "stop_id": 1149,
+      "route_type": 0,
+      "lat": -37.71795,
+      "lon": 144.921509,
+      "suburb": "Oak Park",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Oakleigh Station",
+      "stop_id": 1150,
+      "route_type": 0,
+      "lat": -37.9003677,
+      "lon": 145.088318,
+      "suburb": "Oakleigh",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 20
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Officer Station",
+      "stop_id": 1151,
+      "route_type": 0,
+      "lat": -38.066143,
+      "lon": 145.411,
+      "suburb": "Officer",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 33
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ormond Station",
+      "stop_id": 1152,
+      "route_type": 0,
+      "lat": -37.90321,
+      "lon": 145.039612,
+      "suburb": "Ormond",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Pakenham Station",
+      "stop_id": 1153,
+      "route_type": 0,
+      "lat": -38.0806122,
+      "lon": 145.486374,
+      "suburb": "Pakenham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 35
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Parkdale Station",
+      "stop_id": 1154,
+      "route_type": 0,
+      "lat": -37.9930763,
+      "lon": 145.076324,
+      "suburb": "Parkdale",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Parkville Station",
+      "stop_id": 1233,
+      "route_type": 0,
+      "lat": -37.79988,
+      "lon": 144.959518,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Parliament Station",
+      "stop_id": 1155,
+      "route_type": 0,
+      "lat": -37.8110542,
+      "lon": 144.9729,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 1
+            },
+            "1": {
+              "name": "City",
+              "seq": 14
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 1
+            },
+            "1": {
+              "name": "City",
+              "seq": 27
+            }
+          }
+        },
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 4
+            }
+          }
+        },
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 24
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 1
+            }
+          }
+        },
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 25
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 1
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 1
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 25
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 1
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 23
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 1
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 29
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 1
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 3
+            }
+          }
+        },
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 4
+            }
+          }
+        },
+        "1482": {
+          "name": "Flemington Racecourse",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "11": {
+              "name": "Flemington Racecourse",
+              "seq": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Pascoe Vale Station",
+      "stop_id": 1156,
+      "route_type": 0,
+      "lat": -37.7307549,
+      "lon": 144.928192,
+      "suburb": "Pascoe Vale",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Patterson Station",
+      "stop_id": 1157,
+      "route_type": 0,
+      "lat": -37.9251442,
+      "lon": 145.035461,
+      "suburb": "Bentleigh",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Prahran Station",
+      "stop_id": 1158,
+      "route_type": 0,
+      "lat": -37.8495178,
+      "lon": 144.989853,
+      "suburb": "Prahran",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 4
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Preston Station",
+      "stop_id": 1159,
+      "route_type": 0,
+      "lat": -37.7386742,
+      "lon": 145.000534,
+      "suburb": "Preston",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Regent Station",
+      "stop_id": 1160,
+      "route_type": 0,
+      "lat": -37.7284,
+      "lon": 145.002777,
+      "suburb": "Reservoir",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Reservoir Station",
+      "stop_id": 1161,
+      "route_type": 0,
+      "lat": -37.71689,
+      "lon": 145.006989,
+      "suburb": "Reservoir",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Richmond Station",
+      "stop_id": 1162,
+      "route_type": 0,
+      "lat": -37.8240738,
+      "lon": 144.990158,
+      "suburb": "Richmond",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 6
+            },
+            "1": {
+              "name": "City",
+              "seq": 13
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 6
+            },
+            "1": {
+              "name": "City",
+              "seq": 26
+            }
+          }
+        },
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 23
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 9
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 28
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 2
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 6
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 22
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 6
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 28
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 9
+            }
+          }
+        },
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ringwood East Station",
+      "stop_id": 1164,
+      "route_type": 0,
+      "lat": -37.81197,
+      "lon": 145.2502,
+      "suburb": "Ringwood East",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 24
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ringwood Station",
+      "stop_id": 1163,
+      "route_type": 0,
+      "lat": -37.81589,
+      "lon": 145.228973,
+      "suburb": "Ringwood",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 23
+            },
+            "1": {
+              "name": "City",
+              "seq": 9
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 23
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ripponlea Station",
+      "stop_id": 1165,
+      "route_type": 0,
+      "lat": -37.8759079,
+      "lon": 144.995239,
+      "suburb": "Ripponlea",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Riversdale Station",
+      "stop_id": 1166,
+      "route_type": 0,
+      "lat": -37.8315,
+      "lon": 145.069641,
+      "suburb": "Camberwell",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 13
+            },
+            "1": {
+              "name": "City",
+              "seq": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Rosanna Station",
+      "stop_id": 1168,
+      "route_type": 0,
+      "lat": -37.7428741,
+      "lon": 145.066147,
+      "suburb": "Rosanna",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Roxburgh Park Station",
+      "stop_id": 1219,
+      "route_type": 0,
+      "lat": -37.6382332,
+      "lon": 144.93541,
+      "suburb": "Roxburgh Park",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Royal Park Station",
+      "stop_id": 1169,
+      "route_type": 0,
+      "lat": -37.7811928,
+      "lon": 144.9523,
+      "suburb": "Parkville",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Rushall Station",
+      "stop_id": 1170,
+      "route_type": 0,
+      "lat": -37.78322,
+      "lon": 144.9924,
+      "suburb": "Fitzroy North",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Ruthven Station",
+      "stop_id": 1171,
+      "route_type": 0,
+      "lat": -37.7078972,
+      "lon": 145.009521,
+      "suburb": "Reservoir",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 21
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Sandown Park Station",
+      "stop_id": 1172,
+      "route_type": 0,
+      "lat": -37.9565,
+      "lon": 145.162827,
+      "suburb": "Springvale",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 25
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 25
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Sandringham Station",
+      "stop_id": 1173,
+      "route_type": 0,
+      "lat": -37.95033,
+      "lon": 145.004562,
+      "suburb": "Sandringham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Seaford Station",
+      "stop_id": 1174,
+      "route_type": 0,
+      "lat": -38.1040154,
+      "lon": 145.128235,
+      "suburb": "Seaford",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 27
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Seaholme Station",
+      "stop_id": 1175,
+      "route_type": 0,
+      "lat": -37.8678436,
+      "lon": 144.840958,
+      "suburb": "Seaholme",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Seddon Station",
+      "stop_id": 1176,
+      "route_type": 0,
+      "lat": -37.8090019,
+      "lon": 144.89566,
+      "suburb": "Seddon",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 6
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Somerville Station",
+      "stop_id": 1178,
+      "route_type": 0,
+      "lat": -38.22534,
+      "lon": 145.176239,
+      "suburb": "Somerville",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 7
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 4
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "South Kensington Station",
+      "stop_id": 1179,
+      "route_type": 0,
+      "lat": -37.7995338,
+      "lon": 144.925476,
+      "suburb": "Kensington",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 4
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 4
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "South Morang Station",
+      "stop_id": 1224,
+      "route_type": 0,
+      "lat": -37.6491623,
+      "lon": 145.067032,
+      "suburb": "South Morang",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 26
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "South Yarra Station",
+      "stop_id": 1180,
+      "route_type": 0,
+      "lat": -37.8384438,
+      "lon": 144.99234,
+      "suburb": "South Yarra",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 22
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 10
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 26
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 4
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 27
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 10
+            }
+          }
+        },
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Southern Cross Station",
+      "stop_id": 1181,
+      "route_type": 0,
+      "lat": -37.8179321,
+      "lon": 144.951416,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 4
+            },
+            "1": {
+              "name": "City",
+              "seq": 17
+            }
+          }
+        },
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 4
+            },
+            "1": {
+              "name": "City",
+              "seq": 30
+            }
+          }
+        },
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 1
+            }
+          }
+        },
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 27
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 4
+            }
+          }
+        },
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 28
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 4
+            }
+          }
+        },
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 4
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 28
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 4
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 26
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 4
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 32
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 4
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 5
+            }
+          }
+        },
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 18
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 1
+            }
+          }
+        },
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 1
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 1
+            }
+          }
+        },
+        "1482": {
+          "name": "Flemington Racecourse",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "11": {
+              "name": "Flemington Racecourse",
+              "seq": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Southland Station",
+      "stop_id": 1001,
+      "route_type": 0,
+      "lat": -37.95876,
+      "lon": 145.049118,
+      "suburb": "Cheltenham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Spotswood Station",
+      "stop_id": 1182,
+      "route_type": 0,
+      "lat": -37.8306351,
+      "lon": 144.885941,
+      "suburb": "Spotswood",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 8
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Springvale Station",
+      "stop_id": 1183,
+      "route_type": 0,
+      "lat": -37.9495125,
+      "lon": 145.153458,
+      "suburb": "Springvale",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 24
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 24
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "St Albans Station",
+      "stop_id": 1184,
+      "route_type": 0,
+      "lat": -37.7448578,
+      "lon": 144.800049,
+      "suburb": "St Albans",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 18
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "State Library Station",
+      "stop_id": 1234,
+      "route_type": 0,
+      "lat": -37.80805,
+      "lon": 144.96312,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 31
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 5
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 36
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 5
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 21
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Stony Point Station",
+      "stop_id": 1185,
+      "route_type": 0,
+      "lat": -38.3742371,
+      "lon": 145.221848,
+      "suburb": "Crib Point",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 1
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Strathmore Station",
+      "stop_id": 1186,
+      "route_type": 0,
+      "lat": -37.74359,
+      "lon": 144.927322,
+      "suburb": "Strathmore",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "3": {
+          "name": "Craigieburn",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "4": {
+              "name": "Craigieburn",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Sunbury Station",
+      "stop_id": 1187,
+      "route_type": 0,
+      "lat": -37.5791664,
+      "lon": 144.72789,
+      "suburb": "Sunbury",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 22
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Sunshine Station",
+      "stop_id": 1218,
+      "route_type": 0,
+      "lat": -37.7885361,
+      "lon": 144.832886,
+      "suburb": "Sunshine",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Syndal Station",
+      "stop_id": 1190,
+      "route_type": 0,
+      "lat": -37.87623,
+      "lon": 145.14978,
+      "suburb": "Glen Waverley",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Tecoma Station",
+      "stop_id": 1191,
+      "route_type": 0,
+      "lat": -37.9081154,
+      "lon": 145.343,
+      "suburb": "Tecoma",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 30
+            },
+            "1": {
+              "name": "City",
+              "seq": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Thomastown Station",
+      "stop_id": 1192,
+      "route_type": 0,
+      "lat": -37.680336,
+      "lon": 145.014282,
+      "suburb": "Thomastown",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 23
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Thornbury Station",
+      "stop_id": 1193,
+      "route_type": 0,
+      "lat": -37.7550468,
+      "lon": 144.998581,
+      "suburb": "Thornbury",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Toorak Station",
+      "stop_id": 1194,
+      "route_type": 0,
+      "lat": -37.85077,
+      "lon": 145.0139,
+      "suburb": "Armadale",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 12
+            }
+          }
+        },
+        "6": {
+          "name": "Frankston",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 24
+            },
+            "5": {
+              "name": "Frankston",
+              "seq": 6
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 25
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Tooronga Station",
+      "stop_id": 1195,
+      "route_type": 0,
+      "lat": -37.84937,
+      "lon": 145.041733,
+      "suburb": "Malvern",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "7": {
+          "name": "Glen Waverley",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "6": {
+              "name": "Glen Waverley",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Tottenham Station",
+      "stop_id": 1196,
+      "route_type": 0,
+      "lat": -37.7992554,
+      "lon": 144.862946,
+      "suburb": "West Footscray",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Town Hall Station",
+      "stop_id": 1235,
+      "route_type": 0,
+      "lat": -37.8160934,
+      "lon": 144.966827,
+      "suburb": "Melbourne City",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 30
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 6
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 35
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 6
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 22
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Tyabb Station",
+      "stop_id": 1197,
+      "route_type": 0,
+      "lat": -38.2598152,
+      "lon": 145.1864,
+      "suburb": "Tyabb",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "13": {
+          "name": "Stony Point",
+          "dirs": {
+            "5": {
+              "name": "Frankston",
+              "seq": 6
+            },
+            "13": {
+              "name": "Stony Point",
+              "seq": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Union Station",
+      "stop_id": 1229,
+      "route_type": 0,
+      "lat": -37.82312,
+      "lon": 145.100281,
+      "suburb": "Mont Albert",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 16
+            },
+            "1": {
+              "name": "City",
+              "seq": 16
+            }
+          }
+        },
+        "9": {
+          "name": "Lilydale",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "8": {
+              "name": "Lilydale",
+              "seq": 16
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Upfield Station",
+      "stop_id": 1198,
+      "route_type": 0,
+      "lat": -37.6660767,
+      "lon": 144.946747,
+      "suburb": "Coolaroo",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "15": {
+          "name": "Upfield",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "15": {
+              "name": "Upfield",
+              "seq": 19
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Upper Ferntree Gully Station",
+      "stop_id": 1199,
+      "route_type": 0,
+      "lat": -37.8926735,
+      "lon": 145.307526,
+      "suburb": "Upper Ferntree Gully",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 28
+            },
+            "1": {
+              "name": "City",
+              "seq": 4
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Upwey Station",
+      "stop_id": 1200,
+      "route_type": 0,
+      "lat": -37.90369,
+      "lon": 145.331329,
+      "suburb": "Upwey",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "2": {
+          "name": "Belgrave",
+          "dirs": {
+            "2": {
+              "name": "Belgrave",
+              "seq": 29
+            },
+            "1": {
+              "name": "City",
+              "seq": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Victoria Park Station",
+      "stop_id": 1201,
+      "route_type": 0,
+      "lat": -37.7991562,
+      "lon": 144.994446,
+      "suburb": "Abbotsford",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 20
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 10
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 19
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 10
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Watergardens Station",
+      "stop_id": 1202,
+      "route_type": 0,
+      "lat": -37.69567,
+      "lon": 144.769882,
+      "suburb": "Sydenham",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Watsonia Station",
+      "stop_id": 1203,
+      "route_type": 0,
+      "lat": -37.7109528,
+      "lon": 145.0838,
+      "suburb": "Watsonia",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 22
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Wattle Glen Station",
+      "stop_id": 1204,
+      "route_type": 0,
+      "lat": -37.6639671,
+      "lon": 145.181625,
+      "suburb": "Wattle Glen",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 27
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Werribee Station",
+      "stop_id": 1205,
+      "route_type": 0,
+      "lat": -37.8993835,
+      "lon": 144.661118,
+      "suburb": "Werribee",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 17
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "West Footscray Station",
+      "stop_id": 1206,
+      "route_type": 0,
+      "lat": -37.80181,
+      "lon": 144.88533,
+      "suburb": "West Footscray",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 13
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "West Richmond Station",
+      "stop_id": 1207,
+      "route_type": 0,
+      "lat": -37.8149452,
+      "lon": 144.991425,
+      "suburb": "Richmond",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "5": {
+          "name": "Mernda",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 23
+            },
+            "9": {
+              "name": "Mernda",
+              "seq": 7
+            }
+          }
+        },
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 22
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Westall Station",
+      "stop_id": 1208,
+      "route_type": 0,
+      "lat": -37.93849,
+      "lon": 145.13884,
+      "suburb": "Clayton South",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 23
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 23
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Westgarth Station",
+      "stop_id": 1209,
+      "route_type": 0,
+      "lat": -37.7806168,
+      "lon": 144.999237,
+      "suburb": "Northcote",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "8": {
+          "name": "Hurstbridge",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 17
+            },
+            "7": {
+              "name": "Hurstbridge",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Westona Station",
+      "stop_id": 1210,
+      "route_type": 0,
+      "lat": -37.8651657,
+      "lon": 144.813492,
+      "suburb": "Altona",
+      "zone": "Zone 1,Zone 2",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Williams Landing Station",
+      "stop_id": 1225,
+      "route_type": 0,
+      "lat": -37.86987,
+      "lon": 144.747452,
+      "suburb": "Williams Landing",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 15
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Williamstown Beach Station",
+      "stop_id": 1212,
+      "route_type": 0,
+      "lat": -37.8639832,
+      "lon": 144.894485,
+      "suburb": "Williamstown",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 11
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Williamstown Station",
+      "stop_id": 1211,
+      "route_type": 0,
+      "lat": -37.8677559,
+      "lon": 144.905319,
+      "suburb": "Williamstown",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 12
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Willison Station",
+      "stop_id": 1213,
+      "route_type": 0,
+      "lat": -37.8357124,
+      "lon": 145.0703,
+      "suburb": "Camberwell",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "1": {
+          "name": "Alamein",
+          "dirs": {
+            "0": {
+              "name": "Alamein",
+              "seq": 14
+            },
+            "1": {
+              "name": "City",
+              "seq": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Windsor Station",
+      "stop_id": 1214,
+      "route_type": 0,
+      "lat": -37.8560524,
+      "lon": 144.992035,
+      "suburb": "Windsor",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "12": {
+          "name": "Sandringham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "12": {
+              "name": "Sandringham",
+              "seq": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Yarraman Station",
+      "stop_id": 1215,
+      "route_type": 0,
+      "lat": -37.9782524,
+      "lon": 145.1916,
+      "suburb": "Noble Park",
+      "zone": "Zone 2",
+      "free_zone": false,
+      "routes": {
+        "4": {
+          "name": "Cranbourne",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "3": {
+              "name": "Cranbourne",
+              "seq": 27
+            }
+          }
+        },
+        "11": {
+          "name": "Pakenham",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "10": {
+              "name": "Pakenham",
+              "seq": 27
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Yarraville Station",
+      "stop_id": 1216,
+      "route_type": 0,
+      "lat": -37.81585,
+      "lon": 144.889938,
+      "suburb": "Yarraville",
+      "zone": "Zone 1",
+      "free_zone": false,
+      "routes": {
+        "16": {
+          "name": "Werribee",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "16": {
+              "name": "Werribee",
+              "seq": 7
+            }
+          }
+        },
+        "17": {
+          "name": "Williamstown",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "17": {
+              "name": "Williamstown",
+              "seq": 7
+            }
+          }
+        }
+      }
+    }
+  ],
+  "route_type": 0,
+  "label": "Metro Train"
+}
