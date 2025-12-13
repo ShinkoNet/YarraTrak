@@ -23,14 +23,8 @@
             color: #ff6b00;
         }
 
-        .hint-top {
-            font-size: 13px;
-            color: #888;
-            margin-bottom: 20px;
-        }
-
         h2 {
-            font-size: 18px;
+            font-size: 16px;
             margin-top: 25px;
             margin-bottom: 12px;
             color: #888;
@@ -49,9 +43,7 @@
             color: #aaa;
         }
 
-        input[type="text"],
-        input[type="number"],
-        select {
+        input[type="text"] {
             width: 100%;
             padding: 12px;
             font-size: 16px;
@@ -61,20 +53,15 @@
             color: #fff;
         }
 
-        input::placeholder {
-            color: #666;
-        }
-
-        input:focus,
-        select:focus {
+        input:focus {
             outline: none;
             border-color: #ff6b00;
         }
 
         .hint {
-            font-size: 11px;
+            font-size: 12px;
             color: #666;
-            margin-top: 3px;
+            margin-top: 4px;
         }
 
         button {
@@ -94,130 +81,107 @@
             background: #cc5500;
         }
 
-        .stealth-group {
+        .info-box {
             background: #2a2a2a;
             border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
         }
 
-        .stealth-group .form-group {
-            margin-bottom: 10px;
+        .info-box p {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #ccc;
+            line-height: 1.5;
         }
 
-        .stealth-group .form-group:last-child {
+        .info-box p:last-child {
             margin-bottom: 0;
         }
 
-        .row {
+        .button-status {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
             display: flex;
-            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .row .form-group {
-            flex: 1;
+        .button-status .label {
+            font-size: 14px;
+            color: #888;
+        }
+
+        .button-status .value {
+            font-size: 14px;
+            color: #fff;
+        }
+
+        .button-status .not-set {
+            color: #666;
+            font-style: italic;
+        }
+
+        .voice-example {
+            background: #1e3a1e;
+            border: 1px solid #2d5a2d;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 15px;
+        }
+
+        .voice-example p {
+            margin: 0;
+            font-size: 13px;
+            color: #8bc88b;
+        }
+
+        .voice-example strong {
+            color: #a8e6a8;
         }
     </style>
 </head>
 
 <body>
     <h1>🚆 PTV Notify</h1>
-    <p class="hint-top">Ask the agent "configure button for [station]" to get the right values</p>
 
     <div class="form-group">
         <label for="server_url">Server URL</label>
         <input type="text" id="server_url" placeholder="http://192.168.1.100:8000">
+        <div class="hint">Your PTV Notify server address</div>
     </div>
 
-    <h2>Button 1</h2>
-    <div class="stealth-group">
-        <div class="form-group">
-            <label for="btn1_name">Name</label>
-            <input type="text" id="btn1_name" placeholder="e.g. Richmond → City">
-        </div>
-        <div class="row">
-            <div class="form-group">
-                <label for="btn1_stop_id">Stop ID</label>
-                <input type="number" id="btn1_stop_id" placeholder="e.g. 1162">
-            </div>
-            <div class="form-group">
-                <label for="btn1_route_type">Route Type</label>
-                <select id="btn1_route_type">
-                    <option value="0">Train</option>
-                    <option value="1">Tram</option>
-                    <option value="2">Bus</option>
-                    <option value="3">V/Line</option>
-                </select>
-            </div>
-        </div>
-        <div class="form-group">
-            <label for="btn1_direction_id">Direction ID (optional)</label>
-            <input type="number" id="btn1_direction_id" placeholder="e.g. 1">
-            <div class="hint">Leave empty to get next departure in any direction</div>
-        </div>
+    <h2>Configured Buttons</h2>
+
+    <div class="button-status">
+        <span class="label">Button 1</span>
+        <span class="value" id="btn1_display"><span class="not-set">Not configured</span></span>
+    </div>
+    <div class="button-status">
+        <span class="label">Button 2</span>
+        <span class="value" id="btn2_display"><span class="not-set">Not configured</span></span>
+    </div>
+    <div class="button-status">
+        <span class="label">Button 3</span>
+        <span class="value" id="btn3_display"><span class="not-set">Not configured</span></span>
     </div>
 
-    <h2>Button 2</h2>
-    <div class="stealth-group">
-        <div class="form-group">
-            <label for="btn2_name">Name</label>
-            <input type="text" id="btn2_name" placeholder="e.g. Work Tram">
-        </div>
-        <div class="row">
-            <div class="form-group">
-                <label for="btn2_stop_id">Stop ID</label>
-                <input type="number" id="btn2_stop_id" placeholder="">
-            </div>
-            <div class="form-group">
-                <label for="btn2_route_type">Route Type</label>
-                <select id="btn2_route_type">
-                    <option value="0">Train</option>
-                    <option value="1">Tram</option>
-                    <option value="2">Bus</option>
-                    <option value="3">V/Line</option>
-                </select>
-            </div>
-        </div>
-        <div class="form-group">
-            <label for="btn2_direction_id">Direction ID (optional)</label>
-            <input type="number" id="btn2_direction_id" placeholder="">
-        </div>
+    <div class="info-box">
+        <p>Buttons are configured using voice commands on your watch.</p>
+        <p>Just say what you want and the assistant will set it up for you!</p>
     </div>
 
-    <h2>Button 3</h2>
-    <div class="stealth-group">
-        <div class="form-group">
-            <label for="btn3_name">Name</label>
-            <input type="text" id="btn3_name" placeholder="e.g. Evening Bus">
-        </div>
-        <div class="row">
-            <div class="form-group">
-                <label for="btn3_stop_id">Stop ID</label>
-                <input type="number" id="btn3_stop_id" placeholder="">
-            </div>
-            <div class="form-group">
-                <label for="btn3_route_type">Route Type</label>
-                <select id="btn3_route_type">
-                    <option value="0">Train</option>
-                    <option value="1">Tram</option>
-                    <option value="2">Bus</option>
-                    <option value="3">V/Line</option>
-                </select>
-            </div>
-        </div>
-        <div class="form-group">
-            <label for="btn3_direction_id">Direction ID (optional)</label>
-            <input type="number" id="btn3_direction_id" placeholder="">
-        </div>
+    <div class="voice-example">
+        <p><strong>Try saying:</strong></p>
+        <p>"Configure button 1 for Richmond to the city"</p>
+        <p>"Set up button 2 for Flinders Street"</p>
     </div>
 
     <button id="save">Save Settings</button>
 
     <script>
-        var textFields = ['server_url', 'btn1_name', 'btn2_name', 'btn3_name'];
-        var numFields = ['btn1_stop_id', 'btn1_direction_id', 'btn2_stop_id', 'btn2_direction_id', 'btn3_stop_id', 'btn3_direction_id'];
-        var selectFields = ['btn1_route_type', 'btn2_route_type', 'btn3_route_type'];
-
         function getOptions() {
             try {
                 var hash = location.hash.slice(1);
@@ -228,49 +192,39 @@
 
         var options = getOptions();
 
-        // Load text fields
-        textFields.forEach(function (field) {
-            var el = document.getElementById(field);
-            if (el && options[field]) el.value = options[field];
-        });
+        // Load server URL
+        var serverUrlEl = document.getElementById('server_url');
+        if (options.server_url) {
+            serverUrlEl.value = options.server_url;
+        }
 
-        // Load number fields
-        numFields.forEach(function (field) {
-            var el = document.getElementById(field);
-            if (el && options[field] !== undefined && options[field] !== null) el.value = options[field];
-        });
-
-        // Load select fields
-        selectFields.forEach(function (field) {
-            var el = document.getElementById(field);
-            if (el && options[field] !== undefined) el.value = options[field];
-        });
+        // Display configured buttons (read-only)
+        for (var i = 1; i <= 3; i++) {
+            var name = options['btn' + i + '_name'];
+            var displayEl = document.getElementById('btn' + i + '_display');
+            if (name) {
+                displayEl.textContent = name;
+            }
+        }
 
         document.getElementById('save').addEventListener('click', function () {
-            var newOptions = {};
+            var serverUrl = serverUrlEl.value.trim();
 
-            // Collect text fields
-            textFields.forEach(function (field) {
-                var el = document.getElementById(field);
-                if (el && el.value.trim()) newOptions[field] = el.value.trim();
-            });
-
-            // Collect number fields (as integers)
-            numFields.forEach(function (field) {
-                var el = document.getElementById(field);
-                if (el && el.value.trim()) newOptions[field] = parseInt(el.value, 10);
-            });
-
-            // Collect select fields (as integers)
-            selectFields.forEach(function (field) {
-                var el = document.getElementById(field);
-                if (el) newOptions[field] = parseInt(el.value, 10);
-            });
-
-            if (!newOptions.server_url) {
+            if (!serverUrl) {
                 alert('Please enter a server URL');
                 return;
             }
+
+            // Preserve existing button configs, only update server_url
+            var newOptions = {};
+
+            // Copy all existing options
+            for (var key in options) {
+                newOptions[key] = options[key];
+            }
+
+            // Update server URL
+            newOptions.server_url = serverUrl;
 
             location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
         });

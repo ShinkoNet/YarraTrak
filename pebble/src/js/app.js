@@ -33,7 +33,14 @@ function generateUUID() {
     return id;
 }
 
-// Initialize settings
+// Initialize settings with defaults for emulator testing
+var DEFAULT_SERVER_URL = 'http://10.1.0.88:8000';
+
+// Set default if not already configured
+if (!Settings.option('server_url')) {
+    Settings.option('server_url', DEFAULT_SERVER_URL);
+}
+
 Settings.config({
     url: CONFIG_URL
 },
