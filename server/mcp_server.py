@@ -59,5 +59,49 @@ async def search_and_get_departures(query: str, route_type: int = RouteType.TRAI
     """
     return await tools.search_and_get_departures(query, route_type)
 
+@mcp.tool()
+async def configure_pebble_button(
+    button_id: int,
+    stop_name: str,
+    stop_id: int,
+    route_type: int = RouteType.TRAIN,
+    direction_id: int | None = None,
+    direction_name: str | None = None
+) -> str:
+    """
+    Generate configuration for a Pebble stealth button.
+    Use this when the user wants to set up a quick-access button on their watch.
+    Returns the configuration values the user needs to enter in their Pebble settings.
+    
+    Args:
+        button_id: Which button to configure (1, 2, or 3).
+        stop_name: Human-readable name for the button (e.g., "Richmond → City").
+        stop_id: The PTV stop ID (from search_stops).
+        route_type: Transport mode (TRAIN=0, TRAM=1, BUS=2, VLINE=3). Defaults to TRAIN.
+        direction_id: Optional direction ID for filtering (from get_route_directions).
+        direction_name: Optional human-readable direction (e.g., "City (Flinders Street)").
+    """
+    config = {
+        "button_id": button_id,
+        "name": stop_name,
+        "stop_id": stop_id,
+        "route_type": route_type,
+        "route_type_name": {0: "Train", 1: "Tram", 2: "Bus", 3: "V/Line"}.get(route_type, "Unknown"),
+    }
+    if direction_id is not None:
+        config["direction_id"] = direction_id
+    if direction_name:
+        config["direction_name"] = direction_name
+    
+    import json
+    return f"""Pebble Button {button_id} Configuration:
+• Name: {stop_name}
+• Stop ID: {stop_id}
+• Route Type: {config['route_type_name']} ({route_type})
+• Direction ID: {direction_id if direction_id else 'Any'}
+
+Tell the user to enter these values in their Pebble app settings:
+{json.dumps(config, indent=2)}"""
+
 if __name__ == "__main__":
     mcp.run()
