@@ -60,3 +60,26 @@ node_modules/
 # Temporary files
 *.tmp
 *.temp
+
+# Pebble SDK
+pebble/build/
+pebble/.lock-waf*
+pebble/waftools/
+pebble/resources/
+pebble/src/simply/
+pebble/src/util/
+pebble/src/js/clock/
+pebble/src/js/platform/
+pebble/src/js/settings/
+pebble/src/js/simply/
+pebble/src/js/smartpackage/
+pebble/src/js/timeline/
+pebble/src/js/ui/
+pebble/src/js/vendor/
+pebble/src/js/wakeup/
+pebble/src/js/loader.js
+pebble/src/js/lib/
+
+# Reference projects
+pebble-hass-reference/
+pebblejs-reference/

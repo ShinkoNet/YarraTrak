@@ -76,6 +76,10 @@ except Exception as e:
 
 _audio_store: dict[str, dict] = {}
 
+# --- Button Configurations (for MCP/agent setup) ---
+# This allows the agent to configure stealth buttons via set_button WebSocket message
+_button_configs: dict[str, dict] = {}
+
 
 def _cleanup_audio_store():
     """Remove expired audio tickets (5 min TTL)."""
@@ -449,6 +453,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     # Extract learned stop if present
                     learned_stop = None
+                    button_config = None
                     payload = result.get("payload", {})
                     
                     if result.get("type") == "RESULT":
@@ -461,15 +466,32 @@ async def websocket_endpoint(websocket: WebSocket):
                         
                         if payload.get("_stop_info"):
                             learned_stop = payload.pop("_stop_info")
+                        
+                        # Extract button config if present in tts_text
+                        tts_text = payload.get("tts_text", "")
+                        if "[BUTTON_CONFIG:" in tts_text:
+                            import re
+                            match = re.search(r'\[BUTTON_CONFIG:({.*?})\]', tts_text)
+                            if match:
+                                try:
+                                    button_config = json.loads(match.group(1))
+                                    # Clean up the tts_text
+                                    payload["tts_text"] = re.sub(r'\[BUTTON_CONFIG:{.*?}\]\n*', '', tts_text).strip()
+                                except json.JSONDecodeError:
+                                    pass
                     
                     # Send response
-                    await websocket.send_json({
+                    response = {
                         "type": result.get("type", "RESULT").lower(),
                         "id": msg_id,
                         "session_id": session_id,
                         "data": result,
                         "learned_stop": learned_stop
-                    })
+                    }
+                    if button_config:
+                        response["button_config"] = button_config
+                    
+                    await websocket.send_json(response)
                     
                 except Exception as e:
                     print(f"WebSocket query error: {e}")
@@ -484,6 +506,115 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({
                     "type": "pong",
                     "id": msg_id
+                })
+            
+            elif msg_type == "stealth":
+                # Direct departure fetch - no LLM, just stop_id/route_type/direction_id
+                stop_id = message.get("stop_id")
+                route_type = message.get("route_type", RouteType.TRAIN)
+                direction_id = message.get("direction_id")
+                
+                if not stop_id:
+                    await websocket.send_json({
+                        "type": "stealth_result",
+                        "id": msg_id,
+                        "vibration": [100, 100],
+                        "message": "Not configured"
+                    })
+                    continue
+                
+                try:
+                    data = await ptv_client.get_departures(route_type, stop_id, max_results=10, expand=["Direction"])
+                    departures = data.get("departures", [])
+                    
+                    if not departures:
+                        await websocket.send_json({
+                            "type": "stealth_result",
+                            "id": msg_id,
+                            "vibration": [200, 200],
+                            "message": "No services"
+                        })
+                        continue
+                    
+                    now_utc = datetime.now(timezone.utc)
+                    found = False
+                    
+                    for d in departures:
+                        if direction_id is not None and d.get("direction_id") != direction_id:
+                            continue
+                        
+                        dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
+                        if not dep_str:
+                            continue
+                        
+                        dep_time = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
+                        if dep_time > now_utc:
+                            minutes = int((dep_time - now_utc).total_seconds() / 60)
+                            minutes = max(0, min(720, minutes))
+                            
+                            vehicle = {RouteType.TRAIN: "train", RouteType.TRAM: "tram", RouteType.BUS: "bus",
+                                       RouteType.VLINE: "train", RouteType.NIGHT_BUS: "bus"}.get(route_type, "service")
+                            
+                            await websocket.send_json({
+                                "type": "stealth_result",
+                                "id": msg_id,
+                                "vibration": calculate_vibration(minutes),
+                                "message": "Arriving Now" if minutes == 0 else f"Next {vehicle} in {minutes} min",
+                                "minutes": minutes
+                            })
+                            found = True
+                            break
+                    
+                    if not found:
+                        await websocket.send_json({
+                            "type": "stealth_result",
+                            "id": msg_id,
+                            "vibration": [200, 200, 200],
+                            "message": "No future services"
+                        })
+                        
+                except Exception as e:
+                    print(f"WebSocket stealth error: {e}")
+                    await websocket.send_json({
+                        "type": "stealth_result",
+                        "id": msg_id,
+                        "vibration": [500, 100, 500],
+                        "message": "Error"
+                    })
+            
+            elif msg_type == "get_buttons":
+                # Return button configurations stored on server
+                await websocket.send_json({
+                    "type": "buttons",
+                    "id": msg_id,
+                    "buttons": _button_configs
+                })
+            
+            elif msg_type == "set_button":
+                # Agent can set button config (for MCP use)
+                button_id = message.get("button_id")
+                if button_id is None or button_id < 1 or button_id > 3:
+                    await websocket.send_json({
+                        "type": "error",
+                        "id": msg_id,
+                        "error": "button_id must be 1, 2, or 3"
+                    })
+                    continue
+                
+                _button_configs[str(button_id)] = {
+                    "name": message.get("name", f"Button {button_id}"),
+                    "stop_id": message.get("stop_id"),
+                    "stop_name": message.get("stop_name"),
+                    "route_type": message.get("route_type", RouteType.TRAIN),
+                    "direction_id": message.get("direction_id"),
+                    "direction_name": message.get("direction_name")
+                }
+                
+                await websocket.send_json({
+                    "type": "button_set",
+                    "id": msg_id,
+                    "button_id": button_id,
+                    "config": _button_configs[str(button_id)]
                 })
             
             else:

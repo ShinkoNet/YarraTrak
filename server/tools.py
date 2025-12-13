@@ -283,6 +283,57 @@ async def get_route_directions(route_id: int) -> str:
     except Exception as e:
         return f"[MCP_ERROR] Error fetching directions: {str(e)}"
 
+
+async def configure_pebble_button(
+    button_id: int,
+    stop_name: str,
+    stop_id: int,
+    route_type: int = RouteType.TRAIN,
+    direction_id: int | None = None,
+    direction_name: str | None = None
+) -> str:
+    """
+    Generate configuration for a Pebble stealth button.
+    Returns structured data that will be pushed to the connected Pebble client.
+    
+    Args:
+        button_id: Which button to configure (1, 2, or 3).
+        stop_name: Human-readable name for the button.
+        stop_id: The PTV stop ID.
+        route_type: Transport mode (TRAIN=0, TRAM=1, BUS=2, VLINE=3).
+        direction_id: Optional direction ID for filtering.
+        direction_name: Optional human-readable direction.
+    """
+    import json
+    
+    route_type_names = {
+        RouteType.TRAIN: "Train",
+        RouteType.TRAM: "Tram",
+        RouteType.BUS: "Bus",
+        RouteType.VLINE: "V/Line",
+        RouteType.NIGHT_BUS: "Night Bus"
+    }
+    rt_name = route_type_names.get(route_type, "Unknown")
+    
+    # Structured config that will be extracted and pushed to client
+    config = {
+        "button_id": button_id,
+        "name": stop_name,
+        "stop_id": stop_id,
+        "route_type": route_type,
+        "direction_id": direction_id,
+        "direction_name": direction_name
+    }
+    
+    direction_text = f"{direction_name}" if direction_name else "Any direction"
+    
+    # Return both human-readable text AND structured data marker
+    return f"""[BUTTON_CONFIG:{json.dumps(config)}]
+
+Button {button_id} configured for {stop_name} ({rt_name}, {direction_text}).
+Your Pebble app will be updated automatically."""
+
+
 # Track repeated searches within a session to detect when model is struggling
 _search_cache: dict[str, set[str]] = {}  # session_id -> set of queries
 

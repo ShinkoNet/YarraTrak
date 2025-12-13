@@ -1,8 +1,7 @@
 /**
  * PTV Notify - Melbourne Public Transport for Pebble
  * 
- * Main application entry point.
- * Runs on the phone's PebbleKit JS runtime.
+ * Voice-enabled departure queries via WebSocket.
  */
 
 var UI = require('ui');
@@ -10,15 +9,29 @@ var Voice = require('ui/voice');
 var Settings = require('settings');
 var Vibe = require('ui/vibe');
 var Feature = require('platform/feature');
-var PTVWS = require('ptv-ws');
+var Vector2 = require('vector2');
 
-// Configuration URL - you'll need to host this
-var CONFIG_URL = 'https://your-server.com/pebble-config.html';
+// Server configuration - update this URL to your server
+var CONFIG_URL = 'http://10.1.0.88:8000/pebble-config.html';
 
 // Application state
-var wsClient = null;
-var sessionId = null;
+var ws = null;
+var wsConnected = false;
+var sessionId = generateUUID();
 var queryHistory = [];
+var messageId = 0;
+var pendingRequests = {};
+
+// Generate simple UUID
+function generateUUID() {
+    var chars = 'abcdef0123456789';
+    var id = '';
+    for (var i = 0; i < 32; i++) {
+        id += chars.charAt(Math.floor(Math.random() * chars.length));
+        if (i === 7 || i === 11 || i === 15 || i === 19) id += '-';
+    }
+    return id;
+}
 
 // Initialize settings
 Settings.config({
@@ -28,8 +41,7 @@ Settings.config({
         console.log('Config opened');
     },
     function (e) {
-        console.log('Config closed with:', e.options);
-        // Reconnect with new settings
+        console.log('Config closed with:', JSON.stringify(e.options));
         if (e.options && e.options.server_url) {
             reconnect();
         }
@@ -62,27 +74,26 @@ function buildMenuItems() {
     if (Feature.microphone()) {
         items.push({
             title: 'Ask',
-            subtitle: 'Voice query',
-            icon: null
+            subtitle: 'Voice query'
         });
     }
 
-    // Stealth buttons
-    var btn1 = Settings.option('stealth_1_name');
-    var btn2 = Settings.option('stealth_2_name');
-    var btn3 = Settings.option('stealth_3_name');
+    // Stealth buttons from settings
+    var btn1Name = Settings.option('stealth_1_name');
+    var btn2Name = Settings.option('stealth_2_name');
+    var btn3Name = Settings.option('stealth_3_name');
 
-    if (btn1) {
-        items.push({ title: btn1, subtitle: 'Quick check', data: { stealth: 1 } });
+    if (btn1Name) {
+        items.push({ title: btn1Name, subtitle: 'Quick check', data: { stealth: 1 } });
     }
-    if (btn2) {
-        items.push({ title: btn2, subtitle: 'Quick check', data: { stealth: 2 } });
+    if (btn2Name) {
+        items.push({ title: btn2Name, subtitle: 'Quick check', data: { stealth: 2 } });
     }
-    if (btn3) {
-        items.push({ title: btn3, subtitle: 'Quick check', data: { stealth: 3 } });
+    if (btn3Name) {
+        items.push({ title: btn3Name, subtitle: 'Quick check', data: { stealth: 3 } });
     }
 
-    // If no items, show placeholder
+    // Fallback
     if (items.length === 0) {
         items.push({
             title: 'Setup Required',
@@ -106,13 +117,6 @@ mainMenu.on('select', function (e) {
     }
 });
 
-mainMenu.on('longSelect', function (e) {
-    if (e.item.data && e.item.data.stealth) {
-        // Long press shows last result again
-        Vibe.vibrate('short');
-    }
-});
-
 // Voice query flow
 function startVoiceQuery() {
     var resultCard = new UI.Card({
@@ -128,15 +132,13 @@ function startVoiceQuery() {
                 return;
             }
             resultCard.title('Error');
-            resultCard.body('Dictation failed: ' + e.err);
+            resultCard.body('Dictation: ' + e.err);
             return;
         }
 
-        // Got transcription
         resultCard.title('Processing...');
-        resultCard.body('You said: ' + e.transcription);
+        resultCard.body('You: ' + e.transcription);
 
-        // Send to server
         sendQuery(e.transcription, function (response) {
             handleQueryResponse(resultCard, response);
         }, function (error) {
@@ -145,7 +147,6 @@ function startVoiceQuery() {
         });
     });
 
-    // Allow re-asking
     resultCard.on('click', 'select', function () {
         startVoiceQuery();
     });
@@ -155,18 +156,17 @@ function startVoiceQuery() {
     });
 }
 
-// Stealth query (pre-configured)
+// Stealth query
 function runStealthQuery(buttonIndex) {
-    var stopName = Settings.option('stealth_' + buttonIndex + '_name');
     var query = Settings.option('stealth_' + buttonIndex + '_query');
+    var name = Settings.option('stealth_' + buttonIndex + '_name');
 
     if (!query) {
         Vibe.vibrate('short');
         return;
     }
 
-    // Show brief feedback
-    loadingCard.title(stopName || 'Checking...');
+    loadingCard.title(name || 'Checking...');
     loadingCard.subtitle('');
     loadingCard.body('');
     loadingCard.show();
@@ -174,7 +174,6 @@ function runStealthQuery(buttonIndex) {
     sendQuery(query, function (response) {
         loadingCard.hide();
 
-        // Vibrate the pattern
         var payload = response.data && response.data.payload;
         if (payload && payload.vibration) {
             Vibe.vibrate(payload.vibration);
@@ -187,58 +186,32 @@ function runStealthQuery(buttonIndex) {
     });
 }
 
-// Send query via WebSocket
-function sendQuery(text, successCb, errorCb) {
-    if (!wsClient || !wsClient.isConnected()) {
-        errorCb({ message: 'Not connected' });
-        return;
-    }
-
-    wsClient.query(text, sessionId, queryHistory, function (response) {
-        // Store learned stop
-        if (response.learned_stop) {
-            addToHistory(response.learned_stop);
-        }
-        // Update session
-        if (response.session_id) {
-            sessionId = response.session_id;
-        }
-        successCb(response);
-    }, errorCb);
-}
-
 // Handle query response
 function handleQueryResponse(card, response) {
     var data = response.data;
 
     if (!data) {
         card.title('Error');
-        card.body('No response data');
+        card.body('No response');
         return;
     }
 
     if (data.type === 'RESULT') {
         var payload = data.payload;
         card.title('Departures');
-        card.body(payload.tts_text || 'No information');
+        card.body(payload.tts_text || 'No info');
 
-        // Vibrate
         if (payload.vibration) {
             Vibe.vibrate(payload.vibration);
         }
-
     } else if (data.type === 'CLARIFICATION') {
         var payload = data.payload;
         card.title('Choose');
         card.body(payload.question_text || 'Please clarify');
-
-        // Show clarification menu
         showClarificationMenu(payload.options || [], card);
-
     } else if (data.type === 'ERROR') {
-        var payload = data.payload;
         card.title('Error');
-        card.body(payload.message || 'Unknown error');
+        card.body(data.payload.message || 'Unknown error');
     }
 }
 
@@ -267,7 +240,7 @@ function showClarificationMenu(options, parentCard) {
             handleQueryResponse(parentCard, response);
         }, function (error) {
             parentCard.title('Error');
-            parentCard.body(error.message || 'Query failed');
+            parentCard.body(error.message || 'Failed');
         });
     });
 
@@ -278,83 +251,157 @@ function showClarificationMenu(options, parentCard) {
     menu.show();
 }
 
-// Query history management
-function addToHistory(stopInfo) {
-    if (!stopInfo || !stopInfo.stop_id) return;
-
-    // Remove duplicate
-    queryHistory = queryHistory.filter(function (h) {
-        return !(h.stop_id === stopInfo.stop_id && h.route_type === stopInfo.route_type);
-    });
-
-    // Add to front
-    queryHistory.unshift(stopInfo);
-
-    // Limit size
-    if (queryHistory.length > 5) {
-        queryHistory = queryHistory.slice(0, 5);
-    }
-}
-
-// Connection management
-function connect() {
+// WebSocket connection
+function connectWebSocket() {
     var serverUrl = Settings.option('server_url');
 
     if (!serverUrl) {
         loadingCard.title('Setup Required');
         loadingCard.subtitle('');
-        loadingCard.body('Open settings in the\nPebble app to configure\nthe server URL.');
+        loadingCard.body('Open settings in\nthe Pebble app');
         loadingCard.show();
         return;
     }
+
+    // Convert to WebSocket URL
+    var wsUrl = serverUrl
+        .replace('https://', 'wss://')
+        .replace('http://', 'ws://')
+        .replace(/\/+$/, '') + '/ws';
+
+    console.log('Connecting to: ' + wsUrl);
 
     loadingCard.title('PTV Notify');
     loadingCard.subtitle('Connecting...');
     loadingCard.body('');
     loadingCard.show();
 
-    // Create WebSocket client
-    wsClient = new PTVWS(serverUrl);
+    ws = new WebSocket(wsUrl);
 
-    wsClient.on('open', function () {
+    ws.onopen = function () {
+        wsConnected = true;
+        console.log('WebSocket connected');
         loadingCard.subtitle('Connected!');
         setTimeout(function () {
             loadingCard.hide();
             mainMenu.show();
         }, 500);
-    });
+    };
 
-    wsClient.on('close', function () {
+    ws.onclose = function () {
+        wsConnected = false;
         console.log('WebSocket closed');
-    });
+        // Auto-reconnect
+        setTimeout(connectWebSocket, 3000);
+    };
 
-    wsClient.on('error', function (e) {
+    ws.onerror = function (e) {
+        console.log('WebSocket error');
         loadingCard.title('Connection Failed');
-        loadingCard.subtitle('');
-        loadingCard.body('Could not connect to:\n' + serverUrl);
-    });
+        loadingCard.body(serverUrl);
+    };
 
-    wsClient.connect();
+    ws.onmessage = function (event) {
+        try {
+            var msg = JSON.parse(event.data);
+            var pending = pendingRequests[msg.id];
+            if (pending) {
+                delete pendingRequests[msg.id];
+                if (pending.timeout) clearTimeout(pending.timeout);
+
+                if (msg.type === 'error') {
+                    pending.errorCb({ message: msg.error });
+                } else {
+                    if (msg.learned_stop) {
+                        addToHistory(msg.learned_stop);
+                    }
+                    if (msg.session_id) {
+                        sessionId = msg.session_id;
+                    }
+                    // Handle button config push from server
+                    if (msg.button_config) {
+                        saveButtonConfig(msg.button_config);
+                    }
+                    pending.successCb(msg);
+                }
+            }
+        } catch (e) {
+            console.log('Parse error: ' + e);
+        }
+    };
 }
 
 function reconnect() {
-    if (wsClient) {
-        wsClient.disconnect();
-        wsClient = null;
+    if (ws) {
+        ws.close();
+        ws = null;
     }
-    connect();
+    wsConnected = false;
+    connectWebSocket();
 }
 
-// Generate session ID
-function generateSessionId() {
-    var chars = 'abcdef0123456789';
-    var id = '';
-    for (var i = 0; i < 16; i++) {
-        id += chars.charAt(Math.floor(Math.random() * chars.length));
+// Send query
+function sendQuery(text, successCb, errorCb) {
+    if (!ws || !wsConnected) {
+        errorCb({ message: 'Not connected' });
+        return;
     }
-    return id;
+
+    var id = String(++messageId);
+
+    pendingRequests[id] = {
+        successCb: successCb,
+        errorCb: errorCb,
+        timeout: setTimeout(function () {
+            delete pendingRequests[id];
+            errorCb({ message: 'Timeout' });
+        }, 30000)
+    };
+
+    ws.send(JSON.stringify({
+        type: 'query',
+        id: id,
+        text: text,
+        session_id: sessionId,
+        query_history: queryHistory
+    }));
+}
+
+// Query history
+function addToHistory(stopInfo) {
+    if (!stopInfo || !stopInfo.stop_id) return;
+
+    queryHistory = queryHistory.filter(function (h) {
+        return !(h.stop_id === stopInfo.stop_id && h.route_type === stopInfo.route_type);
+    });
+
+    queryHistory.unshift(stopInfo);
+
+    if (queryHistory.length > 5) {
+        queryHistory = queryHistory.slice(0, 5);
+    }
+}
+
+// Save button config from server
+function saveButtonConfig(config) {
+    if (!config || !config.button_id) return;
+
+    var btnId = config.button_id;
+    console.log('Saving button ' + btnId + ' config: ' + JSON.stringify(config));
+
+    Settings.option('btn' + btnId + '_name', config.name || ('Button ' + btnId));
+    Settings.option('btn' + btnId + '_stop_id', config.stop_id);
+    Settings.option('btn' + btnId + '_route_type', config.route_type || 0);
+
+    if (config.direction_id !== undefined && config.direction_id !== null) {
+        Settings.option('btn' + btnId + '_direction_id', config.direction_id);
+    }
+
+    // Vibrate to confirm
+    Vibe.vibrate('short');
+    console.log('Button ' + btnId + ' saved successfully');
 }
 
 // Start the app
-sessionId = generateSessionId();
-connect();
+console.log('PTV Notify starting...');
+connectWebSocket();

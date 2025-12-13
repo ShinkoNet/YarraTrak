@@ -77,6 +77,15 @@ DATA_TOOLS = [
             "strict": True
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "configure_pebble_button",
+            "description": "Generate configuration for a Pebble watch stealth button. Use when user wants to set up a quick-access button.",
+            "parameters": schemas.CONFIGURE_PEBBLE_BUTTON_SCHEMA,
+            "strict": True
+        }
+    },
 ]
 
 TERMINAL_TOOLS = [
@@ -120,6 +129,7 @@ TOOL_HANDLERS = {
     "search_routes": tools.search_routes,
     "get_departures": tools.get_departures,
     "get_route_directions": tools.get_route_directions,
+    "configure_pebble_button": tools.configure_pebble_button,
 }
 
 
@@ -247,6 +257,13 @@ ASR RECOVERY (CRITICAL):
   - "Camber Well" → ask "Did you mean Camberwell?"
 - Think about what station SOUNDS like the input, not just exact matches.
 - Only call `return_error` if the user confirms the spelling and it still doesn't exist.
+
+PEBBLE BUTTON CONFIGURATION:
+When the user wants to set up a Pebble watch button (phrases like "configure button", "set up my watch", "stealth button"):
+1. First use `search_stops` to find the stop_id
+2. If direction matters, use `get_route_directions` to find the direction_id
+3. Call `configure_pebble_button` with the button_id (1, 2, or 3), stop_name, stop_id, route_type, and optionally direction_id
+4. Tell the user to enter these values in their Pebble app settings
 
 ERROR HANDLING:
 - If you see [API_ERROR], tell the user there's a temporary service issue.

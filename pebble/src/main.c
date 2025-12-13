@@ -1,12 +1,15 @@
 /**
- * Minimal C entry point for Pebble.js
- * 
- * This stub just initializes the Simply framework which handles
- * all the communication with the JavaScript runtime on the phone.
+ *  Pebble.js Project main file.
  */
 
 #include <pebble.h>
+#include "simply/simply.h"
 
+/**
+ * By default, we 'simply' load Simply and start running it.
+ */
 int main(void) {
+  Simply *simply = simply_init();
   app_event_loop();
+  simply_deinit(simply);
 }

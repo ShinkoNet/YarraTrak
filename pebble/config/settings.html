@@ -121,7 +121,6 @@
         <div class="form-group">
             <label for="stealth_1_query">Voice Query</label>
             <input type="text" id="stealth_1_query" placeholder="e.g. Next train from Richmond to the city">
-            <div class="hint">The query to send when pressed</div>
         </div>
     </div>
 
@@ -152,7 +151,6 @@
     <button id="save">Save Settings</button>
 
     <script>
-        // Field IDs
         var fields = [
             'server_url',
             'stealth_1_name', 'stealth_1_query',
@@ -160,48 +158,33 @@
             'stealth_3_name', 'stealth_3_query'
         ];
 
-        // Parse existing settings from URL hash
         function getOptions() {
             try {
                 var hash = location.hash.slice(1);
-                if (hash) {
-                    return JSON.parse(decodeURIComponent(hash));
-                }
-            } catch (e) {
-                console.log('Parse error:', e);
-            }
+                if (hash) return JSON.parse(decodeURIComponent(hash));
+            } catch (e) { }
             return {};
         }
 
-        // Load existing settings into form
         var options = getOptions();
         fields.forEach(function (field) {
             var el = document.getElementById(field);
-            if (el && options[field]) {
-                el.value = options[field];
-            }
+            if (el && options[field]) el.value = options[field];
         });
 
-        // Save and close
         document.getElementById('save').addEventListener('click', function () {
             var newOptions = {};
-
             fields.forEach(function (field) {
                 var el = document.getElementById(field);
-                if (el && el.value.trim()) {
-                    newOptions[field] = el.value.trim();
-                }
+                if (el && el.value.trim()) newOptions[field] = el.value.trim();
             });
 
-            // Validate server URL
             if (!newOptions.server_url) {
                 alert('Please enter a server URL');
                 return;
             }
 
-            // Return settings to Pebble app
-            location.href = 'pebblejs://close#' +
-                encodeURIComponent(JSON.stringify(newOptions));
+            location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
         });
     </script>
 </body>
