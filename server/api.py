@@ -667,8 +667,8 @@ pebble_config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "p
 async def pebble_config():
     """Serve the Pebble configuration page."""
     if os.path.exists(pebble_config_path):
-        with open(pebble_config_path, "r") as f:
-            return Response(content=f.read(), media_type="text/html")
+        with open(pebble_config_path, "r", encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="text/html; charset=utf-8")
     raise HTTPException(status_code=404, detail="Pebble config not found")
 
 
