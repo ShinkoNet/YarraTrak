@@ -63,6 +63,10 @@ function connectWebSocket() {
             const pending = pendingRequests.get(msg.id);
             if (pending) {
                 pendingRequests.delete(msg.id);
+                // Handle button config push from server
+                if (msg.button_config) {
+                    saveButtonConfigFromServer(msg.button_config);
+                }
                 pending.resolve(msg);
             }
         } catch (e) {
@@ -168,6 +172,23 @@ function saveButtonConfig(index, config) {
     const key = `ptv_btn_${index}`;
     localStorage.setItem(key, JSON.stringify(config));
     updateButtonUI(index, config);
+}
+
+// Handle button config pushed from server (via LLM/agent)
+function saveButtonConfigFromServer(config) {
+    if (!config || !config.button_id) return;
+
+    const btnId = config.button_id;
+    const btnConfig = {
+        name: config.name || `Button ${btnId}`,
+        stop_id: config.stop_id,
+        route_type: config.route_type || 0,
+        direction_id: config.direction_id,
+        direction_name: config.direction_name
+    };
+
+    log(`Button ${btnId} configured: ${config.name} (Stop ${config.stop_id})`, "system");
+    saveButtonConfig(btnId, btnConfig);
 }
 
 function loadButtonConfig() {
