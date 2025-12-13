@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>PTV Notify Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #ff6b00;
+        }
+
+        h2 {
+            font-size: 18px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            color: #888;
+            border-bottom: 1px solid #333;
+            padding-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 6px;
+            color: #aaa;
+        }
+
+        input[type="text"],
+        input[type="url"] {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid #444;
+            border-radius: 8px;
+            background: #2a2a2a;
+            color: #fff;
+        }
+
+        input::placeholder {
+            color: #666;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #ff6b00;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        button {
+            width: 100%;
+            padding: 16px;
+            font-size: 18px;
+            font-weight: 600;
+            background: #ff6b00;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 30px;
+        }
+
+        button:active {
+            background: #cc5500;
+        }
+
+        .stealth-group {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .stealth-group .form-group {
+            margin-bottom: 12px;
+        }
+
+        .stealth-group .form-group:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🚆 PTV Notify</h1>
+
+    <div class="form-group">
+        <label for="server_url">Server URL</label>
+        <input type="url" id="server_url" placeholder="http://192.168.1.100:8000">
+        <div class="hint">Your PTV Notify server address</div>
+    </div>
+
+    <h2>Stealth Button 1</h2>
+    <div class="stealth-group">
+        <div class="form-group">
+            <label for="stealth_1_name">Button Name</label>
+            <input type="text" id="stealth_1_name" placeholder="e.g. Home Station">
+        </div>
+        <div class="form-group">
+            <label for="stealth_1_query">Voice Query</label>
+            <input type="text" id="stealth_1_query" placeholder="e.g. Next train from Richmond to the city">
+            <div class="hint">The query to send when pressed</div>
+        </div>
+    </div>
+
+    <h2>Stealth Button 2</h2>
+    <div class="stealth-group">
+        <div class="form-group">
+            <label for="stealth_2_name">Button Name</label>
+            <input type="text" id="stealth_2_name" placeholder="e.g. Work Station">
+        </div>
+        <div class="form-group">
+            <label for="stealth_2_query">Voice Query</label>
+            <input type="text" id="stealth_2_query" placeholder="e.g. Next tram from Collins St">
+        </div>
+    </div>
+
+    <h2>Stealth Button 3</h2>
+    <div class="stealth-group">
+        <div class="form-group">
+            <label for="stealth_3_name">Button Name</label>
+            <input type="text" id="stealth_3_name" placeholder="e.g. Gym">
+        </div>
+        <div class="form-group">
+            <label for="stealth_3_query">Voice Query</label>
+            <input type="text" id="stealth_3_query" placeholder="e.g. Next bus from Carlton">
+        </div>
+    </div>
+
+    <button id="save">Save Settings</button>
+
+    <script>
+        // Field IDs
+        var fields = [
+            'server_url',
+            'stealth_1_name', 'stealth_1_query',
+            'stealth_2_name', 'stealth_2_query',
+            'stealth_3_name', 'stealth_3_query'
+        ];
+
+        // Parse existing settings from URL hash
+        function getOptions() {
+            try {
+                var hash = location.hash.slice(1);
+                if (hash) {
+                    return JSON.parse(decodeURIComponent(hash));
+                }
+            } catch (e) {
+                console.log('Parse error:', e);
+            }
+            return {};
+        }
+
+        // Load existing settings into form
+        var options = getOptions();
+        fields.forEach(function (field) {
+            var el = document.getElementById(field);
+            if (el && options[field]) {
+                el.value = options[field];
+            }
+        });
+
+        // Save and close
+        document.getElementById('save').addEventListener('click', function () {
+            var newOptions = {};
+
+            fields.forEach(function (field) {
+                var el = document.getElementById(field);
+                if (el && el.value.trim()) {
+                    newOptions[field] = el.value.trim();
+                }
+            });
+
+            // Validate server URL
+            if (!newOptions.server_url) {
+                alert('Please enter a server URL');
+                return;
+            }
+
+            // Return settings to Pebble app
+            location.href = 'pebblejs://close#' +
+                encodeURIComponent(JSON.stringify(newOptions));
+        });
+    </script>
+</body>
+
+</html>

@@ -48,6 +48,7 @@
             <input type="text" id="agent-input" placeholder="Ask the Agent (e.g. 'search caulfield')..."
                 onkeypress="handleInput(event)">
             <button onclick="sendAgentQuery()">Send</button>
+            <button id="ws-toggle" onclick="toggleWsMode()" title="Toggle WebSocket mode">🔌 WS: OFF</button>
         </div>
     </div>
     <script src="app.js?v=3"></script>
