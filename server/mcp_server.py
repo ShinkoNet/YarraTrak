@@ -86,7 +86,6 @@ async def configure_pebble_button(
         "name": stop_name,
         "stop_id": stop_id,
         "route_type": route_type,
-        "route_type_name": {0: "Train", 1: "Tram", 2: "Bus", 3: "V/Line"}.get(route_type, "Unknown"),
     }
     if direction_id is not None:
         config["direction_id"] = direction_id
@@ -94,14 +93,10 @@ async def configure_pebble_button(
         config["direction_name"] = direction_name
     
     import json
-    return f"""Pebble Button {button_id} Configuration:
-• Name: {stop_name}
-• Stop ID: {stop_id}
-• Route Type: {config['route_type_name']} ({route_type})
-• Direction ID: {direction_id if direction_id else 'Any'}
-
-Tell the user to enter these values in their Pebble app settings:
-{json.dumps(config, indent=2)}"""
+    # Include [BUTTON_CONFIG:{...}] marker so server pushes config to connected clients
+    config_json = json.dumps(config)
+    return f"""[BUTTON_CONFIG:{config_json}]
+Button {button_id} configured for {stop_name}. The button will now show quick departures from this stop."""
 
 if __name__ == "__main__":
     mcp.run()
