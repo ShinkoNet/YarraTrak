@@ -77,7 +77,7 @@ var mainMenu = new UI.Menu({
 function buildMenuItems() {
     var items = [];
 
-    // Voice option (if microphone available)
+    // Voice option only if microphone available (aplite doesn't have mic)
     if (Feature.microphone()) {
         items.push({
             title: 'Ask',
@@ -85,7 +85,7 @@ function buildMenuItems() {
         });
     }
 
-    // Stealth buttons from settings (using btn{N}_ prefix to match config page and server push)
+    // Stealth buttons from settings
     var btn1Name = Settings.option('btn1_name');
     var btn2Name = Settings.option('btn2_name');
     var btn3Name = Settings.option('btn3_name');
@@ -100,11 +100,11 @@ function buildMenuItems() {
         items.push({ title: btn3Name, subtitle: 'Quick check', data: { stealth: 3 } });
     }
 
-    // Fallback
+    // If no items at all, show setup message
     if (items.length === 0) {
         items.push({
-            title: 'Setup Required',
-            subtitle: 'Open settings'
+            title: 'No buttons set',
+            subtitle: 'Configure in phone app'
         });
     }
 
@@ -261,7 +261,10 @@ function showClarificationMenu(options, parentCard) {
 
 // WebSocket connection
 function connectWebSocket() {
-    var serverUrl = Settings.option('server_url');
+    var serverUrl = Settings.option('server_url') || DEFAULT_SERVER_URL;
+
+    console.log('Server URL from settings: ' + Settings.option('server_url'));
+    console.log('Using server URL: ' + serverUrl);
 
     if (!serverUrl) {
         loadingCard.title('Setup Required');

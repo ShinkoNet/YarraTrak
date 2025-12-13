@@ -66,80 +66,111 @@
 
         button {
             width: 100%;
-            padding: 16px;
-            font-size: 18px;
+            padding: 14px;
+            font-size: 16px;
             font-weight: 600;
             background: #ff6b00;
             color: white;
             border: none;
             border-radius: 8px;
             cursor: pointer;
-            margin-top: 25px;
+            margin-top: 20px;
         }
 
         button:active {
             background: #cc5500;
         }
 
-        .info-box {
+        .button-config {
             background: #2a2a2a;
             border-radius: 8px;
             padding: 15px;
             margin-bottom: 15px;
         }
 
-        .info-box p {
-            margin: 0 0 10px 0;
-            font-size: 14px;
-            color: #ccc;
-            line-height: 1.5;
+        .button-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
         }
 
-        .info-box p:last-child {
-            margin-bottom: 0;
+        .button-header h3 {
+            margin: 0;
+            font-size: 15px;
+            color: #fff;
         }
 
         .button-status {
-            background: #2a2a2a;
-            border-radius: 8px;
-            padding: 12px 15px;
-            margin-bottom: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .button-status.configured {
+            color: #4a4;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 8px;
+        }
+
+        .search-box input {
+            flex: 1;
+        }
+
+        .search-box button {
+            width: auto;
+            margin-top: 0;
+            padding: 12px 16px;
+        }
+
+        .search-results {
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .search-result {
+            padding: 10px;
+            background: #333;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .button-status .label {
-            font-size: 14px;
-            color: #888;
+        .search-result:hover {
+            background: #444;
         }
 
-        .button-status .value {
+        .search-result .name {
             font-size: 14px;
             color: #fff;
         }
 
-        .button-status .not-set {
-            color: #666;
-            font-style: italic;
+        .search-result .type {
+            font-size: 12px;
+            color: #888;
         }
 
-        .voice-example {
-            background: #1e3a1e;
-            border: 1px solid #2d5a2d;
-            border-radius: 8px;
-            padding: 12px;
-            margin-top: 15px;
+        .clear-btn {
+            background: #444;
+            font-size: 12px;
+            padding: 6px 12px;
+            margin-top: 8px;
         }
 
-        .voice-example p {
-            margin: 0;
+        .clear-btn:active {
+            background: #555;
+        }
+
+        .loading {
+            color: #888;
             font-size: 13px;
-            color: #8bc88b;
-        }
-
-        .voice-example strong {
-            color: #a8e6a8;
+            padding: 10px;
         }
     </style>
 </head>
@@ -153,35 +184,50 @@
         <div class="hint">Your PTV Notify server address</div>
     </div>
 
-    <h2>Configured Buttons</h2>
+    <h2>Configure Buttons</h2>
 
-    <div class="button-status">
-        <span class="label">Button 1</span>
-        <span class="value" id="btn1_display"><span class="not-set">Not configured</span></span>
-    </div>
-    <div class="button-status">
-        <span class="label">Button 2</span>
-        <span class="value" id="btn2_display"><span class="not-set">Not configured</span></span>
-    </div>
-    <div class="button-status">
-        <span class="label">Button 3</span>
-        <span class="value" id="btn3_display"><span class="not-set">Not configured</span></span>
-    </div>
-
-    <div class="info-box">
-        <p>Buttons are configured using voice commands on your watch.</p>
-        <p>Just say what you want and the assistant will set it up for you!</p>
+    <div class="button-config" id="btn1_config">
+        <div class="button-header">
+            <h3>Button 1</h3>
+            <span class="button-status" id="btn1_status">Not set</span>
+        </div>
+        <div class="search-box">
+            <input type="text" id="btn1_search" placeholder="Search station...">
+            <button onclick="searchStop(1)">🔍</button>
+        </div>
+        <div class="search-results" id="btn1_results"></div>
     </div>
 
-    <div class="voice-example">
-        <p><strong>Try saying:</strong></p>
-        <p>"Configure button 1 for Richmond to the city"</p>
-        <p>"Set up button 2 for Flinders Street"</p>
+    <div class="button-config" id="btn2_config">
+        <div class="button-header">
+            <h3>Button 2</h3>
+            <span class="button-status" id="btn2_status">Not set</span>
+        </div>
+        <div class="search-box">
+            <input type="text" id="btn2_search" placeholder="Search station...">
+            <button onclick="searchStop(2)">🔍</button>
+        </div>
+        <div class="search-results" id="btn2_results"></div>
+    </div>
+
+    <div class="button-config" id="btn3_config">
+        <div class="button-header">
+            <h3>Button 3</h3>
+            <span class="button-status" id="btn3_status">Not set</span>
+        </div>
+        <div class="search-box">
+            <input type="text" id="btn3_search" placeholder="Search station...">
+            <button onclick="searchStop(3)">🔍</button>
+        </div>
+        <div class="search-results" id="btn3_results"></div>
     </div>
 
     <button id="save">Save Settings</button>
 
     <script>
+        // Get server URL from current page or use default
+        var serverBase = window.location.origin;
+
         function getOptions() {
             try {
                 var hash = location.hash.slice(1);
@@ -192,19 +238,92 @@
 
         var options = getOptions();
 
-        // Load server URL
+        // Load existing values
         var serverUrlEl = document.getElementById('server_url');
         if (options.server_url) {
             serverUrlEl.value = options.server_url;
+            serverBase = options.server_url;
         }
 
-        // Display configured buttons (read-only)
+        // Display configured buttons
         for (var i = 1; i <= 3; i++) {
-            var name = options['btn' + i + '_name'];
-            var displayEl = document.getElementById('btn' + i + '_display');
+            updateButtonStatus(i);
+        }
+
+        function updateButtonStatus(btnNum) {
+            var name = options['btn' + btnNum + '_name'];
+            var statusEl = document.getElementById('btn' + btnNum + '_status');
             if (name) {
-                displayEl.textContent = name;
+                statusEl.textContent = name;
+                statusEl.classList.add('configured');
+            } else {
+                statusEl.textContent = 'Not set';
+                statusEl.classList.remove('configured');
             }
+        }
+
+        async function searchStop(btnNum) {
+            var searchEl = document.getElementById('btn' + btnNum + '_search');
+            var resultsEl = document.getElementById('btn' + btnNum + '_results');
+            var query = searchEl.value.trim();
+
+            if (query.length < 2) {
+                resultsEl.innerHTML = '<div class="loading">Enter at least 2 characters</div>';
+                return;
+            }
+
+            resultsEl.innerHTML = '<div class="loading">Searching...</div>';
+
+            try {
+                var base = serverUrlEl.value.trim() || serverBase;
+                var res = await fetch(base + '/api/v1/search?q=' + encodeURIComponent(query));
+                var data = await res.json();
+
+                if (data.stops && data.stops.length > 0) {
+                    resultsEl.innerHTML = data.stops.map(function (stop) {
+                        return '<div class="search-result" onclick=\'selectStop(' + btnNum + ',' + JSON.stringify(stop) + ')\'>' +
+                            '<span class="name">' + stop.name + '</span>' +
+                            '<span class="type">' + stop.type_name + '</span>' +
+                            '</div>';
+                    }).join('');
+                } else {
+                    resultsEl.innerHTML = '<div class="loading">No stations found</div>';
+                }
+            } catch (e) {
+                resultsEl.innerHTML = '<div class="loading">Error: ' + e.message + '</div>';
+            }
+        }
+
+        function selectStop(btnNum, stop) {
+            options['btn' + btnNum + '_name'] = stop.name;
+            options['btn' + btnNum + '_stop_id'] = stop.stop_id;
+            options['btn' + btnNum + '_route_type'] = stop.route_type;
+            // Clear direction_id for simplicity (gets all directions)
+            delete options['btn' + btnNum + '_direction_id'];
+
+            updateButtonStatus(btnNum);
+            document.getElementById('btn' + btnNum + '_results').innerHTML =
+                '<div class="loading">✓ Selected: ' + stop.name + '</div>' +
+                '<button class="clear-btn" onclick="clearButton(' + btnNum + ')">Clear</button>';
+            document.getElementById('btn' + btnNum + '_search').value = '';
+        }
+
+        function clearButton(btnNum) {
+            delete options['btn' + btnNum + '_name'];
+            delete options['btn' + btnNum + '_stop_id'];
+            delete options['btn' + btnNum + '_route_type'];
+            delete options['btn' + btnNum + '_direction_id'];
+            updateButtonStatus(btnNum);
+            document.getElementById('btn' + btnNum + '_results').innerHTML = '';
+        }
+
+        // Handle Enter key in search boxes
+        for (var i = 1; i <= 3; i++) {
+            (function (btnNum) {
+                document.getElementById('btn' + btnNum + '_search').addEventListener('keypress', function (e) {
+                    if (e.key === 'Enter') searchStop(btnNum);
+                });
+            })(i);
         }
 
         document.getElementById('save').addEventListener('click', function () {
@@ -215,18 +334,8 @@
                 return;
             }
 
-            // Preserve existing button configs, only update server_url
-            var newOptions = {};
-
-            // Copy all existing options
-            for (var key in options) {
-                newOptions[key] = options[key];
-            }
-
-            // Update server URL
-            newOptions.server_url = serverUrl;
-
-            location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
+            options.server_url = serverUrl;
+            location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(options));
         });
     </script>
 </body>

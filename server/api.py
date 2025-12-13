@@ -159,6 +159,43 @@ def calculate_vibration(minutes: int) -> list[int]:
 
 # --- Endpoints ---
 
+@app.get("/api/v1/search")
+async def search_stops_api(q: str):
+    """
+    Search for stops by name. Used by settings page for button configuration.
+    Returns simplified results suitable for the config UI.
+    """
+    if not q or len(q) < 2:
+        return {"stops": []}
+    
+    try:
+        data = await ptv_client.search(q)
+        stops = data.get("stops", [])
+        
+        # Filter for trains/trams only, format for config page
+        type_names = {
+            RouteType.TRAIN: "Train",
+            RouteType.TRAM: "Tram",
+            RouteType.VLINE: "V/Line",
+        }
+        
+        results = []
+        for s in stops[:10]:
+            route_type = s.get("route_type")
+            if route_type in type_names:
+                results.append({
+                    "name": s.get("stop_name"),
+                    "stop_id": s.get("stop_id"),
+                    "route_type": route_type,
+                    "type_name": type_names[route_type]
+                })
+        
+        return {"stops": results}
+    except Exception as e:
+        print(f"Search error: {e}")
+        return {"stops": [], "error": str(e)}
+
+
 @app.post("/api/v1/stealth")
 async def stealth_mode(req: StealthRequest):
     """
