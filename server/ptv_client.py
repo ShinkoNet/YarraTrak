@@ -2,7 +2,11 @@ import hashlib
 import hmac
 import httpx
 from urllib.parse import urlencode
-from .config import PTV_DEV_ID, PTV_API_KEY
+try:
+    from .config import PTV_DEV_ID, PTV_API_KEY
+except ImportError:
+    from config import PTV_DEV_ID, PTV_API_KEY
+
 
 class PTVClient:
     BASE_URL = "https://timetableapi.ptv.vic.gov.au"
