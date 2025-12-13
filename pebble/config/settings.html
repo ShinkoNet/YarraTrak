@@ -19,32 +19,39 @@
 
         h1 {
             font-size: 24px;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             color: #ff6b00;
+        }
+
+        .hint-top {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 20px;
         }
 
         h2 {
             font-size: 18px;
-            margin-top: 30px;
-            margin-bottom: 15px;
+            margin-top: 25px;
+            margin-bottom: 12px;
             color: #888;
             border-bottom: 1px solid #333;
             padding-bottom: 8px;
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
         label {
             display: block;
             font-size: 14px;
-            margin-bottom: 6px;
+            margin-bottom: 5px;
             color: #aaa;
         }
 
         input[type="text"],
-        input[type="url"] {
+        input[type="number"],
+        select {
             width: 100%;
             padding: 12px;
             font-size: 16px;
@@ -58,15 +65,16 @@
             color: #666;
         }
 
-        input:focus {
+        input:focus,
+        select:focus {
             outline: none;
             border-color: #ff6b00;
         }
 
         .hint {
-            font-size: 12px;
+            font-size: 11px;
             color: #666;
-            margin-top: 4px;
+            margin-top: 3px;
         }
 
         button {
@@ -79,7 +87,7 @@
             border: none;
             border-radius: 8px;
             cursor: pointer;
-            margin-top: 30px;
+            margin-top: 25px;
         }
 
         button:active {
@@ -89,74 +97,126 @@
         .stealth-group {
             background: #2a2a2a;
             border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
+            padding: 12px;
+            margin-bottom: 12px;
         }
 
         .stealth-group .form-group {
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
         .stealth-group .form-group:last-child {
             margin-bottom: 0;
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .row .form-group {
+            flex: 1;
         }
     </style>
 </head>
 
 <body>
     <h1>🚆 PTV Notify</h1>
+    <p class="hint-top">Ask the agent "configure button for [station]" to get the right values</p>
 
     <div class="form-group">
         <label for="server_url">Server URL</label>
-        <input type="url" id="server_url" placeholder="http://192.168.1.100:8000">
-        <div class="hint">Your PTV Notify server address</div>
+        <input type="text" id="server_url" placeholder="http://192.168.1.100:8000">
     </div>
 
-    <h2>Stealth Button 1</h2>
+    <h2>Button 1</h2>
     <div class="stealth-group">
         <div class="form-group">
-            <label for="stealth_1_name">Button Name</label>
-            <input type="text" id="stealth_1_name" placeholder="e.g. Home Station">
+            <label for="btn1_name">Name</label>
+            <input type="text" id="btn1_name" placeholder="e.g. Richmond → City">
+        </div>
+        <div class="row">
+            <div class="form-group">
+                <label for="btn1_stop_id">Stop ID</label>
+                <input type="number" id="btn1_stop_id" placeholder="e.g. 1162">
+            </div>
+            <div class="form-group">
+                <label for="btn1_route_type">Route Type</label>
+                <select id="btn1_route_type">
+                    <option value="0">Train</option>
+                    <option value="1">Tram</option>
+                    <option value="2">Bus</option>
+                    <option value="3">V/Line</option>
+                </select>
+            </div>
         </div>
         <div class="form-group">
-            <label for="stealth_1_query">Voice Query</label>
-            <input type="text" id="stealth_1_query" placeholder="e.g. Next train from Richmond to the city">
+            <label for="btn1_direction_id">Direction ID (optional)</label>
+            <input type="number" id="btn1_direction_id" placeholder="e.g. 1">
+            <div class="hint">Leave empty to get next departure in any direction</div>
         </div>
     </div>
 
-    <h2>Stealth Button 2</h2>
+    <h2>Button 2</h2>
     <div class="stealth-group">
         <div class="form-group">
-            <label for="stealth_2_name">Button Name</label>
-            <input type="text" id="stealth_2_name" placeholder="e.g. Work Station">
+            <label for="btn2_name">Name</label>
+            <input type="text" id="btn2_name" placeholder="e.g. Work Tram">
+        </div>
+        <div class="row">
+            <div class="form-group">
+                <label for="btn2_stop_id">Stop ID</label>
+                <input type="number" id="btn2_stop_id" placeholder="">
+            </div>
+            <div class="form-group">
+                <label for="btn2_route_type">Route Type</label>
+                <select id="btn2_route_type">
+                    <option value="0">Train</option>
+                    <option value="1">Tram</option>
+                    <option value="2">Bus</option>
+                    <option value="3">V/Line</option>
+                </select>
+            </div>
         </div>
         <div class="form-group">
-            <label for="stealth_2_query">Voice Query</label>
-            <input type="text" id="stealth_2_query" placeholder="e.g. Next tram from Collins St">
+            <label for="btn2_direction_id">Direction ID (optional)</label>
+            <input type="number" id="btn2_direction_id" placeholder="">
         </div>
     </div>
 
-    <h2>Stealth Button 3</h2>
+    <h2>Button 3</h2>
     <div class="stealth-group">
         <div class="form-group">
-            <label for="stealth_3_name">Button Name</label>
-            <input type="text" id="stealth_3_name" placeholder="e.g. Gym">
+            <label for="btn3_name">Name</label>
+            <input type="text" id="btn3_name" placeholder="e.g. Evening Bus">
+        </div>
+        <div class="row">
+            <div class="form-group">
+                <label for="btn3_stop_id">Stop ID</label>
+                <input type="number" id="btn3_stop_id" placeholder="">
+            </div>
+            <div class="form-group">
+                <label for="btn3_route_type">Route Type</label>
+                <select id="btn3_route_type">
+                    <option value="0">Train</option>
+                    <option value="1">Tram</option>
+                    <option value="2">Bus</option>
+                    <option value="3">V/Line</option>
+                </select>
+            </div>
         </div>
         <div class="form-group">
-            <label for="stealth_3_query">Voice Query</label>
-            <input type="text" id="stealth_3_query" placeholder="e.g. Next bus from Carlton">
+            <label for="btn3_direction_id">Direction ID (optional)</label>
+            <input type="number" id="btn3_direction_id" placeholder="">
         </div>
     </div>
 
     <button id="save">Save Settings</button>
 
     <script>
-        var fields = [
-            'server_url',
-            'stealth_1_name', 'stealth_1_query',
-            'stealth_2_name', 'stealth_2_query',
-            'stealth_3_name', 'stealth_3_query'
-        ];
+        var textFields = ['server_url', 'btn1_name', 'btn2_name', 'btn3_name'];
+        var numFields = ['btn1_stop_id', 'btn1_direction_id', 'btn2_stop_id', 'btn2_direction_id', 'btn3_stop_id', 'btn3_direction_id'];
+        var selectFields = ['btn1_route_type', 'btn2_route_type', 'btn3_route_type'];
 
         function getOptions() {
             try {
@@ -167,16 +227,44 @@
         }
 
         var options = getOptions();
-        fields.forEach(function (field) {
+
+        // Load text fields
+        textFields.forEach(function (field) {
             var el = document.getElementById(field);
             if (el && options[field]) el.value = options[field];
         });
 
+        // Load number fields
+        numFields.forEach(function (field) {
+            var el = document.getElementById(field);
+            if (el && options[field] !== undefined && options[field] !== null) el.value = options[field];
+        });
+
+        // Load select fields
+        selectFields.forEach(function (field) {
+            var el = document.getElementById(field);
+            if (el && options[field] !== undefined) el.value = options[field];
+        });
+
         document.getElementById('save').addEventListener('click', function () {
             var newOptions = {};
-            fields.forEach(function (field) {
+
+            // Collect text fields
+            textFields.forEach(function (field) {
                 var el = document.getElementById(field);
                 if (el && el.value.trim()) newOptions[field] = el.value.trim();
+            });
+
+            // Collect number fields (as integers)
+            numFields.forEach(function (field) {
+                var el = document.getElementById(field);
+                if (el && el.value.trim()) newOptions[field] = parseInt(el.value, 10);
+            });
+
+            // Collect select fields (as integers)
+            selectFields.forEach(function (field) {
+                var el = document.getElementById(field);
+                if (el) newOptions[field] = parseInt(el.value, 10);
             });
 
             if (!newOptions.server_url) {

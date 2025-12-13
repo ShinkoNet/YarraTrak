@@ -179,15 +179,17 @@ function saveButtonConfigFromServer(config) {
     if (!config || !config.button_id) return;
 
     const btnId = config.button_id;
+    // Map 'name' from server to 'stop_name' which updateButtonUI expects
+    const stopName = config.name || config.stop_name || `Button ${btnId}`;
     const btnConfig = {
-        name: config.name || `Button ${btnId}`,
+        stop_name: stopName,
         stop_id: config.stop_id,
         route_type: config.route_type || 0,
         direction_id: config.direction_id,
         direction_name: config.direction_name
     };
 
-    log(`Button ${btnId} configured: ${config.name} (Stop ${config.stop_id})`, "system");
+    log(`Button ${btnId} configured: ${stopName} (Stop ${config.stop_id})`, "system");
     saveButtonConfig(btnId, btnConfig);
 }
 
