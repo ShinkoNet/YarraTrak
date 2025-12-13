@@ -232,7 +232,7 @@
 <body>
     <div class="header-row">
         <h1>🚆 PTV Notify</h1>
-        <button id="update_data_btn" class="small-btn">Update Station Data</button>
+        <span id="save_status" style="color: #4CAF50; font-size: 14px;"></span>
     </div>
     <div style="margin-bottom: 20px;">
         <button id="debug_defaults" style="background: #444; margin-top: 0;">Load Dev Defaults</button>
@@ -333,9 +333,6 @@
         }
 
         // Event Listeners
-        document.getElementById('update_data_btn').addEventListener('click', function () {
-            loadStationData(0); // Load train by default
-        });
 
         // Helper to get query parameters
         function getQueryParam(name) {
@@ -375,11 +372,25 @@
                 }
             }
 
+            // Check if we're in a real Pebble app or just a browser
             var returnTo = getQueryParam('return_to');
+            var isPebbleApp = returnTo || navigator.userAgent.toLowerCase().includes('pebble');
+
             if (returnTo) {
+                // Coming from emulator config
                 location.href = returnTo + encodeURIComponent(JSON.stringify(newOptions));
-            } else {
+            } else if (isPebbleApp || location.protocol === 'file:') {
+                // On phone - close config page
                 location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
+            } else {
+                // In browser - just show success and stay on page
+                var statusEl = document.getElementById('save_status');
+                statusEl.textContent = '✓ Saved!';
+                statusEl.style.color = '#4CAF50';
+                setTimeout(function () { statusEl.textContent = ''; }, 3000);
+
+                // Store in URL hash so refresh preserves settings
+                location.hash = encodeURIComponent(JSON.stringify(newOptions));
             }
         });
 
@@ -660,10 +671,6 @@
         }
 
         async function loadStationData(routeType) {
-            var btn = document.getElementById('update_data_btn');
-            btn.textContent = "Loading...";
-            btn.disabled = true;
-
             var base = serverUrlEl.value.trim() || serverBase;
             if (base.endsWith('/')) base = base.slice(0, -1);
 
@@ -679,15 +686,10 @@
                     stationsByType[routeType] = data.stations;
                     loadedTypes[routeType] = true;
                     console.log("Loaded " + data.stations.length + " " + typeParam + " stations");
-                    btn.textContent = "Loaded (" + data.stations.length + ")";
-                } else {
-                    btn.textContent = "No Data Found";
                 }
             } catch (e) {
-                console.error(e);
-                btn.textContent = "Update Failed";
+                console.error("Failed to load " + typeParam + " stations:", e);
             }
-            setTimeout(() => { btn.disabled = false; btn.textContent = "Update Station Data"; }, 2000);
         }
 
         // Auto load train data on start

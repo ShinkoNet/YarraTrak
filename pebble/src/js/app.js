@@ -95,6 +95,49 @@ var mainMenu = new UI.Menu({
 function buildMenuItems() {
     var items = [];
 
+    // Smart station name abbreviation for Aplite menu display
+    // Uses recognizable short forms instead of just truncating
+    function abbreviateStation(name, maxLen) {
+        if (!name) return '';
+        maxLen = maxLen || 16; // Aplite safe width
+
+        // Remove " Station" suffix
+        name = name.replace(/ Station$/i, '');
+
+        if (name.length <= maxLen) return name;
+
+        // Common abbreviations for Melbourne stations
+        var abbrevs = {
+            'Flinders Street': 'City',
+            'Southern Cross': 'S Cross',
+            'South Morang': 'S Morang',
+            'South Yarra': 'S Yarra',
+            'South Kensington': 'S Kensi',
+            'Melbourne Central': 'M Cntral',
+            'North Melbourne': 'N Melb',
+            'North Richmond': 'N Rchmnd',
+            'East Richmond': 'E Rchmnd',
+            'West Richmond': 'W Rchmnd',
+            'East Malvern': 'E Mlvn',
+            'East Camberwell': 'E Camb',
+            'Mount Waverley': 'Mt Wav',
+            'Narre Warren': 'Narre',
+            'Flagstaff': 'Flgstf',
+            'Parliament': 'Prlmnt'
+        };
+
+        if (abbrevs[name]) return abbrevs[name];
+
+        // Generic: First 2 chars of first word + first 5 chars of second word
+        var words = name.split(' ');
+        if (words.length > 1) {
+            return words[0].substring(0, 2) + ' ' + words[1].substring(0, 5);
+        }
+
+        // Single word - max 7 chars
+        return name.substring(0, 7);
+    }
+
     // Voice option only if microphone available (aplite doesn't have mic)
     if (Feature.microphone()) {
         items.push({
@@ -109,13 +152,13 @@ function buildMenuItems() {
     var btn3Name = Settings.option('btn3_name');
 
     if (btn1Name) {
-        items.push({ title: btn1Name, subtitle: 'Quick check', data: { stealth: 1 } });
+        items.push({ title: abbreviateStation(btn1Name), subtitle: 'Quick check', data: { stealth: 1 } });
     }
     if (btn2Name) {
-        items.push({ title: btn2Name, subtitle: 'Quick check', data: { stealth: 2 } });
+        items.push({ title: abbreviateStation(btn2Name), subtitle: 'Quick check', data: { stealth: 2 } });
     }
     if (btn3Name) {
-        items.push({ title: btn3Name, subtitle: 'Quick check', data: { stealth: 3 } });
+        items.push({ title: abbreviateStation(btn3Name), subtitle: 'Quick check', data: { stealth: 3 } });
     }
 
     // If no items at all, show setup message
