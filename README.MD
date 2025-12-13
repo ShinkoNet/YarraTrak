@@ -43,7 +43,13 @@ python -m uvicorn server.api:app --host 0.0.0.0 --port 8000 --reload
 
 Open http://localhost:8000 in your browser.
 
-### 4. Run Tests
+### 4. Run the Pebble App
+
+```bash
+./run_pebble.sh
+```
+
+### 5. Run Tests
 
 ```bash
 pytest tests/ -v
@@ -70,7 +76,8 @@ pytest tests/ -v
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Frontend                              │
-│  web/app.js - Voice I/O, clarification chips, haptic feedback│
+│  web/app.js - Voice I/O, clarification chips, haptic feedback, for testing.
+│ pebble/src/js/app.js - The pebble app's frontend             |
 │  localStorage: session_id, query_history, button configs     │
 └─────────────────────────────────────────────────────────────┘
                               │

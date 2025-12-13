@@ -234,6 +234,9 @@
         <h1>🚆 PTV Notify</h1>
         <button id="update_data_btn" class="small-btn">Update Station Data</button>
     </div>
+    <div style="margin-bottom: 20px;">
+        <button id="debug_defaults" style="background: #444; margin-top: 0;">Load Dev Defaults</button>
+    </div>
 
     <div class="form-group">
         <label for="server_url">Server URL</label>
@@ -497,6 +500,41 @@
 
         // Auto load on start
         loadStationData();
+
+        // Debug Defaults
+        document.getElementById('debug_defaults').addEventListener('click', function () {
+            // Server
+            document.getElementById('server_url').value = 'http://10.1.0.88:8000';
+
+            // Button 1: Narre Warren -> Flinders
+            document.getElementById('btn1_type').value = '0'; // Metro
+            document.getElementById('btn1_start_search').value = 'Narre Warren Station';
+            document.getElementById('btn1_start_id').value = '1139';
+            document.getElementById('btn1_dest_search').value = 'Flinders Street Station';
+            document.getElementById('btn1_dest_id').value = '1071';
+            updateStatus(1);
+
+            // Button 2: Flinders -> Narre Warren
+            document.getElementById('btn2_type').value = '0';
+            document.getElementById('btn2_start_search').value = 'Flinders Street Station';
+            document.getElementById('btn2_start_id').value = '1071';
+            document.getElementById('btn2_dest_search').value = 'Narre Warren Station';
+            document.getElementById('btn2_dest_id').value = '1139';
+            updateStatus(2);
+
+            // Button 3: Southern Cross -> Brunswick
+            document.getElementById('btn3_type').value = '0';
+            document.getElementById('btn3_start_search').value = 'Southern Cross Station';
+            document.getElementById('btn3_start_id').value = '1181';
+            document.getElementById('btn3_dest_search').value = 'Brunswick Station';
+            document.getElementById('btn3_dest_id').value = '1029';
+            updateStatus(3);
+
+            // Auto Save
+            setTimeout(function () {
+                document.getElementById('save').click();
+            }, 500);
+        });
 
     </script>
 </body>

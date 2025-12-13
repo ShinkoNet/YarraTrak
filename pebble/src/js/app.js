@@ -289,13 +289,22 @@ function connectWebSocket() {
 
     ws = new WebSocket(wsUrl);
 
+    var isFirstLoad = true;
+
     ws.onopen = function () {
         wsConnected = true;
         console.log('WebSocket connected');
         loadingCard.subtitle('Connected!');
+
+        // Refresh menu items immediately when connected
+        mainMenu.items(0, buildMenuItems());
+
         setTimeout(function () {
             loadingCard.hide();
-            mainMenu.show();
+            if (isFirstLoad) {
+                mainMenu.show();
+                isFirstLoad = false;
+            }
         }, 500);
     };
 
