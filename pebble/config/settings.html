@@ -328,6 +328,12 @@
         // Event Listeners
         document.getElementById('update_data_btn').addEventListener('click', loadStationData);
 
+        // Helper to get query parameters
+        function getQueryParam(name) {
+            var match = RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+            return match && decodeURIComponent(match[1].replace(/\+/g, ' '));
+        }
+
         document.getElementById('save').addEventListener('click', function () {
             var serverUrl = serverUrlEl.value.trim();
             if (!serverUrl) {
@@ -354,7 +360,12 @@
                 }
             }
 
-            location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
+            var returnTo = getQueryParam('return_to');
+            if (returnTo) {
+                location.href = returnTo + encodeURIComponent(JSON.stringify(newOptions));
+            } else {
+                location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
+            }
         });
 
         // Search Logic
