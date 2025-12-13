@@ -9,12 +9,69 @@ var Voice = require('ui/voice');
 var Settings = require('settings');
 var Vibe = require('ui/vibe');
 var Feature = require('platform/feature');
+
+// Custom vibration pattern player
+// Pebble.js only supports 'short', 'long', 'double' - we simulate patterns
+// Pattern format: [vibe_ms, pause_ms, vibe_ms, pause_ms, ...]
+var vibeTimer = null;
+
+function playVibrationPattern(pattern) {
+    // Clear any ongoing pattern
+    if (vibeTimer) {
+        clearTimeout(vibeTimer);
+        vibeTimer = null;
+    }
+
+    // If it's a string preset, just use it directly
+    if (typeof pattern === 'string') {
+        Vibe.vibrate(pattern);
+        return;
+    }
+
+    // If not an array or empty, do a short vibe
+    if (!Array.isArray(pattern) || pattern.length === 0) {
+        Vibe.vibrate('short');
+        return;
+    }
+
+    var index = 0;
+
+    function playNext() {
+        if (index >= pattern.length) {
+            vibeTimer = null;
+            return;
+        }
+
+        var duration = pattern[index];
+        var isVibration = (index % 2 === 0); // Even indices are vibrations
+
+        if (isVibration && duration > 0) {
+            // Map duration to preset: <250ms = short, else long
+            // short ~50ms, long ~500ms on Pebble
+            if (duration < 250) {
+                Vibe.vibrate('short');
+            } else {
+                Vibe.vibrate('long');
+            }
+        }
+
+        index++;
+
+        // Schedule next step after this duration
+        if (index < pattern.length) {
+            vibeTimer = setTimeout(playNext, duration);
+        }
+    }
+
+    playNext();
+}
 var Vector2 = require('vector2');
 
 // Server configuration - update this URL to your server
 var CONFIG_URL = 'http://10.1.0.88:8000/pebble-config.html';
 
 // Application state
+
 var ws = null;
 var wsConnected = false;
 var sessionId = generateUUID();
@@ -104,8 +161,6 @@ function buildMenuItems() {
         // Remove " Station" suffix
         name = name.replace(/ Station$/i, '');
 
-        if (name.length <= maxLen) return name;
-
         // Common abbreviations for Melbourne stations
         var abbrevs = {
             'Flinders Street': 'City',
@@ -128,7 +183,7 @@ function buildMenuItems() {
 
         if (abbrevs[name]) return abbrevs[name];
 
-        // Generic: First 2 chars of first word + first 5 chars of second word
+        // Multi-word names: ALWAYS abbreviate (2 chars + 5 chars)
         var words = name.split(' ');
         if (words.length > 1) {
             return words[0].substring(0, 2) + ' ' + words[1].substring(0, 5);
@@ -146,19 +201,14 @@ function buildMenuItems() {
         });
     }
 
-    // Stealth buttons from settings
-    var btn1Name = Settings.option('btn1_name');
-    var btn2Name = Settings.option('btn2_name');
-    var btn3Name = Settings.option('btn3_name');
-
-    if (btn1Name) {
-        items.push({ title: abbreviateStation(btn1Name), subtitle: 'Quick check', data: { stealth: 1 } });
-    }
-    if (btn2Name) {
-        items.push({ title: abbreviateStation(btn2Name), subtitle: 'Quick check', data: { stealth: 2 } });
-    }
-    if (btn3Name) {
-        items.push({ title: abbreviateStation(btn3Name), subtitle: 'Quick check', data: { stealth: 3 } });
+    // Stealth buttons from settings - show as "Start→Dest"
+    for (var i = 1; i <= 3; i++) {
+        var startName = Settings.option('btn' + i + '_name');
+        var destName = Settings.option('btn' + i + '_dest_name');
+        if (startName) {
+            var title = abbreviateStation(startName) + '>' + abbreviateStation(destName || '?');
+            items.push({ title: title, subtitle: 'Quick check', data: { stealth: i } });
+        }
     }
 
     // If no items at all, show setup message
@@ -249,7 +299,7 @@ function runStealthQuery(buttonIndex) {
         }
 
         if (response.vibration) {
-            Vibe.vibrate(response.vibration);
+            playVibrationPattern(response.vibration);
         } else {
             Vibe.vibrate('short');
         }
@@ -285,7 +335,7 @@ function handleQueryResponse(card, response) {
         card.body(payload.tts_text || 'No info');
 
         if (payload.vibration) {
-            Vibe.vibrate(payload.vibration);
+            playVibrationPattern(payload.vibration);
         }
     } else if (data.type === 'CLARIFICATION') {
         var payload = data.payload;
