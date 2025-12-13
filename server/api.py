@@ -196,6 +196,41 @@ async def search_stops_api(q: str):
         return {"stops": [], "error": str(e)}
 
 
+@app.get("/api/v1/stations")
+async def get_stations(type: str = "train"):
+    """
+    Get all stations from the baked-in database.
+    type: 'train' or 'tram' (default: train)
+    """
+    db_path = os.path.join(os.path.dirname(__file__), "stations_db.json")
+    if not os.path.exists(db_path):
+        return {"stations": []}
+        
+    try:
+        with open(db_path, "r") as f:
+            data = json.load(f)
+            
+        stations = data.get("stations", [])
+        
+        # Filter if needed (currently DB is mostly train/vline)
+        # We might want to filter by route_type if we mix them later
+        # 0=Train, 1=Tram, 3=VLine
+        
+        target_types = [0, 3] # Default to Train+Vline
+        if type == "tram":
+            target_types = [1]
+            
+        filtered = [
+            s for s in stations 
+            if s.get("route_type") in target_types
+        ]
+        
+        return {"stations": filtered}
+    except Exception as e:
+        print(f"Error reading station DB: {e}")
+        return {"stations": [], "error": str(e)}
+
+
 @app.post("/api/v1/stealth")
 async def stealth_mode(req: StealthRequest):
     """

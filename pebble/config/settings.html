@@ -227,6 +227,7 @@
     <script>
         // Get server URL from current page or use default
         var serverBase = window.location.origin;
+        var stations = []; // Local cache of stations
 
         function getOptions() {
             try {
@@ -250,6 +251,28 @@
             updateButtonStatus(i);
         }
 
+        // Initial load of station data
+        loadStationData();
+
+        async function loadStationData() {
+            var base = serverUrlEl.value.trim() || serverBase;
+            // Remove trailing slash if present
+            if (base.endsWith('/')) base = base.slice(0, -1);
+
+            console.log("Loading stations from " + base);
+            try {
+                var res = await fetch(base + '/api/v1/stations');
+                var data = await res.json();
+                if (data.stations) {
+                    stations = data.stations;
+                    console.log("Loaded " + stations.length + " stations");
+                }
+            } catch (e) {
+                console.error("Failed to load stations:", e);
+                // Don't alert on load, just log
+            }
+        }
+
         function updateButtonStatus(btnNum) {
             var name = options['btn' + btnNum + '_name'];
             var statusEl = document.getElementById('btn' + btnNum + '_status');
@@ -262,35 +285,42 @@
             }
         }
 
-        async function searchStop(btnNum) {
+        // Client-side search
+        function searchStop(btnNum) {
             var searchEl = document.getElementById('btn' + btnNum + '_search');
             var resultsEl = document.getElementById('btn' + btnNum + '_results');
-            var query = searchEl.value.trim();
+            var query = searchEl.value.trim().toLowerCase();
+
+            if (stations.length === 0) {
+                resultsEl.innerHTML = '<div class="loading">No station data loaded. <button class="clear-btn" onclick="loadStationData()">Reload Data</button></div>';
+                return;
+            }
 
             if (query.length < 2) {
                 resultsEl.innerHTML = '<div class="loading">Enter at least 2 characters</div>';
                 return;
             }
 
-            resultsEl.innerHTML = '<div class="loading">Searching...</div>';
+            // Filter stations locally
+            var matches = stations.filter(function (s) {
+                return s.name.toLowerCase().includes(query);
+            });
 
-            try {
-                var base = serverUrlEl.value.trim() || serverBase;
-                var res = await fetch(base + '/api/v1/search?q=' + encodeURIComponent(query));
-                var data = await res.json();
+            // Limit to 10
+            matches = matches.slice(0, 10);
 
-                if (data.stops && data.stops.length > 0) {
-                    resultsEl.innerHTML = data.stops.map(function (stop) {
-                        return '<div class="search-result" onclick=\'selectStop(' + btnNum + ',' + JSON.stringify(stop) + ')\'>' +
-                            '<span class="name">' + stop.name + '</span>' +
-                            '<span class="type">' + stop.type_name + '</span>' +
-                            '</div>';
-                    }).join('');
-                } else {
-                    resultsEl.innerHTML = '<div class="loading">No stations found</div>';
-                }
-            } catch (e) {
-                resultsEl.innerHTML = '<div class="loading">Error: ' + e.message + '</div>';
+            if (matches.length > 0) {
+                resultsEl.innerHTML = matches.map(function (stop) {
+                    var typeName = stop.route_type === 0 ? "Train" : (stop.route_type === 1 ? "Tram" : "V/Line");
+                    // Escape single quotes in name for the onclick handler
+                    var safeStop = JSON.stringify(stop).replace(/'/g, "&#39;");
+                    return '<div class="search-result" onclick=\'selectStop(' + btnNum + ',' + safeStop + ')\'>' +
+                        '<span class="name">' + stop.name + '</span>' +
+                        '<span class="type">' + typeName + '</span>' +
+                        '</div>';
+                }).join('');
+            } else {
+                resultsEl.innerHTML = '<div class="loading">No stations found</div>';
             }
         }
 
@@ -300,6 +330,10 @@
             options['btn' + btnNum + '_route_type'] = stop.route_type;
             // Clear direction_id for simplicity (gets all directions)
             delete options['btn' + btnNum + '_direction_id'];
+
+            // Store coordinates as well if we have them, could be useful later
+            if (stop.latitude) options['btn' + btnNum + '_lat'] = stop.latitude;
+            if (stop.longitude) options['btn' + btnNum + '_lon'] = stop.longitude;
 
             updateButtonStatus(btnNum);
             document.getElementById('btn' + btnNum + '_results').innerHTML =
@@ -323,8 +357,20 @@
                 document.getElementById('btn' + btnNum + '_search').addEventListener('keypress', function (e) {
                     if (e.key === 'Enter') searchStop(btnNum);
                 });
+                // Also search on input for "autocomplete" feel
+                document.getElementById('btn' + btnNum + '_search').addEventListener('input', function (e) {
+                    if (this.value.length >= 2) searchStop(btnNum);
+                });
             })(i);
         }
+
+        // Reload data if server URL changes (on blur)
+        serverUrlEl.addEventListener('blur', function () {
+            var url = this.value.trim();
+            if (url && url !== serverBase) {
+                loadStationData();
+            }
+        });
 
         document.getElementById('save').addEventListener('click', function () {
             var serverUrl = serverUrlEl.value.trim();
