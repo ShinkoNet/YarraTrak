@@ -284,11 +284,174 @@ async def get_route_directions(route_id: int) -> str:
         return f"[MCP_ERROR] Error fetching directions: {str(e)}"
 
 
+def _levenshtein_distance(s1: str, s2: str) -> int:
+    """Calculate Levenshtein distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein_distance(s2, s1)
+    
+    if len(s2) == 0:
+        return len(s1)
+    
+    prev_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        curr_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = prev_row[j + 1] + 1
+            deletions = curr_row[j] + 1
+            substitutions = prev_row[j] + (c1 != c2)
+            curr_row.append(min(insertions, deletions, substitutions))
+        prev_row = curr_row
+    
+    return prev_row[-1]
+
+
+def _fuzzy_match_station(query: str, stations: list[dict], max_suggestions: int = 5) -> list[tuple[dict, int]]:
+    """
+    Find stations matching query using fuzzy matching.
+    Returns list of (station, score) tuples, sorted by match quality.
+    Score 0 = exact match, higher = worse match.
+    """
+    query_lower = query.lower().strip()
+    query_base = query_lower.replace(" station", "").replace(" stop", "").strip()
+    query_words = query_base.split()
+    is_single_word = len(query_words) == 1
+    
+    scored = []
+    for s in stations:
+        name = s.get("name", "")
+        name_lower = name.lower()
+        name_base = name_lower.replace(" station", "").replace(" stop", "").strip()
+        
+        # Exact match
+        if name_base == query_base or query_lower == name_lower:
+            scored.append((s, 0))
+            continue
+        
+        # Query is substring (e.g., "Flinders" in "Flinders Street Station")
+        if query_base in name_lower:
+            scored.append((s, 1))
+            continue
+        
+        # Starts with query
+        if name_base.startswith(query_base):
+            scored.append((s, 2))
+            continue
+        
+        # Fuzzy match using Levenshtein distance
+        distance = _levenshtein_distance(query_base, name_base)
+        
+        # For single-word queries, also try matching first word of station name
+        # (e.g., "Flindas" -> "Flinders" in "Flinders Street")
+        if is_single_word:
+            name_first = name_base.split()[0] if name_base else name_base
+            distance_first = _levenshtein_distance(query_base, name_first)
+            distance = min(distance, distance_first)
+        
+        # Only consider if distance is reasonable (< 40% of query length, min 3)
+        max_distance = max(3, len(query_base) * 0.4)
+        if distance <= max_distance:
+            scored.append((s, 10 + distance))
+    
+    # Sort by score (lower = better)
+    scored.sort(key=lambda x: x[1])
+    return scored[:max_suggestions]
+
+
+def _load_station_db(route_type: int) -> list[dict]:
+    """Load the appropriate station database for the route type."""
+    import json
+    import os
+    
+    base_dir = os.path.dirname(__file__)
+    
+    if route_type == RouteType.TRAIN:
+        filename = "stations_train.json"
+    elif route_type == RouteType.VLINE:
+        filename = "stations_vline.json"
+    elif route_type == RouteType.TRAM:
+        filename = "stops_tram.json"
+    else:
+        return []
+    
+    filepath = os.path.join(base_dir, filename)
+    if not os.path.exists(filepath):
+        return []
+    
+    try:
+        with open(filepath, "r") as f:
+            data = json.load(f)
+        return data.get("stops", [])
+    except Exception:
+        return []
+
+
+
+def resolve_direction_id(
+    start_stop_id: int,
+    dest_stop_id: int,
+    route_type: int = RouteType.TRAIN
+) -> dict:
+    """
+    Resolve the direction_id for traveling from start to destination.
+    Uses the enhanced station database with route/direction/stop_sequence data.
+    
+    Returns: {direction_id: int, direction_name: str, route_id: int, route_name: str} or {}
+    """
+    stations = _load_station_db(route_type)
+    if not stations:
+        return {}
+    
+    # Find both stations
+    start_station = next((s for s in stations if s.get("stop_id") == start_stop_id), None)
+    dest_station = next((s for s in stations if s.get("stop_id") == dest_stop_id), None)
+    
+    if not start_station or not dest_station:
+        return {}
+    
+    start_routes = start_station.get("routes", {})
+    dest_routes = dest_station.get("routes", {})
+    
+    if not start_routes or not dest_routes:
+        return {}
+    
+    # Find a shared route
+    shared_route_id = None
+    for route_id in start_routes:
+        if route_id in dest_routes:
+            shared_route_id = route_id
+            break
+    
+    if not shared_route_id:
+        return {}
+    
+    route_info = start_routes[shared_route_id]
+    route_name = route_info.get("name", "")
+    dirs = route_info.get("dirs", {})
+    
+    # Find direction where start.seq < dest.seq
+    for dir_id, dir_info in dirs.items():
+        start_seq = dir_info.get("seq")
+        dest_dir_info = dest_routes.get(shared_route_id, {}).get("dirs", {}).get(dir_id, {})
+        dest_seq = dest_dir_info.get("seq")
+        
+        if start_seq is not None and dest_seq is not None and start_seq < dest_seq:
+            return {
+                "direction_id": int(dir_id),
+                "direction_name": dir_info.get("name", ""),
+                "route_id": int(shared_route_id),
+                "route_name": route_name
+            }
+    
+    return {}
+
+
 async def configure_pebble_button(
     button_id: int,
     stop_name: str,
     stop_id: int,
     route_type: int = RouteType.TRAIN,
+    dest_stop_id: int | None = None,
+    dest_name: str | None = None,
     direction_id: int | None = None,
     direction_name: str | None = None
 ) -> str:
@@ -298,10 +461,12 @@ async def configure_pebble_button(
     
     Args:
         button_id: Which button to configure (1, 2, or 3).
-        stop_name: Human-readable name for the button.
-        stop_id: The PTV stop ID.
+        stop_name: Human-readable name for the button (start station).
+        stop_id: The PTV stop ID for the start station.
         route_type: Transport mode (TRAIN=0, TRAM=1, BUS=2, VLINE=3).
-        direction_id: Optional direction ID for filtering.
+        dest_stop_id: Optional destination stop ID (for direction filtering).
+        dest_name: Optional destination name.
+        direction_id: Optional explicit direction ID (overrides auto-resolution).
         direction_name: Optional human-readable direction.
     """
     import json
@@ -315,23 +480,166 @@ async def configure_pebble_button(
     }
     rt_name = route_type_names.get(route_type, "Unknown")
     
+    # Auto-resolve direction if dest provided but direction not
+    if dest_stop_id and not direction_id:
+        resolved = resolve_direction_id(stop_id, dest_stop_id, route_type)
+        if resolved:
+            direction_id = resolved.get("direction_id")
+            direction_name = resolved.get("direction_name")
+    
     # Structured config that will be extracted and pushed to client
     config = {
         "button_id": button_id,
         "name": stop_name,
         "stop_id": stop_id,
         "route_type": route_type,
+        "dest_id": dest_stop_id,
+        "dest_name": dest_name,
         "direction_id": direction_id,
         "direction_name": direction_name
     }
     
-    direction_text = f"{direction_name}" if direction_name else "Any direction"
+    direction_text = f"towards {direction_name}" if direction_name else "any direction"
+    dest_text = f" → {dest_name}" if dest_name else ""
     
     # Return both human-readable text AND structured data marker
     return f"""[BUTTON_CONFIG:{json.dumps(config)}]
 
-Button {button_id} configured for {stop_name} ({rt_name}, {direction_text}).
+Button {button_id} configured: {stop_name}{dest_text} ({rt_name}, {direction_text}).
+Direction ID resolved: {direction_id}.
 Your Pebble app will be updated automatically."""
+
+
+async def setup_pebble_button(
+    button_id: int,
+    start_station: str,
+    destination: str,
+    route_type: str = "TRAIN"
+) -> str:
+    """
+    Smart Pebble button setup. Just provide station NAMES - all IDs resolved automatically.
+    Returns actionable guidance on failure to help the agent recover.
+    
+    Args:
+        button_id: Which button (1, 2, or 3)
+        start_station: Name of the START station (e.g., "Narre Warren")
+        destination: Name of the DESTINATION station (e.g., "Flinders Street")
+        route_type: "TRAIN", "TRAM", or "VLINE"
+    """
+    import json
+    
+    # Convert route type string to int
+    rt_map = {"TRAIN": RouteType.TRAIN, "TRAM": RouteType.TRAM, "VLINE": RouteType.VLINE, "BUS": RouteType.BUS}
+    rt = rt_map.get(route_type.upper(), RouteType.TRAIN)
+    
+    # Load station database
+    stations = _load_station_db(rt)
+    if not stations:
+        return f"""[ERROR] No station database found for {route_type}.
+ACTION: Tell the user there's a system configuration issue."""
+
+    # --- Find START station using fuzzy matching ---
+    start_matches = _fuzzy_match_station(start_station, stations)
+    
+    if not start_matches:
+        return f"""[ERROR] Could not find start station "{start_station}". No similar matches found.
+ACTION: Call ask_clarification to ask the user to spell the station name differently."""
+    
+    # Check if we got an exact/substring match (score < 10) vs fuzzy match (score >= 10)
+    best_score = start_matches[0][1]
+    if best_score >= 10:
+        # Fuzzy match only - ask for confirmation
+        suggestions = [s.get("name") for s, _ in start_matches]
+        return f"""[ERROR] Could not find exact match for start station "{start_station}".
+SIMILAR STATIONS: {', '.join(suggestions)}
+ACTION: Call ask_clarification to ask: "I couldn't find '{start_station}'. Did you mean one of these: {', '.join(suggestions)}?" with options for each."""
+    
+    # Got a good match
+    start = start_matches[0][0]
+    start_id = start.get("stop_id")
+    start_name = start.get("name")
+    start_routes = start.get("routes", {})
+
+    # --- Find DESTINATION station using fuzzy matching ---
+    dest_matches = _fuzzy_match_station(destination, stations)
+    
+    if not dest_matches:
+        return f"""[ERROR] Could not find destination station "{destination}". No similar matches found.
+ACTION: Call ask_clarification to ask the user to spell the station name differently."""
+    
+    best_score = dest_matches[0][1]
+    if best_score >= 10:
+        suggestions = [s.get("name") for s, _ in dest_matches]
+        return f"""[ERROR] Could not find exact match for destination "{destination}".
+SIMILAR STATIONS: {', '.join(suggestions)}
+ACTION: Call ask_clarification to ask: "I couldn't find '{destination}'. Did you mean one of these: {', '.join(suggestions)}?" with options for each."""
+
+    dest = dest_matches[0][0]
+    dest_id = dest.get("stop_id")
+    dest_name = dest.get("name")
+    dest_routes = dest.get("routes", {})
+
+    # --- Check if stations share a route ---
+    shared_route = None
+    for route_id in start_routes:
+        if route_id in dest_routes:
+            shared_route = route_id
+            break
+    
+    if not shared_route:
+        # List the lines each station is on
+        start_lines = [r.get("name", "") for r in start_routes.values()]
+        dest_lines = [r.get("name", "") for r in dest_routes.values()]
+        
+        return f"""[ERROR] {start_name} and {dest_name} are NOT on the same line!
+{start_name} is on: {', '.join(start_lines) or 'unknown'}
+{dest_name} is on: {', '.join(dest_lines) or 'unknown'}
+ACTION: Call return_error to tell the user: "Sorry, {start_name} and {dest_name} aren't on the same train line. You can only set up a button for stations on the same line. What line do you want to use?" """
+
+    # --- Resolve direction ---
+    route_info = start_routes[shared_route]
+    route_name = route_info.get("name", "")
+    dirs = route_info.get("dirs", {})
+    
+    direction_id = None
+    direction_name = None
+    
+    for dir_id, dir_info in dirs.items():
+        start_seq = dir_info.get("seq")
+        dest_dir_info = dest_routes.get(shared_route, {}).get("dirs", {}).get(dir_id, {})
+        dest_seq = dest_dir_info.get("seq")
+        
+        if start_seq is not None and dest_seq is not None and start_seq < dest_seq:
+            direction_id = int(dir_id)
+            direction_name = dir_info.get("name", "")
+            break
+    
+    if direction_id is None:
+        return f"""[ERROR] Could not determine direction from {start_name} to {dest_name}.
+This might mean {dest_name} comes BEFORE {start_name} on the {route_name} line.
+ACTION: Call ask_clarification to ask: "Do you want trains FROM {start_name} or TO {start_name}?" with options."""
+
+    # --- Success! Build config ---
+    config = {
+        "button_id": button_id,
+        "name": start_name,
+        "stop_id": start_id,
+        "route_type": rt,
+        "dest_id": dest_id,
+        "dest_name": dest_name,
+        "direction_id": direction_id,
+        "direction_name": direction_name
+    }
+    
+    return f"""[BUTTON_CONFIG:{json.dumps(config)}]
+
+SUCCESS! Button {button_id} configured:
+  From: {start_name}
+  To: {dest_name}
+  Line: {route_name}
+  Direction: {direction_name} (ID: {direction_id})
+  
+The Pebble app will be updated automatically."""
 
 
 # Track repeated searches within a session to detect when model is struggling
@@ -370,7 +678,7 @@ def clear_search_cache(session_id: str) -> None:
 async def search_and_get_departures(query: str, route_type: int = RouteType.TRAIN, session_id: str = "") -> str:
     """
     Search for a stop and get departures. Uses smart ranking to pick the best match.
-    If called repeatedly with the same query, returns multiple options.
+    Falls back to local fuzzy matching if PTV API returns nothing (ASR error recovery).
 
     Args:
         query: The name of the stop to search for.
@@ -390,18 +698,41 @@ async def search_and_get_departures(query: str, route_type: int = RouteType.TRAI
                 is_repeat = True
             _search_cache[session_id].add(cache_key)
 
-        # 1. Search for the stop
+        # 1. Search for the stop via PTV API
         data = await client.search(query)
         stops = data.get("stops", [])
-
-        if not stops:
-            return f"No stops found matching '{query}'."
 
         # Filter by route_type
         filtered_stops = [s for s in stops if s.get('route_type') == route_type]
 
+        # 2. If PTV API returns nothing, try local fuzzy matching (ASR recovery)
         if not filtered_stops:
-            return f"No stops of type {route_type} found matching '{query}'."
+            type_name = {0: "train", 1: "tram", 3: "V/Line"}.get(route_type, "transport")
+            local_stations = _load_station_db(route_type)
+            
+            if local_stations:
+                fuzzy_matches = _fuzzy_match_station(query, local_stations, max_suggestions=5)
+                if fuzzy_matches:
+                    best_score = fuzzy_matches[0][1]
+                    if best_score < 10:
+                        # Good local match - use it directly
+                        station = fuzzy_matches[0][0]
+                        stop_id = station.get("stop_id")
+                        stop_name = station.get("name")
+                        
+                        departures_output = await get_departures(stop_id, route_type)
+                        stop_info_line = f"[STOP_INFO:{stop_id}:{route_type}:{stop_name}]"
+                        return f"Found stop '{stop_name}' (ID: {stop_id}).\n{stop_info_line}\n\n{departures_output}"
+                    else:
+                        # Fuzzy match needs confirmation
+                        suggestions = [f"{s.get('name')} [ID: {s.get('stop_id')}]" for s, _ in fuzzy_matches]
+                        return f"""[ERROR] No {type_name} stops found exactly matching '{query}'.
+SIMILAR STATIONS: {', '.join([s.get('name') for s, _ in fuzzy_matches])}
+ACTION: Call ask_clarification to ask: "I couldn't find '{query}'. Did you mean {fuzzy_matches[0][0].get('name')}?" with options for the similar stations."""
+            
+            # No fuzzy matches at all
+            return f"""[ERROR] No {type_name} stops found matching '{query}'.
+ACTION: Call ask_clarification to ask the user to spell or say the station name differently."""
 
         # Rank stops by match quality
         filtered_stops.sort(key=lambda s: _rank_stop(s, query))

@@ -60,43 +60,34 @@ async def search_and_get_departures(query: str, route_type: int = RouteType.TRAI
     return await tools.search_and_get_departures(query, route_type)
 
 @mcp.tool()
-async def configure_pebble_button(
+async def setup_pebble_button(
     button_id: int,
-    stop_name: str,
-    stop_id: int,
-    route_type: int = RouteType.TRAIN,
-    direction_id: int | None = None,
-    direction_name: str | None = None
+    start_station: str,
+    destination: str,
+    route_type: str = "TRAIN"
 ) -> str:
     """
-    Generate configuration for a Pebble stealth button.
-    Use this when the user wants to set up a quick-access button on their watch.
-    Returns the configuration values the user needs to enter in their Pebble settings.
+    Set up a Pebble watch button for quick departure checks.
+    Just provide the station NAMES - all IDs and directions are resolved automatically!
     
     Args:
-        button_id: Which button to configure (1, 2, or 3).
-        stop_name: Human-readable name for the button (e.g., "Richmond → City").
-        stop_id: The PTV stop ID (from search_stops).
-        route_type: Transport mode (TRAIN=0, TRAM=1, BUS=2, VLINE=3). Defaults to TRAIN.
-        direction_id: Optional direction ID for filtering (from get_route_directions).
-        direction_name: Optional human-readable direction (e.g., "City (Flinders Street)").
-    """
-    config = {
-        "button_id": button_id,
-        "name": stop_name,
-        "stop_id": stop_id,
-        "route_type": route_type,
-    }
-    if direction_id is not None:
-        config["direction_id"] = direction_id
-    if direction_name:
-        config["direction_name"] = direction_name
+        button_id: Which button to configure (1, 2, or 3)
+        start_station: Name of the START station (e.g., "Narre Warren", "Richmond")
+        destination: Name of the DESTINATION station (e.g., "Flinders Street", "the city")
+        route_type: "TRAIN", "TRAM", or "VLINE" (default: TRAIN)
     
-    import json
-    # Include [BUTTON_CONFIG:{...}] marker so server pushes config to connected clients
-    config_json = json.dumps(config)
-    return f"""[BUTTON_CONFIG:{config_json}]
-Button {button_id} configured for {stop_name}. The button will now show quick departures from this stop."""
+    Example: For commuting from Narre Warren to the city:
+        setup_pebble_button(1, "Narre Warren", "Flinders Street")
+    
+    If there's an error (wrong spelling, stations not on same line), the response
+    will tell you exactly what to do next (ask clarification, retry, etc).
+    """
+    return await tools.setup_pebble_button(
+        button_id=button_id,
+        start_station=start_station,
+        destination=destination,
+        route_type=route_type
+    )
 
 if __name__ == "__main__":
     mcp.run()

@@ -84,9 +84,9 @@ DATA_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "configure_pebble_button",
-            "description": "Generate configuration for a Pebble watch stealth button. Use when user wants to set up a quick-access button.",
-            "parameters": schemas.CONFIGURE_PEBBLE_BUTTON_SCHEMA,
+            "name": "setup_pebble_button",
+            "description": "Set up a Pebble button. Just provide station NAMES - IDs resolved automatically. Returns guidance on errors.",
+            "parameters": schemas.SETUP_PEBBLE_BUTTON_SCHEMA,
             "strict": True
         }
     },
@@ -133,7 +133,7 @@ TOOL_HANDLERS = {
     "search_routes": tools.search_routes,
     "get_departures": tools.get_departures,
     "get_route_directions": tools.get_route_directions,
-    "configure_pebble_button": tools.configure_pebble_button,
+    "setup_pebble_button": tools.setup_pebble_button,
 }
 
 
@@ -236,54 +236,62 @@ async def run_guardrail(query: str, session_id: str) -> bool:
 
 WORKER_PROMPT = """You are a Melbourne public transport assistant. You MUST call a tool for every response.
 
-RULES:
-1. Always call a tool. Never output plain text - put any explanation in tts_text or question_text.
-2. For ambiguous queries (multiple directions/lines possible), call `ask_clarification`.
-3. When you have departure data, call `return_result` with ONLY the single next departure.
-4. If the requested service isn't available, call `return_result` with available alternatives or `return_error`.
-5. Victoria, Australia only. Trains, trams, buses, V/Line.
-6. Use conversation history to understand context (corrections, follow-ups).
+CORE FLOW:
+1. Call a DATA TOOL (search_and_get_departures, search_stops, setup_pebble_button, etc.) to get information
+2. Read the result - if it contains [ERROR] and ACTION:, follow that ACTION instruction exactly
+3. Call a TERMINAL TOOL to respond to the user:
+   - `return_result` → You have departure info to share
+   - `ask_clarification` → Need user to pick from options (station spelling, direction, line)
+   - `return_error` → Unrecoverable error (user confirmed wrong station, service unavailable)
 
-DIRECTION LOGIC:
-- "Next train from Richmond" → ambiguous (which line?), ask clarification
-- "Next Pakenham train from Richmond" → clear (Pakenham line = away from city)
-- "Next train to the city from Richmond" → clear (city-bound)
-- "Next 96 tram" → ambiguous (St Kilda or East Brunswick?), ask clarification
+WHEN TO USE EACH TERMINAL TOOL:
 
-ASR RECOVERY (CRITICAL):
-- Voice input often has spelling errors. NEVER call `return_error` on first search failure.
-- If search returns no stops, ALWAYS call `ask_clarification` with your best guess at the correct spelling.
-- Common ASR mistakes: dropped letters, phonetic spellings, word boundaries
-- Examples:
-  - "Nary Warren" → ask "Did you mean Narre Warren?"
-  - "Sandringam" → ask "Did you mean Sandringham?"
-  - "Flinder Street" → ask "Did you mean Flinders Street?"
-  - "Camber Well" → ask "Did you mean Camberwell?"
-- Think about what station SOUNDS like the input, not just exact matches.
-- Only call `return_error` if the user confirms the spelling and it still doesn't exist.
+`ask_clarification` - Use when:
+- Tool returned [ERROR] with SIMILAR STATIONS list
+- User's query is ambiguous (which direction? which line?)
+- Multiple valid options exist
+
+`return_result` - Use when:
+- You have departure data (time, platform, line)
+- Button was successfully configured
+
+`return_error` - Use ONLY when:
+- User already clarified and it still fails
+- System error that can't be recovered
+
+VAGUE QUERIES:
+- "When's the next train?" → ask_clarification: "Which station are you at?"
+- "Next train from Richmond" → ask_clarification: "Which direction?" with City/Belgrave/etc options
+- "Next Pakenham train from Richmond" → search_and_get_departures, then return_result
+
+TOOL RESULT PATTERNS:
+- [BUTTON_CONFIG:...] → Success! Call return_result to confirm
+- [ERROR] ... ACTION: Call ask_clarification... → Follow it! Call ask_clarification
+- [ERROR] ... ACTION: Call return_error... → Follow it! Call return_error
+- [STOP_INFO:...] followed by departures → Call return_result with the departure info
 
 PEBBLE BUTTON CONFIGURATION:
-When the user wants to set up a Pebble watch button (phrases like "configure button", "set up my watch", "stealth button"):
-1. First use `search_stops` to find the stop_id
-2. If direction matters, use `get_route_directions` to find the direction_id
-3. Call `configure_pebble_button` with the button_id (1, 2, or 3), stop_name, stop_id, route_type, and optionally direction_id
-4. Tell the user to enter these values in their Pebble app settings
+When user wants to set up a Pebble button ("configure button", "set up my watch"):
+1. Ask for START station and DESTINATION station if not provided
+2. Call `setup_pebble_button` with button_id, start_station, destination
+3. If [ERROR] returned, follow the ACTION instruction
+
+Example: "Set up button 1 for Narre Warren to Flinders Street"
+→ setup_pebble_button(1, "Narre Warren", "Flinders Street")
 
 ERROR HANDLING:
-- If you see [API_ERROR], tell the user there's a temporary service issue.
-- If you see [MCP_ERROR], tell the user there was a processing error.
-
-Use data tools to fetch information, then call a terminal tool (return_result, ask_clarification, or return_error)."""
+- [API_ERROR] → return_error with "temporary service issue"
+- [MCP_ERROR] → return_error with "processing error" """
 
 # Inject known station names to help with spelling/ASR
 try:
-    _db_path = os.path.join(os.path.dirname(__file__), "stations_db.json")
+    _db_path = os.path.join(os.path.dirname(__file__), "stations_train.json")
     if os.path.exists(_db_path):
         with open(_db_path, "r") as f:
             _st_data = json.load(f)
             # Just names, comma separated
-            _st_names = [s["name"].replace(" Station", "") for s in _st_data.get("stations", [])]
-            # Limit to ~300 to be safe (we have ~250)
+            _st_names = [s["name"].replace(" Station", "") for s in _st_data.get("stops", [])]
+            # Limit to ~300 to be safe
             _st_list = ", ".join(_st_names[:300])
             WORKER_PROMPT += f"\n\nKNOWN STATIONS (for spelling correction):\n{_st_list}"
 except Exception as e:
