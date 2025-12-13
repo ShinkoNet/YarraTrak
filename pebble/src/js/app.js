@@ -78,10 +78,10 @@ function buildMenuItems() {
         });
     }
 
-    // Stealth buttons from settings
-    var btn1Name = Settings.option('stealth_1_name');
-    var btn2Name = Settings.option('stealth_2_name');
-    var btn3Name = Settings.option('stealth_3_name');
+    // Stealth buttons from settings (using btn{N}_ prefix to match config page and server push)
+    var btn1Name = Settings.option('btn1_name');
+    var btn2Name = Settings.option('btn2_name');
+    var btn3Name = Settings.option('btn3_name');
 
     if (btn1Name) {
         items.push({ title: btn1Name, subtitle: 'Quick check', data: { stealth: 1 } });
@@ -156,12 +156,14 @@ function startVoiceQuery() {
     });
 }
 
-// Stealth query
+// Stealth query - uses direct stop_id lookup instead of text query for speed
 function runStealthQuery(buttonIndex) {
-    var query = Settings.option('stealth_' + buttonIndex + '_query');
-    var name = Settings.option('stealth_' + buttonIndex + '_name');
+    var name = Settings.option('btn' + buttonIndex + '_name');
+    var stopId = Settings.option('btn' + buttonIndex + '_stop_id');
+    var routeType = Settings.option('btn' + buttonIndex + '_route_type');
+    var directionId = Settings.option('btn' + buttonIndex + '_direction_id');
 
-    if (!query) {
+    if (!stopId) {
         Vibe.vibrate('short');
         return;
     }
@@ -171,12 +173,11 @@ function runStealthQuery(buttonIndex) {
     loadingCard.body('');
     loadingCard.show();
 
-    sendQuery(query, function (response) {
+    sendStealthQuery(stopId, routeType, directionId, function (response) {
         loadingCard.hide();
 
-        var payload = response.data && response.data.payload;
-        if (payload && payload.vibration) {
-            Vibe.vibrate(payload.vibration);
+        if (response.vibration) {
+            Vibe.vibrate(response.vibration);
         } else {
             Vibe.vibrate('short');
         }
@@ -365,6 +366,37 @@ function sendQuery(text, successCb, errorCb) {
         session_id: sessionId,
         query_history: queryHistory
     }));
+}
+
+// Send stealth query - direct stop_id lookup, no LLM
+function sendStealthQuery(stopId, routeType, directionId, successCb, errorCb) {
+    if (!ws || !wsConnected) {
+        errorCb({ message: 'Not connected' });
+        return;
+    }
+
+    var id = String(++messageId);
+
+    pendingRequests[id] = {
+        successCb: successCb,
+        errorCb: errorCb,
+        timeout: setTimeout(function () {
+            delete pendingRequests[id];
+            errorCb({ message: 'Timeout' });
+        }, 15000)
+    };
+
+    var msg = {
+        type: 'stealth',
+        id: id,
+        stop_id: stopId,
+        route_type: routeType || 0
+    };
+    if (directionId !== undefined && directionId !== null) {
+        msg.direction_id = directionId;
+    }
+
+    ws.send(JSON.stringify(msg));
 }
 
 // Query history

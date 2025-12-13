@@ -630,6 +630,18 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")
 
 
+# Serve Pebble config from pebble/config/settings.html (single source of truth)
+pebble_config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "pebble", "config", "settings.html")
+
+@app.get("/pebble-config.html")
+async def pebble_config():
+    """Serve the Pebble configuration page."""
+    if os.path.exists(pebble_config_path):
+        with open(pebble_config_path, "r") as f:
+            return Response(content=f.read(), media_type="text/html")
+    raise HTTPException(status_code=404, detail="Pebble config not found")
+
+
 # Mount static files
 web_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
 if os.path.exists(web_path):
