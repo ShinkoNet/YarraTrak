@@ -1,0 +1,26 @@
+{
+    "uuid": "61ae3254-ce00-49db-aad8-23143f649b91",
+    "shortName": "PTV Notify",
+    "longName": "PTV Notify - Melbourne Transport",
+    "companyName": "rebble.io",
+    "versionLabel": "1.0.0",
+    "versionCode": 1,
+    "sdkVersion": "3",
+    "targetPlatforms": [
+        "aplite",
+        "basalt",
+        "chalk",
+        "diorite"
+    ],
+    "watchapp": {
+        "watchface": false,
+        "hiddenApp": false
+    },
+    "capabilities": [
+        "configurable"
+    ],
+    "resources": {
+        "media": []
+    },
+    "appKeys": {}
+}

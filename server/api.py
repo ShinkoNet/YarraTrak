@@ -2,10 +2,11 @@
 PTV Notify API - FastAPI server for public transport queries.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
+import json
 from pydantic import BaseModel
 from datetime import datetime, timezone
 import os
@@ -378,7 +379,128 @@ async def get_media(ticket_id: str):
     return Response(status_code=202)
 
 
+# --- WebSocket Endpoint ---
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time communication.
+    
+    Message Protocol:
+    
+    Client -> Server:
+    {
+        "type": "query",
+        "id": "1",                    // Correlation ID
+        "text": "next train from richmond",
+        "session_id": "abc123",       // Optional
+        "query_history": [...]        // Optional, for speculative fetch
+    }
+    
+    Server -> Client:
+    {
+        "type": "result",             // or "clarification", "error"
+        "id": "1",
+        "data": { ... },              // Agent response payload
+        "learned_stop": { ... }       // Optional
+    }
+    """
+    await websocket.accept()
+    
+    try:
+        while True:
+            # Receive message
+            raw_message = await websocket.receive_text()
+            
+            try:
+                message = json.loads(raw_message)
+            except json.JSONDecodeError:
+                await websocket.send_json({
+                    "type": "error",
+                    "id": None,
+                    "error": "Invalid JSON"
+                })
+                continue
+            
+            msg_type = message.get("type")
+            msg_id = message.get("id")
+            
+            if msg_type == "query":
+                # Handle text query
+                query_text = message.get("text", "").strip()
+                session_id = message.get("session_id") or str(uuid.uuid4())
+                query_history = message.get("query_history", [])
+                
+                if not query_text:
+                    await websocket.send_json({
+                        "type": "error",
+                        "id": msg_id,
+                        "error": "Empty query"
+                    })
+                    continue
+                
+                try:
+                    # Run speculative fetch with client-provided history
+                    prefetched = await tools.speculative_fetch(query_history)
+                    prefetched_context = tools.format_speculative_context(prefetched)
+                    
+                    # Run agent
+                    result = await agent_engine.run_agent(query_text, session_id, prefetched_context)
+                    
+                    # Extract learned stop if present
+                    learned_stop = None
+                    payload = result.get("payload", {})
+                    
+                    if result.get("type") == "RESULT":
+                        departure = payload.get("departure")
+                        if departure:
+                            if hasattr(departure, "model_dump"):
+                                departure = departure.model_dump()
+                            if departure.get("minutes_to_depart") is not None:
+                                payload["vibration"] = calculate_vibration(departure["minutes_to_depart"])
+                        
+                        if payload.get("_stop_info"):
+                            learned_stop = payload.pop("_stop_info")
+                    
+                    # Send response
+                    await websocket.send_json({
+                        "type": result.get("type", "RESULT").lower(),
+                        "id": msg_id,
+                        "session_id": session_id,
+                        "data": result,
+                        "learned_stop": learned_stop
+                    })
+                    
+                except Exception as e:
+                    print(f"WebSocket query error: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "id": msg_id,
+                        "error": str(e)
+                    })
+            
+            elif msg_type == "ping":
+                # Health check
+                await websocket.send_json({
+                    "type": "pong",
+                    "id": msg_id
+                })
+            
+            else:
+                await websocket.send_json({
+                    "type": "error",
+                    "id": msg_id,
+                    "error": f"Unknown message type: {msg_type}"
+                })
+                
+    except WebSocketDisconnect:
+        print("WebSocket client disconnected")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+
+
 # Mount static files
 web_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
 if os.path.exists(web_path):
     app.mount("/", StaticFiles(directory=web_path, html=True), name="web")
+

@@ -2,9 +2,123 @@ const API_BASE = "/api/v1";
 const SESSION_KEY = "ptv_session_id";
 const QUERY_HISTORY_KEY = "ptv_query_history";
 const MAX_QUERY_HISTORY = 10;
+const WS_MODE_KEY = "ptv_ws_mode";
 
 let currentSessionId = localStorage.getItem(SESSION_KEY) || crypto.randomUUID();
 localStorage.setItem(SESSION_KEY, currentSessionId);
+
+// --- WebSocket State ---
+let ws = null;
+let wsConnected = false;
+let useWebSocket = localStorage.getItem(WS_MODE_KEY) === "true";
+let pendingRequests = new Map(); // id -> {resolve, reject}
+let wsMessageId = 0;
+
+// --- WebSocket Connection ---
+function connectWebSocket() {
+    if (ws && ws.readyState === WebSocket.OPEN) return;
+
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${location.host}/ws`;
+
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+        wsConnected = true;
+        log("WebSocket connected", "system");
+        updateWsStatus();
+    };
+
+    ws.onclose = () => {
+        wsConnected = false;
+        log("WebSocket disconnected", "system");
+        updateWsStatus();
+        // Auto-reconnect after 2 seconds if WS mode is still enabled
+        if (useWebSocket) {
+            setTimeout(connectWebSocket, 2000);
+        }
+    };
+
+    ws.onerror = (e) => {
+        console.error("WebSocket error:", e);
+        log("WebSocket error", "system");
+    };
+
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            const pending = pendingRequests.get(msg.id);
+            if (pending) {
+                pendingRequests.delete(msg.id);
+                pending.resolve(msg);
+            }
+        } catch (e) {
+            console.error("WebSocket message parse error:", e);
+        }
+    };
+}
+
+function disconnectWebSocket() {
+    if (ws) {
+        ws.close();
+        ws = null;
+    }
+    wsConnected = false;
+}
+
+function toggleWsMode() {
+    useWebSocket = !useWebSocket;
+    localStorage.setItem(WS_MODE_KEY, useWebSocket);
+    updateWsStatus();
+
+    if (useWebSocket) {
+        connectWebSocket();
+    } else {
+        disconnectWebSocket();
+    }
+}
+
+function updateWsStatus() {
+    const btn = document.getElementById('ws-toggle');
+    if (btn) {
+        btn.innerText = useWebSocket ? (wsConnected ? '🔌 WS: ON' : '🔌 WS: ...') : '🔌 WS: OFF';
+        btn.title = useWebSocket ? 'Click to use HTTP' : 'Click to use WebSocket';
+    }
+}
+
+async function sendWsQuery(query) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        throw new Error("WebSocket not connected");
+    }
+
+    const id = String(++wsMessageId);
+
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            pendingRequests.delete(id);
+            reject(new Error("Request timeout"));
+        }, 30000);
+
+        pendingRequests.set(id, {
+            resolve: (msg) => {
+                clearTimeout(timeout);
+                resolve(msg);
+            },
+            reject: (err) => {
+                clearTimeout(timeout);
+                reject(err);
+            }
+        });
+
+        ws.send(JSON.stringify({
+            type: "query",
+            id: id,
+            text: query,
+            session_id: currentSessionId,
+            query_history: getQueryHistory()
+        }));
+    });
+}
 
 // --- Query History for Speculative Fetch ---
 function getQueryHistory() {
@@ -284,16 +398,34 @@ async function sendAgentQuery(overrideQuery = null) {
     clearClarifyOptions();
 
     try {
-        const res = await fetch(`${API_BASE}/query`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                query: query,
-                session_id: currentSessionId,
-                query_history: getQueryHistory()
-            })
-        });
-        const responseData = await res.json();
+        let responseData;
+
+        // Use WebSocket if enabled and connected
+        if (useWebSocket && wsConnected) {
+            const wsResponse = await sendWsQuery(query);
+
+            if (wsResponse.type === "error") {
+                throw new Error(wsResponse.error || "WebSocket query failed");
+            }
+
+            responseData = {
+                data: wsResponse.data,
+                learned_stop: wsResponse.learned_stop,
+                audio_ticket: null  // WebSocket doesn't return audio tickets
+            };
+        } else {
+            // Fall back to HTTP
+            const res = await fetch(`${API_BASE}/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: query,
+                    session_id: currentSessionId,
+                    query_history: getQueryHistory()
+                })
+            });
+            responseData = await res.json();
+        }
 
         // Store learned stop for future speculative fetches
         if (responseData.learned_stop) {
@@ -329,7 +461,7 @@ async function sendAgentQuery(overrideQuery = null) {
             updateStatus("Error");
         }
 
-        // Play Audio (Async)
+        // Play Audio (Async) - only for HTTP mode
         if (responseData.audio_ticket) {
             playAudio(responseData.audio_ticket);
         }
@@ -449,6 +581,16 @@ window.toggleMic = toggleMic;
 window.sendAgentQuery = sendAgentQuery;
 window.handleInput = handleInput;
 window.closeConversation = closeConversation;
+window.toggleWsMode = toggleWsMode;
 
 // Initialize
-window.addEventListener('load', loadButtonConfig);
+window.addEventListener('load', () => {
+    loadButtonConfig();
+    updateWsStatus();
+
+    // Connect WebSocket if enabled
+    if (useWebSocket) {
+        connectWebSocket();
+    }
+});
+
