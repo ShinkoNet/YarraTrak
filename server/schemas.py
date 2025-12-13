@@ -269,22 +269,20 @@ GET_ROUTE_DIRECTIONS_SCHEMA = {
     "additionalProperties": False
 }
 
-CONFIGURE_PEBBLE_BUTTON_SCHEMA = {
+SETUP_PEBBLE_BUTTON_SCHEMA = {
     "type": "object",
     "properties": {
         "button_id": {"type": "integer", "enum": [1, 2, 3], "description": "Button number (1, 2, or 3)"},
-        "stop_name": {"type": "string", "description": "Human-readable name (e.g., 'Richmond → City')"},
-        "stop_id": {"type": "integer", "description": "PTV stop ID from search_stops"},
+        "start_station": {"type": "string", "description": "Name of START station (e.g., 'Narre Warren', 'Richmond')"},
+        "destination": {"type": "string", "description": "Name of DESTINATION station (e.g., 'Flinders Street', 'the city')"},
         "route_type": {
             "type": "string",
-            "enum": ["TRAIN", "TRAM", "BUS", "VLINE"],
+            "enum": ["TRAIN", "TRAM", "VLINE"],
             "default": "TRAIN",
             "description": "Transport mode"
-        },
-        "direction_id": {"type": ["integer", "null"], "description": "Optional direction ID from get_route_directions"},
-        "direction_name": {"type": ["string", "null"], "description": "Optional human-readable direction name"}
+        }
     },
-    "required": ["button_id", "stop_name", "stop_id"],
+    "required": ["button_id", "start_station", "destination"],
     "additionalProperties": False
 }
 
