@@ -112,21 +112,33 @@
 
         .search-box {
             display: flex;
-            gap: 8px;
+            gap: 10px;
+            position: relative;
+            /* Anchor for results */
         }
 
         .search-box input {
-            flex: 1;
-        }
-
-        .search-box button {
-            width: auto;
-            margin-top: 0;
-            padding: 12px 16px;
+            flex-grow: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background: #2a2a2a;
+            color: #fff;
+            font-size: 16px;
         }
 
         .search-results {
-            margin-top: 10px;
+            margin-top: 5px;
+            background: #333;
+            border-radius: 8px;
+            overflow: hidden;
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            width: 100%;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
             max-height: 200px;
             overflow-y: auto;
         }
@@ -284,7 +296,7 @@
                     </div>
 
                     <div class="form-row">
-                        <label>Destination (Optional)</label>
+                        <label>Destination</label>
                         <div class="search-box">
                             <input type="text" id="btn${i}_dest_search" placeholder="Search destination..." autocomplete="off">
                             <div class="search-results" id="btn${i}_dest_results"></div>
@@ -326,16 +338,19 @@
             var newOptions = { server_url: serverUrl };
             for (var i = 1; i <= 3; i++) {
                 var startId = document.getElementById('btn' + i + '_start_id').value;
+                var destId = document.getElementById('btn' + i + '_dest_id').value;
+
                 if (startId) {
+                    if (!destId) {
+                        alert('Please select a destination for Button ' + i);
+                        return;
+                    }
                     newOptions['btn' + i + '_stop_id'] = parseInt(startId);
                     newOptions['btn' + i + '_name'] = document.getElementById('btn' + i + '_start_search').value;
                     newOptions['btn' + i + '_route_type'] = parseInt(document.getElementById('btn' + i + '_type').value);
 
-                    var destId = document.getElementById('btn' + i + '_dest_id').value;
-                    if (destId) {
-                        newOptions['btn' + i + '_dest_id'] = parseInt(destId);
-                        newOptions['btn' + i + '_dest_name'] = document.getElementById('btn' + i + '_dest_search').value;
-                    }
+                    newOptions['btn' + i + '_dest_id'] = parseInt(destId);
+                    newOptions['btn' + i + '_dest_name'] = document.getElementById('btn' + i + '_dest_search').value;
                 }
             }
 
