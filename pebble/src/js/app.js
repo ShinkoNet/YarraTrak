@@ -41,6 +41,9 @@ if (!Settings.option('server_url')) {
     Settings.option('server_url', DEFAULT_SERVER_URL);
 }
 
+// Track active URL to prevent duplicate connections
+var activeServerUrl = Settings.option('server_url');
+
 Settings.config({
     url: CONFIG_URL
 },
@@ -49,8 +52,23 @@ Settings.config({
     },
     function (e) {
         console.log('Config closed with:', JSON.stringify(e.options));
+
+        // Always refresh menu items to show new button config immediately
+        mainMenu.items(0, buildMenuItems());
+
         if (e.options && e.options.server_url) {
-            reconnect();
+            var newUrl = e.options.server_url;
+            if (newUrl !== activeServerUrl) {
+                console.log('Server URL changed from ' + activeServerUrl + ' to ' + newUrl);
+                activeServerUrl = newUrl;
+                reconnect();
+            } else {
+                console.log('Server URL unchanged, skipping reconnect');
+                // If not reconnecting, make sure we are connected
+                if (!wsConnected) {
+                    connectWebSocket();
+                }
+            }
         }
     }
 );
@@ -287,6 +305,13 @@ function connectWebSocket() {
     loadingCard.body('');
     loadingCard.show();
 
+    // Defensive cleanup
+    if (ws) {
+        ws.onclose = function () { };
+        ws.close();
+        ws = null;
+    }
+
     ws = new WebSocket(wsUrl);
 
     var isFirstLoad = true;
@@ -312,7 +337,8 @@ function connectWebSocket() {
         wsConnected = false;
         console.log('WebSocket closed');
         // Auto-reconnect
-        setTimeout(connectWebSocket, 3000);
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connectWebSocket, 3000);
     };
 
     ws.onerror = function (e) {
@@ -352,6 +378,10 @@ function connectWebSocket() {
 }
 
 function reconnect() {
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
     if (ws) {
         ws.onclose = function () { };
         ws.close();
