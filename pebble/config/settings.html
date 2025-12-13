@@ -441,14 +441,21 @@
 
         function updateStatus(i) {
             var start = document.getElementById(`btn${i}_start_id`).value;
+            var dest = document.getElementById(`btn${i}_dest_id`).value;
             var status = document.getElementById(`btn${i}_status`);
 
-            if (start) {
+            if (start && dest) {
                 status.textContent = "Configured";
                 status.classList.add('configured');
+                status.classList.remove('incomplete');
+            } else if (start) {
+                status.textContent = "Incomplete";
+                status.classList.remove('configured');
+                status.classList.add('incomplete');
             } else {
                 status.textContent = "Not set";
                 status.classList.remove('configured');
+                status.classList.remove('incomplete');
             }
         }
 
