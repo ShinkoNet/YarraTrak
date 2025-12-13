@@ -467,18 +467,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         if payload.get("_stop_info"):
                             learned_stop = payload.pop("_stop_info")
                         
-                        # Extract button config if present in tts_text
-                        tts_text = payload.get("tts_text", "")
-                        if "[BUTTON_CONFIG:" in tts_text:
-                            import re
-                            match = re.search(r'\[BUTTON_CONFIG:({.*?})\]', tts_text)
-                            if match:
-                                try:
-                                    button_config = json.loads(match.group(1))
-                                    # Clean up the tts_text
-                                    payload["tts_text"] = re.sub(r'\[BUTTON_CONFIG:{.*?}\]\n*', '', tts_text).strip()
-                                except json.JSONDecodeError:
-                                    pass
+                        # Extract button config (can be at result level from short-circuit or payload level)
+                        if result.get("_button_config"):
+                            button_config = result.pop("_button_config")
+                        elif payload.get("_button_config"):
+                            button_config = payload.pop("_button_config")
                     
                     # Send response
                     response = {

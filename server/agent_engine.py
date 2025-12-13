@@ -297,6 +297,7 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
     tool_use_retries = 0
     max_tool_use_retries = 3
     learned_stop = None  # Track stop info from successful queries
+    button_config = None  # Track button config from configure_pebble_button
 
     for turn in range(10):
         # Add prefill to nudge model toward tool use (helps with some models)
@@ -363,6 +364,9 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
                     # Include learned stop info for client to store
                     if learned_stop:
                         validated_payload["_stop_info"] = learned_stop
+                    # Include button config for client to store
+                    if button_config:
+                        validated_payload["_button_config"] = button_config
                     # Include validation status for debugging
                     if validation_errors:
                         validated_payload["_validation_errors"] = validation_errors
@@ -398,6 +402,27 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
                                 "route_type": int(match.group(2)),
                                 "stop_name": match.group(3)
                             }
+                    # Extract button config if present
+                    if "[BUTTON_CONFIG:" in str(result):
+                        import re
+                        match = re.search(r'\[BUTTON_CONFIG:({.*?})\]', str(result))
+                        if match:
+                            try:
+                                button_config = json.loads(match.group(1))
+                                # Short-circuit: return immediately with canned response
+                                btn_name = button_config.get("name", f"Button {button_config.get('button_id')}")
+                                return {
+                                    "type": "RESULT",
+                                    "payload": {
+                                        "tts_text": f"Button configured for {btn_name}!",
+                                        "destination": btn_name,
+                                        "line": "Button Configuration",
+                                        "departure": {"time": "ready", "platform": None, "minutes_to_depart": 0}
+                                    },
+                                    "_button_config": button_config
+                                }
+                            except json.JSONDecodeError:
+                                pass
                 except Exception as e:
                     result = f"Error: {e}"
             else:
