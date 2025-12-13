@@ -10,6 +10,8 @@ A voice-enabled public transport assistant for Melbourne, Australia. Get real-ti
 - **Multi-turn Conversations** - Context-aware follow-ups and clarifications
 - **Speculative Execution** - Pre-fetches departures for frequently queried stops, reducing latency by ~55%
 - **Disruption Alerts** - Bus replacements, delays, and service changes
+- **Stealth Mode** - Quick-access buttons on the watch for instant "next departure" checks (vibration only, no voice)
+- **Agent Configuration** - Ask the agent to "set button 1 to my stop" to configure Stealth Mode
 - **Haptic Feedback** - Vibration patterns encode departure times for discreet use
 - **MCP Integration** - Use with Claude Desktop via Model Context Protocol
 
@@ -43,11 +45,12 @@ python -m uvicorn server.api:app --host 0.0.0.0 --port 8000 --reload
 
 Open http://localhost:8000 in your browser.
 
-### 4. Run the Pebble App
+### 4. Run the Pebble App (Emulator)
 
 ```bash
 ./run_pebble.sh
 ```
+This script builds the app, installs it to the `aplite` emulator, and opens the configuration page.
 
 ### 5. Run Tests
 
@@ -76,8 +79,8 @@ pytest tests/ -v
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Frontend                              │
-│  web/app.js - Voice I/O, clarification chips, haptic feedback, for testing.
-│ pebble/src/js/app.js - The pebble app's frontend             |
+│  web/app.js - Web Simulator / Testing Interface (Voice & Stealth)
+│ pebble/src/js/app.js - The Pebble App (Production Client)    |
 │  localStorage: session_id, query_history, button configs     │
 └─────────────────────────────────────────────────────────────┘
                               │

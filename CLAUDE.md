@@ -71,6 +71,7 @@ The agent uses `tool_choice="required"` to ensure all responses come via tool ca
 - `search_and_get_departures` - Combined search + fetch with smart ranking
 - `search_stops` / `search_routes` - Discovery
 - `get_departures` / `get_route_directions` - Direct lookups
+- `configure_pebble_button` - Generate button config for user (Stealth Mode)
 
 **Terminal Tools** (end the loop, return to user):
 - `return_result` - Structured departure data with TTS text
@@ -120,8 +121,9 @@ When `ENABLE_GUARDRAIL = True`, a guardrail model runs in parallel with the work
 |----------|---------|
 | `POST /api/v1/voice` | Voice input: ASR + speculative fetch (parallel) + Agent. Accepts `file`, `session_id`, `query_history` |
 | `POST /api/v1/query` | Text input: speculative fetch + Agent. Accepts JSON `{query, session_id, query_history}` |
-| `POST /api/v1/stealth` | Direct PTV lookup for pre-configured buttons (no LLM) |
+| `POST /api/v1/stealth` | Direct PTV lookup for pre-configured buttons (no LLM). Used by Web Simulator. |
 | `GET /api/v1/media/{ticket}` | Retrieve TTS audio by ticket ID |
+| `GET /pebble-config.html` | Serves the Pebble configuration page (single source of truth for settings) |
 
 ### Frontend
 
@@ -208,6 +210,20 @@ Agent handles:
 - `APITimeoutError` → `GROQ_TIMEOUT`
 - `APIConnectionError` → `GROQ_CONNECTION`
 - `BadRequestError` with `tool_use_failed` → Retries up to 3 times with nudge toward `ask_clarification`
+
+### WebSocket Protocol (pebble <-> server)
+
+**Client -> Server:**
+- `query`: Standard agent query
+- `stealth`: Direct departure check `{type: "stealth", stop_id: 123, ...}`
+- `set_button`: Configure a button `{type: "set_button", button_id: 1, stop_id: 123, ...}`
+- `get_buttons`: Request all button configs
+
+**Server -> Client:**
+- `result`: Agent response
+- `stealth_result`: Vibration pattern + message
+- `button_set`: Confirmation of button update `{type: "button_set", button_id: 1, config: ...}`
+- `buttons`: All button configs
 
 ## Key Behaviors
 
