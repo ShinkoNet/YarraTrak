@@ -353,6 +353,7 @@ function connectWebSocket() {
 
 function reconnect() {
     if (ws) {
+        ws.onclose = function () { };
         ws.close();
         ws = null;
     }
