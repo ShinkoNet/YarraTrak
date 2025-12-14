@@ -3,6 +3,27 @@ const SESSION_KEY = "ptv_session_id";
 const QUERY_HISTORY_KEY = "ptv_query_history";
 const MAX_QUERY_HISTORY = 10;
 const WS_MODE_KEY = "ptv_ws_mode";
+const API_KEY_KEY = "ptv_api_key";
+
+// Get API key from localStorage
+function getApiKey() {
+    return localStorage.getItem(API_KEY_KEY) || '';
+}
+
+// Set API key in localStorage
+function setApiKey(key) {
+    localStorage.setItem(API_KEY_KEY, key);
+}
+
+// Get headers with optional API key
+function getApiHeaders(extraHeaders = {}) {
+    const headers = { 'Content-Type': 'application/json', ...extraHeaders };
+    const apiKey = getApiKey();
+    if (apiKey) {
+        headers['X-API-Key'] = apiKey;
+    }
+    return headers;
+}
 
 // Generate UUID - fallback for non-secure contexts (http://)
 function generateUUID() {
@@ -32,7 +53,13 @@ function connectWebSocket() {
     if (ws && ws.readyState === WebSocket.OPEN) return;
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${location.host}/ws`;
+    let wsUrl = `${protocol}//${location.host}/ws`;
+
+    // Add API key if set
+    const apiKey = getApiKey();
+    if (apiKey) {
+        wsUrl += `?api_key=${encodeURIComponent(apiKey)}`;
+    }
 
     ws = new WebSocket(wsUrl);
 
@@ -293,7 +320,7 @@ async function sendStealth(id) {
     try {
         const res = await fetch(`${API_BASE}/stealth`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getApiHeaders(),
             body: JSON.stringify({
                 button_id: id,
                 stop_id: config.stop_id,
@@ -390,6 +417,12 @@ async function sendAudioToVoice(audioBlob) {
 
         const res = await fetch(`${API_BASE}/voice`, {
             method: 'POST',
+            headers: (() => {
+                const h = {};
+                const apiKey = getApiKey();
+                if (apiKey) h['X-API-Key'] = apiKey;
+                return h;
+            })(),
             body: formData
         });
 
@@ -504,7 +537,7 @@ async function sendAgentQuery(overrideQuery = null) {
             // Fall back to HTTP
             const res = await fetch(`${API_BASE}/query`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getApiHeaders(),
                 body: JSON.stringify({
                     query: query,
                     session_id: currentSessionId,
