@@ -659,9 +659,11 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                 # Immediately fetch and push departure data
                 initial_updates = []
                 for btn in parsed_buttons:
+                    print(f"Fetching departure for button {btn['button_id']}, stop {btn['stop_id']}")
                     result = await fetch_departure_for_button(
                         btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
                     )
+                    print(f"Got result for button {btn['button_id']}: {result.get('message')}")
                     initial_updates.append({
                         "button_id": btn["button_id"],
                         "minutes": result.get("minutes"),
@@ -671,13 +673,16 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     })
                 
                 # Push immediately on connection
+                print(f"About to push stealth data...")
                 await websocket.send_json({
                     "type": "stealth_update",
                     "updates": initial_updates
                 })
-                print(f"Pushed initial stealth data: {initial_updates}")
+                print(f"Pushed initial stealth data: {[u['message'] for u in initial_updates]}")
         except Exception as e:
-            print(f"Error parsing buttons query param: {e}")
+            import traceback
+            print(f"Error in buttons handling: {e}")
+            traceback.print_exc()
     
     try:
         while True:
