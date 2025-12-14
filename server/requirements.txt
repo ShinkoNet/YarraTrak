@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+websockets
 mcp[cli]
 httpx
 python-dotenv
