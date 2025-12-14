@@ -648,6 +648,8 @@ function reconnect() {
         ws = null;
     }
     wsConnected = false;
+    // Clear stale departure cache to avoid showing old data after config changes
+    buttonDepartures = {};
     connectWebSocket();
 }
 
