@@ -244,9 +244,12 @@
     <h2>Authentication</h2>
     <div class="form-group">
         <label>API Key</label>
-        <input type="password" id="api_key" placeholder="Enter your API key">
+        <div style="display: flex; gap: 10px;">
+            <input type="password" id="api_key" placeholder="Enter your API key" style="flex-grow: 1;">
+            <button id="set_key_btn" class="small-btn" style="background: #ff6b00;">Set Key</button>
+        </div>
         <div class="hint">Required to connect to the server</div>
-        <div id="api_key_error" style="color: #ff4444; font-size: 13px; margin-top: 6px; display: none;"></div>
+        <div id="api_key_status" style="font-size: 13px; margin-top: 6px;"></div>
     </div>
 
     <h2>Configure Buttons</h2>
@@ -683,10 +686,81 @@
             }
         }
 
+        var keyValidated = false;
+
+        async function validateApiKey() {
+            var base = serverUrlEl.value.trim() || serverBase;
+            if (base.endsWith('/')) base = base.slice(0, -1);
+            var apiKey = apiKeyEl.value.trim();
+            var statusEl = document.getElementById('api_key_status');
+            var setKeyBtn = document.getElementById('set_key_btn');
+
+            if (!apiKey) {
+                statusEl.textContent = 'Please enter an API key';
+                statusEl.style.color = '#ff4444';
+                return false;
+            }
+
+            setKeyBtn.textContent = '...';
+            setKeyBtn.disabled = true;
+
+            try {
+                var res = await fetch(base + '/api/v1/stations?type=train', {
+                    headers: { 'X-API-Key': apiKey }
+                });
+
+                if (res.status === 401) {
+                    statusEl.textContent = '✗ Invalid API key';
+                    statusEl.style.color = '#ff4444';
+                    keyValidated = false;
+                    setKeyBtn.textContent = 'Set Key';
+                    setKeyBtn.disabled = false;
+                    return false;
+                }
+
+                if (!res.ok) {
+                    statusEl.textContent = '✗ Server error (' + res.status + ')';
+                    statusEl.style.color = '#ff4444';
+                    setKeyBtn.textContent = 'Set Key';
+                    setKeyBtn.disabled = false;
+                    return false;
+                }
+
+                // Key is valid - load the train data we just fetched
+                var data = await res.json();
+                if (data.stations) {
+                    stationsByType[0] = data.stations;
+                    loadedTypes[0] = true;
+                    console.log("Loaded " + data.stations.length + " train stations");
+                }
+
+                statusEl.textContent = '✓ Key validated';
+                statusEl.style.color = '#4CAF50';
+                keyValidated = true;
+                setKeyBtn.textContent = '✓ Set';
+                setKeyBtn.style.background = '#4CAF50';
+                return true;
+
+            } catch (e) {
+                console.error('API key validation error:', e);
+                statusEl.textContent = '✗ Connection error';
+                statusEl.style.color = '#ff4444';
+                setKeyBtn.textContent = 'Set Key';
+                setKeyBtn.disabled = false;
+                return false;
+            }
+        }
+
         async function loadStationData(routeType) {
             var base = serverUrlEl.value.trim() || serverBase;
             if (base.endsWith('/')) base = base.slice(0, -1);
             var apiKey = apiKeyEl.value.trim();
+
+            // Require validated key before loading
+            if (!keyValidated && !apiKey) {
+                console.log('Skipping station load - no API key');
+                return;
+            }
 
             // Map route_type to API type param
             var typeParam = 'train';
@@ -700,17 +774,11 @@
                 }
                 var res = await fetch(base + '/api/v1/stations?type=' + typeParam, { headers: headers });
                 if (res.status === 401) {
-                    var errorEl = document.getElementById('api_key_error');
-                    if (!apiKey) {
-                        errorEl.textContent = 'Please add an API key to use this app';
-                    } else {
-                        errorEl.textContent = 'Invalid API key. Please check your key and try again.';
-                    }
-                    errorEl.style.display = 'block';
+                    var statusEl = document.getElementById('api_key_status');
+                    statusEl.textContent = '✗ API key required';
+                    statusEl.style.color = '#ff4444';
                     return;
                 }
-                // Clear error on success
-                document.getElementById('api_key_error').style.display = 'none';
                 var data = await res.json();
                 if (data.stations) {
                     stationsByType[routeType] = data.stations;
@@ -722,8 +790,13 @@
             }
         }
 
-        // Auto load train data on start
-        loadStationData(0);
+        // Set Key button handler
+        document.getElementById('set_key_btn').addEventListener('click', validateApiKey);
+
+        // Auto-validate if key already exists (from saved settings)
+        if (apiKeyEl.value.trim()) {
+            validateApiKey();
+        }
 
         // Debug Defaults
         document.getElementById('debug_defaults').addEventListener('click', async function () {
