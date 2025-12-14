@@ -28,6 +28,11 @@ python -m server.mcp_server
 pip install -r server/requirements.txt
 ```
 
+### Deploy to Production
+```bash
+ssh root@web01.waifu.trash "cd /srv/http/ptv-notify && git pull && systemctl restart netcavy-ptv"
+```
+
 ## Architecture
 
 ### System Flow
