@@ -79,6 +79,9 @@ var queryHistory = [];
 var messageId = 0;
 var pendingRequests = {};
 
+// Live departure data from server broadcasts: {1: {minutes: 3, platform: "2", message: "3 min • P2"}, ...}
+var buttonDepartures = {};
+
 // Generate simple UUID
 function generateUUID() {
     var chars = 'abcdef0123456789';
@@ -201,13 +204,16 @@ function buildMenuItems() {
         });
     }
 
-    // Stealth buttons from settings - show as "Start→Dest"
+    // Stealth buttons from settings - show as "Start→Dest" with live departure time
     for (var i = 1; i <= 3; i++) {
         var startName = Settings.option('btn' + i + '_name');
         var destName = Settings.option('btn' + i + '_dest_name');
         if (startName) {
             var title = abbreviateStation(startName) + '>' + abbreviateStation(destName || '?');
-            items.push({ title: title, subtitle: 'Quick check', data: { stealth: i } });
+            // Use live departure data if available, otherwise show "Waiting..."
+            var dep = buttonDepartures[i];
+            var subtitle = dep ? dep.message : 'Waiting...';
+            items.push({ title: title, subtitle: subtitle, data: { stealth: i } });
         }
     }
 
@@ -431,6 +437,9 @@ function connectWebSocket() {
         // Refresh menu items immediately when connected
         mainMenu.items(0, buildMenuItems());
 
+        // Subscribe to live stealth updates
+        sendStealthSubscription();
+
         setTimeout(function () {
             loadingCard.hide();
             if (isFirstLoad) {
@@ -457,6 +466,23 @@ function connectWebSocket() {
     ws.onmessage = function (event) {
         try {
             var msg = JSON.parse(event.data);
+
+            // Handle live stealth updates (broadcast, no pending request)
+            if (msg.type === 'stealth_update') {
+                var updates = msg.updates || [];
+                for (var i = 0; i < updates.length; i++) {
+                    var u = updates[i];
+                    buttonDepartures[u.button_id] = {
+                        minutes: u.minutes,
+                        platform: u.platform,
+                        message: u.message
+                    };
+                }
+                // Refresh menu to show updated times
+                mainMenu.items(0, buildMenuItems());
+                return;
+            }
+
             var pending = pendingRequests[msg.id];
             if (pending) {
                 delete pendingRequests[msg.id];
@@ -589,6 +615,32 @@ function saveButtonConfig(config) {
     // Vibrate to confirm
     Vibe.vibrate('short');
     console.log('Button ' + btnId + ' saved successfully');
+}
+
+// Subscribe to live stealth updates
+function sendStealthSubscription() {
+    if (!ws || !wsConnected) return;
+
+    var buttons = [];
+    for (var i = 1; i <= 3; i++) {
+        var stopId = Settings.option('btn' + i + '_stop_id');
+        if (stopId) {
+            buttons.push({
+                button_id: i,
+                stop_id: stopId,
+                route_type: Settings.option('btn' + i + '_route_type') || 0,
+                direction_id: Settings.option('btn' + i + '_direction_id')
+            });
+        }
+    }
+
+    if (buttons.length > 0) {
+        console.log('Subscribing to stealth updates for ' + buttons.length + ' buttons');
+        ws.send(JSON.stringify({
+            type: 'subscribe_stealth',
+            buttons: buttons
+        }));
+    }
 }
 
 // Start the app

@@ -215,13 +215,16 @@ Agent handles:
 
 **Client -> Server:**
 - `query`: Standard agent query
-- `stealth`: Direct departure check `{type: "stealth", stop_id: 123, ...}`
+- `stealth`: Direct departure check `{type: "stealth", stop_id: 123, ...}` - returns vibration + platform
+- `subscribe_stealth`: Subscribe to live updates `{type: "subscribe_stealth", buttons: [{button_id, stop_id, route_type, direction_id}, ...]}`
 - `set_button`: Configure a button `{type: "set_button", button_id: 1, stop_id: 123, ...}`
 - `get_buttons`: Request all button configs
 
 **Server -> Client:**
 - `result`: Agent response
-- `stealth_result`: Vibration pattern + message
+- `stealth_result`: Vibration pattern + message + platform `{type: "stealth_result", minutes: 5, platform: "2", ...}`
+- `stealth_update`: Live broadcast (every 5s) `{type: "stealth_update", updates: [{button_id, minutes, platform, message}, ...]}`
+- `stealth_subscribed`: Confirmation of subscription `{type: "stealth_subscribed", buttons: 3}`
 - `button_set`: Confirmation of button update `{type: "button_set", button_id: 1, config: ...}`
 - `buttons`: All button configs
 

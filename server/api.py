@@ -84,6 +84,19 @@ _audio_store: dict[str, dict] = {}
 # This allows the agent to configure stealth buttons via set_button WebSocket message
 _button_configs: dict[str, dict] = {}
 
+# --- Live Stealth Updates ---
+# Subscription registry: websocket -> list of button configs with stop/direction info
+_stealth_subscriptions: dict[WebSocket, list[dict]] = {}
+
+# Shared departure cache: (stop_id, route_type, direction_id) -> {minutes, platform, message, fetched_at}
+# TTL slightly less than broadcast interval to ensure fresh data
+_departure_cache: dict[tuple, dict] = {}
+STEALTH_CACHE_TTL = 4.0  # seconds
+STEALTH_BROADCAST_INTERVAL = 5.0  # seconds
+
+# Background task reference
+_broadcast_task: asyncio.Task | None = None
+
 
 def _cleanup_audio_store():
     """Remove expired audio tickets (5 min TTL)."""
@@ -159,6 +172,137 @@ def calculate_vibration(minutes: int) -> list[int]:
         pattern.extend([150, 150])
 
     return pattern
+
+
+# --- Live Stealth Broadcast ---
+
+async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id: int | None) -> dict:
+    """
+    Fetch next departure for a stop/direction, using cache if fresh.
+    Returns {minutes, platform, message} or error dict.
+    """
+    cache_key = (stop_id, route_type, direction_id)
+    now = time.time()
+    
+    # Check cache
+    cached = _departure_cache.get(cache_key)
+    if cached and (now - cached["fetched_at"]) < STEALTH_CACHE_TTL:
+        return cached
+    
+    # Fetch from PTV API
+    try:
+        data = await ptv_client.get_departures(route_type, stop_id, max_results=10, expand=["Direction"])
+        departures = data.get("departures", [])
+        
+        if not departures:
+            result = {"minutes": None, "platform": None, "message": "No services", "fetched_at": now}
+            _departure_cache[cache_key] = result
+            return result
+        
+        now_utc = datetime.now(timezone.utc)
+        
+        for d in departures:
+            if direction_id is not None and d.get("direction_id") != direction_id:
+                continue
+            
+            dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
+            if not dep_str:
+                continue
+            
+            dep_time = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
+            if dep_time > now_utc:
+                minutes = int((dep_time - now_utc).total_seconds() / 60)
+                minutes = max(0, min(720, minutes))
+                platform = d.get("platform_number")
+                
+                # Format message with platform if available
+                if minutes == 0:
+                    msg = "Now"
+                else:
+                    msg = f"{minutes} min"
+                if platform:
+                    msg += f" • P{platform}"
+                
+                result = {"minutes": minutes, "platform": str(platform) if platform else None, "message": msg, "fetched_at": now}
+                _departure_cache[cache_key] = result
+                return result
+        
+        result = {"minutes": None, "platform": None, "message": "No future", "fetched_at": now}
+        _departure_cache[cache_key] = result
+        return result
+        
+    except Exception as e:
+        print(f"Stealth fetch error: {e}")
+        return {"minutes": None, "platform": None, "message": "Error", "fetched_at": now}
+
+
+async def broadcast_stealth_updates():
+    """
+    Background task that broadcasts departure updates to all subscribed clients every 5 seconds.
+    """
+    while True:
+        await asyncio.sleep(STEALTH_BROADCAST_INTERVAL)
+        
+        if not _stealth_subscriptions:
+            continue
+        
+        # Collect all unique stop/direction combos across all clients
+        all_buttons: dict[tuple, list[tuple[WebSocket, int]]] = {}  # cache_key -> [(ws, button_id), ...]
+        
+        for ws, buttons in list(_stealth_subscriptions.items()):
+            for btn in buttons:
+                cache_key = (btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id"))
+                if cache_key not in all_buttons:
+                    all_buttons[cache_key] = []
+                all_buttons[cache_key].append((ws, btn["button_id"]))
+        
+        # Fetch all unique stops (with cache deduplication)
+        fetch_results: dict[tuple, dict] = {}
+        for cache_key in all_buttons:
+            stop_id, route_type, direction_id = cache_key
+            fetch_results[cache_key] = await fetch_departure_for_button(stop_id, route_type, direction_id)
+        
+        # Build per-client update messages
+        client_updates: dict[WebSocket, list[dict]] = {}
+        for cache_key, clients in all_buttons.items():
+            result = fetch_results[cache_key]
+            for ws, button_id in clients:
+                if ws not in client_updates:
+                    client_updates[ws] = []
+                client_updates[ws].append({
+                    "button_id": button_id,
+                    "minutes": result.get("minutes"),
+                    "platform": result.get("platform"),
+                    "message": result.get("message", "--")
+                })
+        
+        # Broadcast to each client
+        for ws, updates in client_updates.items():
+            try:
+                await ws.send_json({
+                    "type": "stealth_update",
+                    "updates": updates
+                })
+            except Exception as e:
+                print(f"Broadcast error: {e}")
+                # Client likely disconnected, will be cleaned up on next message
+
+
+def start_broadcast_task():
+    """Start the background broadcast task if not already running."""
+    global _broadcast_task
+    if _broadcast_task is None or _broadcast_task.done():
+        _broadcast_task = asyncio.create_task(broadcast_stealth_updates())
+        print("Stealth broadcast task started")
+
+
+def stop_broadcast_task():
+    """Stop the background broadcast task."""
+    global _broadcast_task
+    if _broadcast_task and not _broadcast_task.done():
+        _broadcast_task.cancel()
+        _broadcast_task = None
+        print("Stealth broadcast task stopped")
 
 
 # --- Endpoints ---
@@ -584,16 +728,26 @@ async def websocket_endpoint(websocket: WebSocket):
                         if dep_time > now_utc:
                             minutes = int((dep_time - now_utc).total_seconds() / 60)
                             minutes = max(0, min(720, minutes))
+                            platform = d.get("platform_number")
                             
                             vehicle = {RouteType.TRAIN: "train", RouteType.TRAM: "tram", RouteType.BUS: "bus",
                                        RouteType.VLINE: "train", RouteType.NIGHT_BUS: "bus"}.get(route_type, "service")
+                            
+                            # Build message with platform if available
+                            if minutes == 0:
+                                msg = "Arriving Now"
+                            else:
+                                msg = f"Next {vehicle} in {minutes} min"
+                            if platform:
+                                msg += f" (Platform {platform})"
                             
                             await websocket.send_json({
                                 "type": "stealth_result",
                                 "id": msg_id,
                                 "vibration": calculate_vibration(minutes),
-                                "message": "Arriving Now" if minutes == 0 else f"Next {vehicle} in {minutes} min",
-                                "minutes": minutes
+                                "message": msg,
+                                "minutes": minutes,
+                                "platform": str(platform) if platform else None
                             })
                             found = True
                             break
@@ -650,6 +804,31 @@ async def websocket_endpoint(websocket: WebSocket):
                     "config": _button_configs[str(button_id)]
                 })
             
+            elif msg_type == "subscribe_stealth":
+                # Subscribe to live stealth updates
+                buttons = message.get("buttons", [])
+                valid_buttons = []
+                
+                for btn in buttons:
+                    if btn.get("stop_id"):
+                        valid_buttons.append({
+                            "button_id": btn.get("button_id"),
+                            "stop_id": btn.get("stop_id"),
+                            "route_type": btn.get("route_type", 0),
+                            "direction_id": btn.get("direction_id")
+                        })
+                
+                if valid_buttons:
+                    _stealth_subscriptions[websocket] = valid_buttons
+                    start_broadcast_task()
+                    print(f"Client subscribed to {len(valid_buttons)} stealth buttons")
+                
+                await websocket.send_json({
+                    "type": "stealth_subscribed",
+                    "id": msg_id,
+                    "buttons": len(valid_buttons)
+                })
+            
             else:
                 await websocket.send_json({
                     "type": "error",
@@ -658,8 +837,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
                 
     except WebSocketDisconnect:
+        # Clean up subscription on disconnect
+        if websocket in _stealth_subscriptions:
+            del _stealth_subscriptions[websocket]
         print("WebSocket client disconnected")
     except Exception as e:
+        # Clean up subscription on error
+        if websocket in _stealth_subscriptions:
+            del _stealth_subscriptions[websocket]
         print(f"WebSocket error: {e}")
 
 

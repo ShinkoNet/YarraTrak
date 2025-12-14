@@ -15,6 +15,10 @@ A voice-enabled public transport assistant for Melbourne, Australia. Get real-ti
 - **Haptic Feedback** - Vibration patterns encode departure times for discreet use
 - **MCP Integration** - Use with Claude Desktop via Model Context Protocol
 
+## Note about this environment
+
+We are developing this app in a VM designed for pebble development, which specifically requires python2. So, the default `python` is for python2 and not python3. To use python3, and pip, you need to specity `python3` and `pip3`. The server cannot be run in this environment, so ask the user to run it on their server.
+
 ## Quick Start
 
 ### 1. Install Dependencies
