@@ -656,29 +656,39 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                 start_broadcast_task()
                 print(f"Client connected with {len(parsed_buttons)} buttons in URL")
                 
-                # Immediately fetch and push departure data
-                initial_updates = []
-                for btn in parsed_buttons:
-                    print(f"Fetching departure for button {btn['button_id']}, stop {btn['stop_id']}")
-                    result = await fetch_departure_for_button(
-                        btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
-                    )
-                    print(f"Got result for button {btn['button_id']}: {result.get('message')}")
-                    initial_updates.append({
-                        "button_id": btn["button_id"],
-                        "minutes": result.get("minutes"),
-                        "platform": result.get("platform"),
-                        "message": result.get("message", "--"),
-                        "departure_time": result.get("departure_time")
-                    })
+                # Fetch and push initial data in background (non-blocking)
+                # Fetch all buttons in PARALLEL for speed
+                async def push_initial_data():
+                    try:
+                        fetch_tasks = [
+                            fetch_departure_for_button(
+                                btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
+                            )
+                            for btn in parsed_buttons
+                        ]
+                        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+                        
+                        initial_updates = []
+                        for btn, result in zip(parsed_buttons, results):
+                            if isinstance(result, Exception):
+                                result = {"minutes": None, "platform": None, "message": "Error"}
+                            initial_updates.append({
+                                "button_id": btn["button_id"],
+                                "minutes": result.get("minutes"),
+                                "platform": result.get("platform"),
+                                "message": result.get("message", "--"),
+                                "departure_time": result.get("departure_time")
+                            })
+                        
+                        await websocket.send_json({
+                            "type": "stealth_update",
+                            "updates": initial_updates
+                        })
+                        print(f"Pushed initial stealth data: {[u['message'] for u in initial_updates]}")
+                    except Exception as e:
+                        print(f"Error pushing initial stealth data: {e}")
                 
-                # Push immediately on connection
-                print(f"About to push stealth data...")
-                await websocket.send_json({
-                    "type": "stealth_update",
-                    "updates": initial_updates
-                })
-                print(f"Pushed initial stealth data: {[u['message'] for u in initial_updates]}")
+                asyncio.create_task(push_initial_data())
         except Exception as e:
             import traceback
             print(f"Error in buttons handling: {e}")
@@ -912,25 +922,38 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     start_broadcast_task()
                     print(f"Client subscribed to {len(valid_buttons)} stealth buttons")
                     
-                    # Immediately fetch and send initial data so client doesn't wait 5 seconds
-                    initial_updates = []
-                    for btn in valid_buttons:
-                        result = await fetch_departure_for_button(
-                            btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
-                        )
-                        initial_updates.append({
-                            "button_id": btn["button_id"],
-                            "minutes": result.get("minutes"),
-                            "platform": result.get("platform"),
-                            "message": result.get("message", "--"),
-                            "departure_time": result.get("departure_time")
-                        })
+                    # Fetch and push initial data in background (non-blocking, parallel)
+                    async def push_subscribe_data():
+                        try:
+                            fetch_tasks = [
+                                fetch_departure_for_button(
+                                    btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
+                                )
+                                for btn in valid_buttons
+                            ]
+                            results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+                            
+                            initial_updates = []
+                            for btn, result in zip(valid_buttons, results):
+                                if isinstance(result, Exception):
+                                    result = {"minutes": None, "platform": None, "message": "Error"}
+                                initial_updates.append({
+                                    "button_id": btn["button_id"],
+                                    "minutes": result.get("minutes"),
+                                    "platform": result.get("platform"),
+                                    "message": result.get("message", "--"),
+                                    "departure_time": result.get("departure_time")
+                                })
+                            
+                            await websocket.send_json({
+                                "type": "stealth_update",
+                                "updates": initial_updates
+                            })
+                            print(f"Pushed subscribe stealth data: {[u['message'] for u in initial_updates]}")
+                        except Exception as e:
+                            print(f"Error pushing subscribe stealth data: {e}")
                     
-                    # Send immediate update
-                    await websocket.send_json({
-                        "type": "stealth_update",
-                        "updates": initial_updates
-                    })
+                    asyncio.create_task(push_subscribe_data())
                 
                 await websocket.send_json({
                     "type": "stealth_subscribed",
