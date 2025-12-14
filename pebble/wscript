@@ -19,7 +19,7 @@ def options(ctx):
 def configure(ctx):
     ctx.load('pebble_sdk')
 
-    ctx.configure_appinfo([ctx.appinfo_bitmap_to_png])
+    ctx.configure_appinfo([])
 
     if ctx.env.TARGET_PLATFORMS:
         for platform in ctx.env.TARGET_PLATFORMS:
