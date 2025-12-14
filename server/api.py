@@ -97,11 +97,11 @@ _button_configs: dict[str, dict] = {}
 # Subscription registry: websocket -> list of button configs with stop/direction info
 _stealth_subscriptions: dict[WebSocket, list[dict]] = {}
 
-# Shared departure cache: (stop_id, route_type, direction_id) -> {minutes, platform, message, fetched_at}
-# TTL slightly less than broadcast interval to ensure fresh data
+# Shared departure cache: (stop_id, route_type, direction_id) -> {departures: [...], fetched_at}
+# With multi-departure caching, we can use longer TTL - client switches between cached departures
 _departure_cache: dict[tuple, dict] = {}
-STEALTH_CACHE_TTL = 4.0  # seconds
-STEALTH_BROADCAST_INTERVAL = 5.0  # seconds
+STEALTH_CACHE_TTL = 30.0  # seconds (was 4s, increased since client caches multiple departures)
+STEALTH_BROADCAST_INTERVAL = 15.0  # seconds (was 5s, client has second-by-second countdown)
 
 # Background task reference
 _broadcast_task: asyncio.Task | None = None
@@ -185,10 +185,11 @@ def calculate_vibration(minutes: int) -> list[int]:
 
 # --- Live Stealth Broadcast ---
 
-async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id: int | None) -> dict:
+async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id: int | None, max_departures: int = 3) -> dict:
     """
-    Fetch next departure for a stop/direction, using cache if fresh.
-    Returns {minutes, platform, message} or error dict.
+    Fetch next departures for a stop/direction, using cache if fresh.
+    Returns {departures: [{minutes, platform, departure_time}, ...], fetched_at} or error dict.
+    Client can switch between cached departures as trains pass, reducing API calls.
     """
     cache_key = (stop_id, route_type, direction_id)
     now = time.time()
@@ -204,11 +205,12 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
         departures = data.get("departures", [])
         
         if not departures:
-            result = {"minutes": None, "platform": None, "message": "No services", "fetched_at": now}
+            result = {"departures": [], "fetched_at": now}
             _departure_cache[cache_key] = result
             return result
         
         now_utc = datetime.now(timezone.utc)
+        collected = []
         
         for d in departures:
             if direction_id is not None and d.get("direction_id") != direction_id:
@@ -224,32 +226,22 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
                 minutes = max(0, min(720, minutes))
                 platform = d.get("platform_number")
                 
-                # Format message with platform if available
-                if minutes == 0:
-                    msg = "Now"
-                else:
-                    msg = f"{minutes} min"
-                if platform:
-                    msg += f" • P{platform}"
+                collected.append({
+                    "minutes": minutes,
+                    "platform": str(platform) if platform else None,
+                    "departure_time": dep_time.isoformat()
+                })
                 
-                # Include departure_time for client-side seconds calculation
-                result = {
-                    "minutes": minutes, 
-                    "platform": str(platform) if platform else None, 
-                    "message": msg, 
-                    "departure_time": dep_time.isoformat(),
-                    "fetched_at": now
-                }
-                _departure_cache[cache_key] = result
-                return result
+                if len(collected) >= max_departures:
+                    break
         
-        result = {"minutes": None, "platform": None, "message": "No future", "fetched_at": now}
+        result = {"departures": collected, "fetched_at": now}
         _departure_cache[cache_key] = result
         return result
         
     except Exception as e:
         print(f"Stealth fetch error: {e}")
-        return {"minutes": None, "platform": None, "message": "Error", "fetched_at": now}
+        return {"departures": [], "fetched_at": now}
 
 
 async def broadcast_stealth_updates():
@@ -282,15 +274,13 @@ async def broadcast_stealth_updates():
         client_updates: dict[WebSocket, list[dict]] = {}
         for cache_key, clients in all_buttons.items():
             result = fetch_results[cache_key]
+            departures = result.get("departures", [])
             for ws, button_id in clients:
                 if ws not in client_updates:
                     client_updates[ws] = []
                 client_updates[ws].append({
                     "button_id": button_id,
-                    "minutes": result.get("minutes"),
-                    "platform": result.get("platform"),
-                    "message": result.get("message", "--"),
-                    "departure_time": result.get("departure_time")
+                    "departures": departures  # Array of {minutes, platform, departure_time}
                 })
         
         # Broadcast to each client
@@ -671,13 +661,10 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                         initial_updates = []
                         for btn, result in zip(parsed_buttons, results):
                             if isinstance(result, Exception):
-                                result = {"minutes": None, "platform": None, "message": "Error"}
+                                result = {"departures": []}
                             initial_updates.append({
                                 "button_id": btn["button_id"],
-                                "minutes": result.get("minutes"),
-                                "platform": result.get("platform"),
-                                "message": result.get("message", "--"),
-                                "departure_time": result.get("departure_time")
+                                "departures": result.get("departures", [])
                             })
                         
                         await websocket.send_json({
@@ -933,13 +920,10 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                             initial_updates = []
                             for btn, result in zip(valid_buttons, results):
                                 if isinstance(result, Exception):
-                                    result = {"minutes": None, "platform": None, "message": "Error"}
+                                    result = {"departures": []}
                                 initial_updates.append({
                                     "button_id": btn["button_id"],
-                                    "minutes": result.get("minutes"),
-                                    "platform": result.get("platform"),
-                                    "message": result.get("message", "--"),
-                                    "departure_time": result.get("departure_time")
+                                    "departures": result.get("departures", [])
                                 })
                             
                             await websocket.send_json({

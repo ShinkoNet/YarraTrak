@@ -65,6 +65,31 @@ function playVibrationPattern(pattern) {
 
     playNext();
 }
+
+// Calculate vibration pattern locally (no network call needed)
+// Encodes minutes as haptic pattern: Hours=1000ms, Tens=500ms, Ones=150ms
+function calculateVibration(minutes) {
+    if (minutes === 0) {
+        return [80, 120, 150, 250, 80, 120, 80, 120, 150, 250, 150, 650, 150, 250, 300];
+    }
+
+    minutes = Math.max(0, Math.min(720, minutes));
+    var hours = Math.floor(minutes / 60);
+    var tens = Math.floor((minutes % 60) / 10);
+    var ones = minutes % 10;
+
+    var pattern = [];
+    for (var i = 0; i < hours; i++) pattern.push(1000, 400);
+    if (hours > 0 && (tens > 0 || ones > 0) && pattern.length) pattern[pattern.length - 1] += 200;
+
+    for (var i = 0; i < tens; i++) pattern.push(500, 300);
+    if (tens > 0 && ones > 0 && pattern.length) pattern[pattern.length - 1] += 100;
+
+    for (var i = 0; i < ones; i++) pattern.push(150, 150);
+
+    return pattern;
+}
+
 var Vector2 = require('vector2');
 
 // Server configuration - update this URL to your server
@@ -80,8 +105,36 @@ var queryHistory = [];
 var messageId = 0;
 var pendingRequests = {};
 
-// Live departure data from server broadcasts: {1: {minutes: 3, platform: "2", message: "3 min • P2"}, ...}
+// Live departure data from server broadcasts: {1: {departures: [{minutes, platform, departure_time}, ...]}, ...}
 var buttonDepartures = {};
+
+// Get the current valid departure from the cached array
+// Auto-switches to next departure when first train has passed
+function getCurrentDeparture(buttonIndex) {
+    var cache = buttonDepartures[buttonIndex];
+    if (!cache || !cache.departures || cache.departures.length === 0) {
+        return null;
+    }
+
+    var now = new Date();
+    for (var i = 0; i < cache.departures.length; i++) {
+        var dep = cache.departures[i];
+        if (dep.departure_time) {
+            // Parse UTC time
+            var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
+            var depTime = new Date(timeStr);
+            // If departure is in the future (or "arriving now" with <60s passed), use it
+            if (depTime.getTime() > now.getTime() - 60000) {
+                return dep;
+            }
+        } else if (dep.minutes !== null && dep.minutes !== undefined) {
+            // Fallback if no departure_time - just return first with minutes
+            return dep;
+        }
+    }
+    // All departures have passed
+    return null;
+}
 
 // Generate simple UUID
 function generateUUID() {
@@ -197,8 +250,18 @@ function buildMenuItems() {
         if (startName) {
             var title = abbreviateStation(startName) + '>' + abbreviateStation(destName || '?');
             // Use live departure data if available, otherwise show "Waiting..."
-            var dep = buttonDepartures[i];
-            var subtitle = dep ? dep.message : 'Waiting...';
+            var dep = getCurrentDeparture(i);
+            var subtitle = 'Waiting...';
+            if (dep) {
+                if (dep.minutes === 0) {
+                    subtitle = 'Now';
+                } else if (dep.minutes !== null && dep.minutes !== undefined) {
+                    subtitle = dep.minutes + ' min';
+                }
+                if (dep.platform) {
+                    subtitle += ' • P' + dep.platform;
+                }
+            }
             items.push({ title: title, subtitle: subtitle, data: { stealth: i } });
         }
     }
@@ -286,8 +349,8 @@ function runStealthQuery(buttonIndex) {
         return;
     }
 
-    // Use cached live departure data
-    var dep = buttonDepartures[buttonIndex];
+    // Use cached live departure data - auto-switches between departures
+    var dep = getCurrentDeparture(buttonIndex);
 
     // Abbreviate station names for display
     function shortName(n) {
@@ -339,7 +402,7 @@ function runStealthQuery(buttonIndex) {
 
     loadingCard.title(title);
 
-    if (dep && dep.message) {
+    if (dep && (dep.departure_time || dep.minutes !== null)) {
         loadingCard.subtitle('');
 
         // Initial update
@@ -349,7 +412,7 @@ function runStealthQuery(buttonIndex) {
             if (dep.minutes !== null && dep.minutes !== undefined) {
                 bodyText = dep.minutes === 0 ? 'Arriving NOW!' : dep.minutes + ' minute' + (dep.minutes !== 1 ? 's' : '');
             } else {
-                bodyText = dep.message;
+                bodyText = 'Loading...';
             }
             if (dep.platform) {
                 bodyText += '\nPlatform ' + dep.platform;
@@ -367,18 +430,9 @@ function runStealthQuery(buttonIndex) {
             }, 1000);
         }
 
-        // Get vibration pattern from server
+        // Calculate vibration pattern locally (instant feedback, no network call)
         if (dep.minutes !== null && dep.minutes !== undefined) {
-            sendStealthQuery(stopId, Settings.option('btn' + buttonIndex + '_route_type'),
-                Settings.option('btn' + buttonIndex + '_direction_id'),
-                function (response) {
-                    if (response.vibration) {
-                        playVibrationPattern(response.vibration);
-                    }
-                },
-                function () {
-                    Vibe.vibrate('short');
-                });
+            playVibrationPattern(calculateVibration(dep.minutes));
         } else {
             Vibe.vibrate('short');
         }
@@ -596,11 +650,9 @@ function connectWebSocket() {
                 var updates = msg.updates || [];
                 for (var i = 0; i < updates.length; i++) {
                     var u = updates[i];
+                    // Store full departures array for smart switching
                     buttonDepartures[u.button_id] = {
-                        minutes: u.minutes,
-                        platform: u.platform,
-                        message: u.message,
-                        departure_time: u.departure_time
+                        departures: u.departures || []  // Array of {minutes, platform, departure_time}
                     };
                 }
                 // Refresh menu to show updated times
@@ -770,32 +822,6 @@ function saveButtonConfig(config) {
     // Vibrate to confirm
     Vibe.vibrate('short');
     console.log('Button ' + btnId + ' saved successfully');
-}
-
-// Subscribe to live stealth updates
-function sendStealthSubscription() {
-    if (!ws || !wsConnected) return;
-
-    var buttons = [];
-    for (var i = 1; i <= 3; i++) {
-        var stopId = Settings.option('btn' + i + '_stop_id');
-        if (stopId) {
-            buttons.push({
-                button_id: i,
-                stop_id: stopId,
-                route_type: Settings.option('btn' + i + '_route_type') || 0,
-                direction_id: Settings.option('btn' + i + '_direction_id')
-            });
-        }
-    }
-
-    if (buttons.length > 0) {
-        console.log('Subscribing to stealth updates for ' + buttons.length + ' buttons');
-        ws.send(JSON.stringify({
-            type: 'subscribe_stealth',
-            buttons: buttons
-        }));
-    }
 }
 
 // Start the app
