@@ -595,12 +595,15 @@ async def get_media(ticket_id: str):
 # --- WebSocket Endpoint ---
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
+async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), buttons: str = Query(None)):
     """
     WebSocket endpoint for real-time communication.
     
     API Key: Pass as query param ?api_key=YOUR_KEY
     If no API keys configured in server, all connections allowed (dev mode).
+    
+    Buttons: Pass as query param ?buttons=1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID
+    If provided, server immediately fetches and pushes departure data on connection.
     
     Message Protocol:
     
@@ -627,6 +630,53 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
         return
     
     await websocket.accept()
+    
+    # Parse buttons from query param and immediately push departure data
+    # Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID"
+    if buttons:
+        try:
+            parsed_buttons = []
+            for btn_str in buttons.split(","):
+                parts = btn_str.split(":")
+                if len(parts) >= 2:
+                    button_id = int(parts[0])
+                    stop_id = int(parts[1])
+                    route_type = int(parts[2]) if len(parts) > 2 else 0
+                    direction_id = int(parts[3]) if len(parts) > 3 and parts[3] else None
+                    parsed_buttons.append({
+                        "button_id": button_id,
+                        "stop_id": stop_id,
+                        "route_type": route_type,
+                        "direction_id": direction_id
+                    })
+            
+            if parsed_buttons:
+                # Register subscription
+                _stealth_subscriptions[websocket] = parsed_buttons
+                start_broadcast_task()
+                print(f"Client connected with {len(parsed_buttons)} buttons in URL")
+                
+                # Immediately fetch and push departure data
+                initial_updates = []
+                for btn in parsed_buttons:
+                    result = await fetch_departure_for_button(
+                        btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
+                    )
+                    initial_updates.append({
+                        "button_id": btn["button_id"],
+                        "minutes": result.get("minutes"),
+                        "platform": result.get("platform"),
+                        "message": result.get("message", "--"),
+                        "departure_time": result.get("departure_time")
+                    })
+                
+                # Push immediately on connection
+                await websocket.send_json({
+                    "type": "stealth_update",
+                    "updates": initial_updates
+                })
+        except Exception as e:
+            print(f"Error parsing buttons query param: {e}")
     
     try:
         while True:

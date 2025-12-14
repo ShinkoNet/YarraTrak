@@ -218,6 +218,12 @@ Agent handles:
 
 ### WebSocket Protocol (pebble <-> server)
 
+**Connection URL:**
+```
+wss://server/ws?api_key=KEY&buttons=1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:...
+```
+The `buttons` param enables instant departure data push on connection (no waiting for subscribe_stealth message).
+
 **Client -> Server:**
 - `query`: Standard agent query
 - `stealth`: Direct departure check `{type: "stealth", stop_id: 123, ...}` - returns vibration + platform

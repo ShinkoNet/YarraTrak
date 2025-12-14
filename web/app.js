@@ -89,10 +89,35 @@ function connectWebSocket() {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     let wsUrl = `${protocol}//${location.host}/ws`;
 
+    // Build query params
+    const params = [];
+
     // Add API key if set
     const apiKey = getApiKey();
     if (apiKey) {
-        wsUrl += `?api_key=${encodeURIComponent(apiKey)}`;
+        params.push(`api_key=${encodeURIComponent(apiKey)}`);
+    }
+
+    // Build buttons query param for instant data on connect
+    // Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID"
+    const buttonParts = [];
+    for (let i = 1; i <= 3; i++) {
+        const config = getButtonConfig(i);
+        if (config && config.stop_id) {
+            const routeType = config.route_type || 0;
+            let part = `${i}:${config.stop_id}:${routeType}`;
+            if (config.direction_id !== undefined && config.direction_id !== null) {
+                part += `:${config.direction_id}`;
+            }
+            buttonParts.push(part);
+        }
+    }
+    if (buttonParts.length > 0) {
+        params.push(`buttons=${encodeURIComponent(buttonParts.join(','))}`);
+    }
+
+    if (params.length > 0) {
+        wsUrl += '?' + params.join('&');
     }
 
     ws = new WebSocket(wsUrl);
@@ -101,7 +126,8 @@ function connectWebSocket() {
         wsConnected = true;
         log("WebSocket connected", "system");
         updateWsStatus();
-        // Subscribe to live stealth updates
+        // Note: server will push stealth_update immediately if buttons were in URL
+        // Still call sendStealthSubscription for mid-session updates
         sendStealthSubscription();
     };
 

@@ -107,11 +107,16 @@ Settings.config({
     function (e) {
         console.log('Config closed with:', JSON.stringify(e.options));
 
+        // Clear stale departure cache - button configs may have changed
+        buttonDepartures = {};
+
         // Always refresh menu items to show new button config immediately
         mainMenu.items(0, buildMenuItems());
 
-        // Reconnect if not connected (API key may have been entered)
-        if (!wsConnected) {
+        // Re-subscribe to stealth updates with new button config, or reconnect if needed
+        if (wsConnected) {
+            sendStealthSubscription();
+        } else {
             connectWebSocket();
         }
     }
@@ -299,9 +304,19 @@ function runStealthQuery(buttonIndex) {
     function formatCountdown() {
         if (!dep || !dep.departure_time) return null;
 
-        var depTime = new Date(dep.departure_time);
+        // Parse UTC time - server sends ISO format like "2025-12-14T07:59:00+00:00"
+        // Some JS engines don't parse +00:00 correctly, so normalize to Z
+        var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
+        var depTime = new Date(timeStr);
         var now = new Date();
         var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
+
+        // Debug: log if something looks wrong
+        if (diffSec < -60 || diffSec > 86400) {
+            console.log('Time calc may be wrong: departure=' + dep.departure_time +
+                ', parsed=' + depTime.toISOString() + ', now=' + now.toISOString() +
+                ', diff=' + diffSec + 's');
+        }
 
         var bodyText = '';
         if (diffSec <= 0) {
@@ -475,9 +490,26 @@ function connectWebSocket() {
         .replace('http://', 'ws://')
         .replace(/\/+$/, '') + '/ws';
 
-    // Add API key as query parameter if set
-    if (apiKey) {
-        wsUrl += '?api_key=' + encodeURIComponent(apiKey);
+    // Add API key as query parameter
+    wsUrl += '?api_key=' + encodeURIComponent(apiKey);
+
+    // Build buttons query param for instant data on connect
+    // Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID"
+    var buttonParts = [];
+    for (var i = 1; i <= 3; i++) {
+        var stopId = Settings.option('btn' + i + '_stop_id');
+        if (stopId) {
+            var routeType = Settings.option('btn' + i + '_route_type') || 0;
+            var directionId = Settings.option('btn' + i + '_direction_id');
+            var part = i + ':' + stopId + ':' + routeType;
+            if (directionId !== undefined && directionId !== null) {
+                part += ':' + directionId;
+            }
+            buttonParts.push(part);
+        }
+    }
+    if (buttonParts.length > 0) {
+        wsUrl += '&buttons=' + encodeURIComponent(buttonParts.join(','));
     }
 
     console.log('Connecting to: ' + wsUrl);
@@ -497,30 +529,45 @@ function connectWebSocket() {
     ws = new WebSocket(wsUrl);
 
     var isFirstLoad = true;
+    var hasReceivedData = false;
+    var menuShowTimer = null;
 
     ws.onopen = function () {
         wsConnected = true;
         console.log('WebSocket connected');
-        loadingCard.subtitle('Connected!');
 
-        // Refresh menu items immediately when connected
-        mainMenu.items(0, buildMenuItems());
-
-        // Subscribe to live stealth updates
-        sendStealthSubscription();
-
-        setTimeout(function () {
+        // If no buttons configured, show menu immediately (no data to wait for)
+        if (buttonParts.length === 0) {
+            console.log('No buttons configured, showing menu immediately');
+            mainMenu.items(0, buildMenuItems());
             loadingCard.hide();
+            mainMenu.show();
+            isFirstLoad = false;
+            return;
+        }
+
+        loadingCard.subtitle('Loading...');
+
+        // Set fallback timer - show menu after 2s even if no stealth_update received
+        menuShowTimer = setTimeout(function () {
             if (isFirstLoad) {
+                console.log('Fallback: showing menu without stealth data');
+                mainMenu.items(0, buildMenuItems());
+                loadingCard.hide();
                 mainMenu.show();
                 isFirstLoad = false;
             }
-        }, 500);
+        }, 2000);
     };
 
     ws.onclose = function (e) {
         wsConnected = false;
         console.log('WebSocket closed, code: ' + e.code);
+
+        if (menuShowTimer) {
+            clearTimeout(menuShowTimer);
+            menuShowTimer = null;
+        }
 
         // Code 4001 = invalid API key (custom code from server)
         if (e.code === 4001) {
@@ -561,6 +608,19 @@ function connectWebSocket() {
                 }
                 // Refresh menu to show updated times
                 mainMenu.items(0, buildMenuItems());
+
+                // On first stealth_update, show menu immediately (data is ready!)
+                if (isFirstLoad && !hasReceivedData) {
+                    hasReceivedData = true;
+                    if (menuShowTimer) {
+                        clearTimeout(menuShowTimer);
+                        menuShowTimer = null;
+                    }
+                    console.log('Received stealth data, showing menu');
+                    loadingCard.hide();
+                    mainMenu.show();
+                    isFirstLoad = false;
+                }
                 return;
             }
 
@@ -590,6 +650,7 @@ function connectWebSocket() {
         }
     };
 }
+
 
 function reconnect() {
     if (reconnectTimer) {
