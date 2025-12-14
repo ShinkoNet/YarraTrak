@@ -40,6 +40,8 @@ function connectWebSocket() {
         wsConnected = true;
         log("WebSocket connected", "system");
         updateWsStatus();
+        // Subscribe to live stealth updates
+        sendStealthSubscription();
     };
 
     ws.onclose = () => {
@@ -60,6 +62,13 @@ function connectWebSocket() {
     ws.onmessage = (event) => {
         try {
             const msg = JSON.parse(event.data);
+
+            // Handle live stealth updates (broadcast, no pending request)
+            if (msg.type === 'stealth_update') {
+                updateButtonSubtitles(msg.updates || []);
+                return;
+            }
+
             const pending = pendingRequests.get(msg.id);
             if (pending) {
                 pendingRequests.delete(msg.id);
@@ -220,11 +229,53 @@ function getButtonConfig(index) {
 function updateButtonUI(index, config) {
     const btn = document.getElementById(`btn-${index}`);
     if (btn) {
+        const title = btn.querySelector('.btn-title');
+        const subtitle = btn.querySelector('.btn-subtitle');
         let name = config.stop_name || `Button ${index}`;
         if (name.length > 15) name = name.substring(0, 13) + "..";
-        btn.innerText = name;
+        if (title) title.textContent = name;
+        if (subtitle) subtitle.textContent = 'Waiting...';
         btn.title = config.direction_name ? `${config.stop_name} -> ${config.direction_name}` : config.stop_name;
     }
+}
+
+// Subscribe to live stealth updates
+function sendStealthSubscription() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const buttons = [];
+    for (let i = 1; i <= 3; i++) {
+        const config = getButtonConfig(i);
+        if (config && config.stop_id) {
+            buttons.push({
+                button_id: i,
+                stop_id: config.stop_id,
+                route_type: config.route_type || 0,
+                direction_id: config.direction_id
+            });
+        }
+    }
+
+    if (buttons.length > 0) {
+        log(`Subscribing to ${buttons.length} stealth buttons`, "system");
+        ws.send(JSON.stringify({
+            type: 'subscribe_stealth',
+            buttons: buttons
+        }));
+    }
+}
+
+// Update button subtitles from live updates
+function updateButtonSubtitles(updates) {
+    updates.forEach(u => {
+        const btn = document.getElementById(`btn-${u.button_id}`);
+        if (btn) {
+            const subtitle = btn.querySelector('.btn-subtitle');
+            if (subtitle) {
+                subtitle.textContent = u.message || '--';
+            }
+        }
+    });
 }
 // ----------------------------------
 
