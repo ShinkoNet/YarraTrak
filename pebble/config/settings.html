@@ -246,6 +246,7 @@
         <label>API Key</label>
         <input type="password" id="api_key" placeholder="Enter your API key">
         <div class="hint">Required to connect to the server</div>
+        <div id="api_key_error" style="color: #ff4444; font-size: 13px; margin-top: 6px; display: none;"></div>
     </div>
 
     <h2>Configure Buttons</h2>
@@ -699,9 +700,17 @@
                 }
                 var res = await fetch(base + '/api/v1/stations?type=' + typeParam, { headers: headers });
                 if (res.status === 401) {
-                    alert('Invalid API key. Please check your key and try again.');
+                    var errorEl = document.getElementById('api_key_error');
+                    if (!apiKey) {
+                        errorEl.textContent = 'Please add an API key to use this app';
+                    } else {
+                        errorEl.textContent = 'Invalid API key. Please check your key and try again.';
+                    }
+                    errorEl.style.display = 'block';
                     return;
                 }
+                // Clear error on success
+                document.getElementById('api_key_error').style.display = 'none';
                 var data = await res.json();
                 if (data.stations) {
                     stationsByType[routeType] = data.stations;

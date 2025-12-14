@@ -477,6 +477,15 @@ function connectWebSocket() {
     console.log('Server URL from settings: ' + Settings.option('server_url'));
     console.log('Using server URL: ' + serverUrl);
 
+    // Check if API key is configured
+    if (!apiKey) {
+        loadingCard.title('Setup Required');
+        loadingCard.subtitle('');
+        loadingCard.body('Open settings in\nthe Pebble app\nand enter your\nAPI key');
+        loadingCard.show();
+        return;
+    }
+
     if (!serverUrl) {
         loadingCard.title('Setup Required');
         loadingCard.subtitle('');
@@ -534,10 +543,20 @@ function connectWebSocket() {
         }, 500);
     };
 
-    ws.onclose = function () {
+    ws.onclose = function (e) {
         wsConnected = false;
-        console.log('WebSocket closed');
-        // Auto-reconnect
+        console.log('WebSocket closed, code: ' + e.code);
+
+        // Code 4001 = invalid API key (custom code from server)
+        if (e.code === 4001) {
+            loadingCard.title('Invalid API Key');
+            loadingCard.subtitle('');
+            loadingCard.body('Please check your\nAPI key in settings');
+            loadingCard.show();
+            return; // Don't auto-reconnect for auth errors
+        }
+
+        // Auto-reconnect for other disconnects
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(connectWebSocket, 3000);
     };
@@ -545,7 +564,8 @@ function connectWebSocket() {
     ws.onerror = function (e) {
         console.log('WebSocket error');
         loadingCard.title('Connection Failed');
-        loadingCard.body(serverUrl);
+        loadingCard.subtitle('');
+        loadingCard.body('Check your\ninternet connection');
     };
 
     ws.onmessage = function (event) {
