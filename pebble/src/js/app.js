@@ -488,9 +488,10 @@ function runStealthQuery(buttonIndex) {
 
 // Handle query response
 function handleQueryResponse(card, response) {
-    var data = response.data;
+    // server sends {type, payload} directly, or we get {data: {type, payload}} handle both formats for backwards compatibility
+    var data = response.data || response;
 
-    if (!data) {
+    if (!data || !data.type) {
         card.title('Error');
         card.body('No response');
         return;
