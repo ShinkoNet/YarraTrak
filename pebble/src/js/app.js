@@ -67,6 +67,7 @@ var CONFIG_URL = 'https://ptv.netcavy.net/pebble-config.html';
 
 var ws = null;
 var wsConnected = false;
+var reconnectTimer = null;
 var sessionId = generateUUID();
 var queryHistory = [];
 var messageId = 0;
@@ -98,7 +99,7 @@ Settings.config({
         console.log('Config opened');
     },
     function (e) {
-        console.log('Config closed with:', JSON.stringify(e.options));
+        console.log('Config closed');
 
         // Clear stale departure cache - button configs may have changed
         buttonDepartures = {};
@@ -106,7 +107,7 @@ Settings.config({
         // Always refresh menu items to show new button config immediately
         mainMenu.items(0, buildMenuItems());
 
-        // reconnect websocket with new buttons in url to get fresh data this ensures only one subscription mechanism (url params) is
+        // Reconnect WebSocket with new buttons in URL to get fresh data
         reconnect();
     }
 );
@@ -601,7 +602,6 @@ function connectWebSocket() {
                         clearTimeout(menuShowTimer);
                         menuShowTimer = null;
                     }
-                    console.log('Received stealth data, showing menu');
                     loadingCard.hide();
                     mainMenu.show();
                     isFirstLoad = false;
