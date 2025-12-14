@@ -280,11 +280,20 @@ function startVoiceQuery() {
     });
 }
 
+// Countdown timer for live seconds display
+var countdownTimer = null;
+
 // Stealth query - uses cached live departure data, no server call needed
 function runStealthQuery(buttonIndex) {
     var name = Settings.option('btn' + buttonIndex + '_name');
     var destName = Settings.option('btn' + buttonIndex + '_dest_name');
     var stopId = Settings.option('btn' + buttonIndex + '_stop_id');
+
+    // Clear any existing countdown
+    if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+    }
 
     if (!stopId) {
         Vibe.vibrate('short');
@@ -302,47 +311,65 @@ function runStealthQuery(buttonIndex) {
         return n;
     }
 
+    // Format countdown body text
+    function formatCountdown() {
+        if (!dep || !dep.departure_time) return null;
+
+        var depTime = new Date(dep.departure_time);
+        var now = new Date();
+        var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
+
+        var bodyText = '';
+        if (diffSec <= 0) {
+            bodyText = 'Arriving NOW!';
+        } else {
+            var mins = Math.floor(diffSec / 60);
+            var secs = diffSec % 60;
+            if (mins > 0) {
+                bodyText = mins + ' min ' + secs + ' sec';
+            } else {
+                bodyText = secs + ' seconds';
+            }
+        }
+
+        if (dep.platform) {
+            bodyText += '\nPlatform ' + dep.platform;
+        }
+        return bodyText;
+    }
+
     // Build title: "Narre > City"
     var title = shortName(name) + ' > ' + shortName(destName);
 
     loadingCard.title(title);
 
     if (dep && dep.message) {
-        // Calculate live seconds from departure_time
-        var bodyText = '';
-        if (dep.departure_time) {
-            var depTime = new Date(dep.departure_time);
-            var now = new Date();
-            var diffMs = depTime.getTime() - now.getTime();
-            var diffSec = Math.floor(diffMs / 1000);
-
-            if (diffSec <= 0) {
-                bodyText = 'Arriving NOW!';
-            } else {
-                var mins = Math.floor(diffSec / 60);
-                var secs = diffSec % 60;
-                if (mins > 0) {
-                    bodyText = mins + ' min ' + secs + ' sec';
-                } else {
-                    bodyText = secs + ' seconds';
-                }
-            }
-        } else if (dep.minutes !== null && dep.minutes !== undefined) {
-            if (dep.minutes === 0) {
-                bodyText = 'Arriving NOW!';
-            } else {
-                bodyText = dep.minutes + ' minute' + (dep.minutes !== 1 ? 's' : '');
-            }
-        } else {
-            bodyText = dep.message;
-        }
-
-        if (dep.platform) {
-            bodyText += '\nPlatform ' + dep.platform;
-        }
-
         loadingCard.subtitle('');
+
+        // Initial update
+        var bodyText = formatCountdown();
+        if (!bodyText) {
+            // Fallback if no departure_time
+            if (dep.minutes !== null && dep.minutes !== undefined) {
+                bodyText = dep.minutes === 0 ? 'Arriving NOW!' : dep.minutes + ' minute' + (dep.minutes !== 1 ? 's' : '');
+            } else {
+                bodyText = dep.message;
+            }
+            if (dep.platform) {
+                bodyText += '\nPlatform ' + dep.platform;
+            }
+        }
         loadingCard.body(bodyText);
+
+        // Start live countdown timer (update every second)
+        if (dep.departure_time) {
+            countdownTimer = setInterval(function () {
+                var newText = formatCountdown();
+                if (newText) {
+                    loadingCard.body(newText);
+                }
+            }, 1000);
+        }
 
         // Get vibration pattern from server
         if (dep.minutes !== null && dep.minutes !== undefined) {
@@ -367,10 +394,14 @@ function runStealthQuery(buttonIndex) {
 
     loadingCard.show();
 
-    // Auto-hide after 3 seconds
+    // Auto-hide after 5 seconds (longer to enjoy the countdown)
     setTimeout(function () {
+        if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+        }
         loadingCard.hide();
-    }, 3000);
+    }, 5000);
 }
 
 // Handle query response
