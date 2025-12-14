@@ -12,6 +12,7 @@ var vibeTimer = null;
 function playVibrationPattern(pattern) {
     // Clear any ongoing pattern
     if (vibeTimer) {
+        // console.log('Clearing existing vibeTimer');
         clearTimeout(vibeTimer);
         vibeTimer = null;
     }
@@ -56,12 +57,14 @@ function playVibrationPattern(pattern) {
         }
     }
 
+    console.log('Starting vibration pattern: ' + JSON.stringify(pattern));
     playNext();
 }
 
 // calculate vibration pattern locally (no network call needed) encodes minutes as haptic pattern: hours=1000ms, tens=500ms,
 function calculateVibration(minutes) {
     if (minutes === 0) {
+        console.log('calculateVibration: 0 mins -> special pattern');
         return [80, 120, 150, 250, 80, 120, 80, 120, 150, 250, 150, 650, 150, 250, 300];
     }
 
@@ -79,6 +82,7 @@ function calculateVibration(minutes) {
 
     for (var i = 0; i < ones; i++) pattern.push(150, 150);
 
+    console.log('calculateVibration: ' + minutes + ' mins -> ' + JSON.stringify(pattern));
     return pattern;
 }
 
@@ -112,6 +116,7 @@ function getPatternDuration(pattern) {
     if (!Array.isArray(pattern)) return 0;
     var total = 0;
     for (var i = 0; i < pattern.length; i++) total += pattern[i];
+    console.log('getPatternDuration: ' + total + 'ms for ' + JSON.stringify(pattern));
     return total;
 }
 
@@ -348,6 +353,7 @@ function startVoiceQuery() {
 
 // Countdown timer for live seconds display
 var countdownTimer = null;
+var autoHideTimer = null;
 
 // Stealth query - uses cached live departure data, no server call needed
 function runStealthQuery(buttonIndex) {
@@ -359,6 +365,13 @@ function runStealthQuery(buttonIndex) {
     if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
+    }
+
+    // Clear any pending auto-hide from previous activity
+    if (autoHideTimer) {
+        console.log('Cancelling pending auto-hide timer');
+        clearTimeout(autoHideTimer);
+        autoHideTimer = null;
     }
 
     if (!stopId) {
@@ -463,11 +476,15 @@ function runStealthQuery(buttonIndex) {
         }
 
         if (freshMinutes !== null) {
+            console.log('freshMinutes calculated: ' + freshMinutes);
             pattern = calculateVibration(freshMinutes);
             // Wait for vibration to finish + 200ms buffer, or 5s minimum
-            hideDelay = Math.max(5000, getPatternDuration(pattern) + 200);
+            var patDur = getPatternDuration(pattern);
+            hideDelay = Math.max(5000, patDur + 200);
+            console.log('calculated hideDelay: ' + hideDelay + ' (pattern duration: ' + patDur + ')');
             playVibrationPattern(pattern);
         } else {
+            console.log('freshMinutes is null, short vibe');
             Vibe.vibrate('short');
         }
     } else {
@@ -479,7 +496,10 @@ function runStealthQuery(buttonIndex) {
     loadingCard.show();
 
     // Auto-hide after vibration completes (or 5s minimum)
-    setTimeout(function () {
+    console.log('Scheduling auto-hide in ' + hideDelay + 'ms');
+    autoHideTimer = setTimeout(function () {
+        console.log('Auto-hiding card now');
+        autoHideTimer = null;
         if (countdownTimer) {
             clearInterval(countdownTimer);
             countdownTimer = null;
