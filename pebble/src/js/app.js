@@ -689,9 +689,23 @@ function saveButtonConfig(config) {
     Settings.option('btn' + btnId + '_stop_id', config.stop_id);
     Settings.option('btn' + btnId + '_route_type', config.route_type || 0);
 
+    // Also save dest_name if provided
+    if (config.dest_name) {
+        Settings.option('btn' + btnId + '_dest_name', config.dest_name);
+    }
+
     if (config.direction_id !== undefined && config.direction_id !== null) {
         Settings.option('btn' + btnId + '_direction_id', config.direction_id);
     }
+
+    // Clear stale departure cache for this button so we don't use old data
+    delete buttonDepartures[btnId];
+
+    // Re-subscribe to stealth updates so server sends data for new button config
+    sendStealthSubscription();
+
+    // Refresh menu to show new button configuration
+    mainMenu.items(0, buildMenuItems());
 
     // Vibrate to confirm
     Vibe.vibrate('short');
