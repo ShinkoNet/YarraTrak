@@ -113,12 +113,9 @@ Settings.config({
         // Always refresh menu items to show new button config immediately
         mainMenu.items(0, buildMenuItems());
 
-        // Re-subscribe to stealth updates with new button config, or reconnect if needed
-        if (wsConnected) {
-            sendStealthSubscription();
-        } else {
-            connectWebSocket();
-        }
+        // Reconnect WebSocket with new buttons in URL to get fresh data
+        // This ensures only ONE subscription mechanism (URL params) is used
+        reconnect();
     }
 );
 
@@ -762,8 +759,9 @@ function saveButtonConfig(config) {
     // Clear stale departure cache for this button so we don't use old data
     delete buttonDepartures[btnId];
 
-    // Re-subscribe to stealth updates so server sends data for new button config
-    sendStealthSubscription();
+    // Reconnect WebSocket with new buttons in URL to get fresh data
+    // This ensures only ONE subscription mechanism (URL params) is used
+    reconnect();
 
     // Refresh menu to show new button configuration
     mainMenu.items(0, buildMenuItems());
