@@ -393,16 +393,26 @@
 
             // Check if we're in a real Pebble app or just a browser
             var returnTo = getQueryParam('return_to');
-            var isPebbleApp = returnTo || navigator.userAgent.toLowerCase().includes('pebble');
+            var debugEl = document.getElementById('debug_info');
+
+            // If origin is production server and no return_to, we're likely in Pebble app
+            var isFromPebbleApp = window.location.origin.includes('ptv.netcavy.net') ||
+                navigator.userAgent.toLowerCase().includes('pebble') ||
+                location.protocol === 'file:';
+
+            debugEl.textContent = 'Save: returnTo=' + (returnTo ? 'yes' : 'no') + ', isPebble=' + isFromPebbleApp;
 
             if (returnTo) {
                 // Coming from emulator config
+                debugEl.textContent += ' -> emulator redirect';
                 location.href = returnTo + encodeURIComponent(JSON.stringify(newOptions));
-            } else if (isPebbleApp || location.protocol === 'file:') {
-                // On phone - close config page
+            } else if (isFromPebbleApp) {
+                // On phone - close config page and return options to Pebble app
+                debugEl.textContent += ' -> pebblejs://close';
                 location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
             } else {
                 // In browser - just show success and stay on page
+                debugEl.textContent += ' -> browser mode';
                 var statusEl = document.getElementById('save_status');
                 statusEl.textContent = '✓ Saved!';
                 statusEl.style.color = '#4CAF50';
