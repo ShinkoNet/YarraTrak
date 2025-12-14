@@ -241,6 +241,13 @@
     <!-- Server URL is auto-detected, hidden from user -->
     <input type="hidden" id="server_url">
 
+    <h2>Authentication</h2>
+    <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="api_key" placeholder="Enter your API key">
+        <div class="hint">Required to connect to the server</div>
+    </div>
+
     <h2>Configure Buttons</h2>
 
     <div id="buttons_container"></div>
@@ -265,9 +272,13 @@
 
         // Init UI
         var serverUrlEl = document.getElementById('server_url');
+        var apiKeyEl = document.getElementById('api_key');
         if (options.server_url) {
             serverUrlEl.value = options.server_url;
             serverBase = options.server_url;
+        }
+        if (options.api_key) {
+            apiKeyEl.value = options.api_key;
         }
 
         // Render Button Configs
@@ -342,12 +353,13 @@
 
         document.getElementById('save').addEventListener('click', function () {
             var serverUrl = serverUrlEl.value.trim();
+            var apiKey = apiKeyEl.value.trim();
             if (!serverUrl) {
                 alert('Please enter a server URL');
                 return;
             }
 
-            var newOptions = { server_url: serverUrl };
+            var newOptions = { server_url: serverUrl, api_key: apiKey };
             for (var i = 1; i <= 3; i++) {
                 var startId = document.getElementById('btn' + i + '_start_id').value;
                 var destId = document.getElementById('btn' + i + '_dest_id').value;
@@ -673,6 +685,7 @@
         async function loadStationData(routeType) {
             var base = serverUrlEl.value.trim() || serverBase;
             if (base.endsWith('/')) base = base.slice(0, -1);
+            var apiKey = apiKeyEl.value.trim();
 
             // Map route_type to API type param
             var typeParam = 'train';
@@ -680,7 +693,15 @@
             else if (routeType === 3) typeParam = 'vline';
 
             try {
-                var res = await fetch(base + '/api/v1/stations?type=' + typeParam);
+                var headers = {};
+                if (apiKey) {
+                    headers['X-API-Key'] = apiKey;
+                }
+                var res = await fetch(base + '/api/v1/stations?type=' + typeParam, { headers: headers });
+                if (res.status === 401) {
+                    alert('Invalid API key. Please check your key and try again.');
+                    return;
+                }
                 var data = await res.json();
                 if (data.stations) {
                     stationsByType[routeType] = data.stations;

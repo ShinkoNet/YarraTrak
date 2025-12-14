@@ -2,7 +2,7 @@
 PTV Notify API - FastAPI server for public transport queries.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect, Depends, Header, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -34,6 +34,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- API Key Authentication ---
+
+async def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")):
+    """Verify API key from header. If no keys configured, allow all (dev mode)."""
+    if not config.API_KEYS:
+        return  # No keys configured = open access (dev mode)
+    if x_api_key not in config.API_KEYS:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 # --- Request Models ---
 
@@ -326,7 +335,7 @@ def stop_broadcast_task():
 
 
 @app.get("/api/v1/stations")
-async def get_stations(type: str = "train"):
+async def get_stations(type: str = "train", _: None = Depends(verify_api_key)):
     """
     Get stations from the database.
     type: 'train' (metro), 'vline', 'tram', or 'all'
@@ -359,7 +368,7 @@ async def get_stations(type: str = "train"):
 
 
 @app.post("/api/v1/stealth")
-async def stealth_mode(req: StealthRequest):
+async def stealth_mode(req: StealthRequest, _: None = Depends(verify_api_key)):
     """
     Quick departure check for pre-configured buttons.
     Returns vibration pattern encoding minutes until next departure.
@@ -409,7 +418,8 @@ async def voice_query(
     file: UploadFile = File(...),
     session_id: str | None = None,
     query_history: str | None = None,  # JSON string of [{stop_id, stop_name, route_type}, ...]
-    background_tasks: BackgroundTasks = None
+    background_tasks: BackgroundTasks = None,
+    _: None = Depends(verify_api_key)
 ):
     """
     Voice query endpoint with speculative execution.
@@ -504,7 +514,7 @@ async def voice_query(
 
 
 @app.post("/api/v1/query")
-async def text_query(request: AgentRequest, background_tasks: BackgroundTasks):
+async def text_query(request: AgentRequest, background_tasks: BackgroundTasks, _: None = Depends(verify_api_key)):
     """
     Text-only agent endpoint for debugging. No ASR, just sends text to agent.
     Uses client-provided query_history for speculative fetch.
@@ -585,9 +595,12 @@ async def get_media(ticket_id: str):
 # --- WebSocket Endpoint ---
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
     """
     WebSocket endpoint for real-time communication.
+    
+    API Key: Pass as query param ?api_key=YOUR_KEY
+    If no API keys configured in server, all connections allowed (dev mode).
     
     Message Protocol:
     
@@ -608,6 +621,11 @@ async def websocket_endpoint(websocket: WebSocket):
         "learned_stop": { ... }       // Optional
     }
     """
+    # Verify API key before accepting connection
+    if config.API_KEYS and api_key not in config.API_KEYS:
+        await websocket.close(code=4001, reason="Invalid or missing API key")
+        return
+    
     await websocket.accept()
     
     try:
