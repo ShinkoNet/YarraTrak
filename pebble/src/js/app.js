@@ -68,7 +68,7 @@ function playVibrationPattern(pattern) {
 var Vector2 = require('vector2');
 
 // Server configuration - update this URL to your server
-var CONFIG_URL = 'http://10.1.0.88:8000/pebble-config.html';
+var CONFIG_URL = 'https://ptv.netcavy.net/pebble-config.html';
 
 // Application state
 
@@ -93,8 +93,8 @@ function generateUUID() {
     return id;
 }
 
-// Initialize settings with defaults for emulator testing
-var DEFAULT_SERVER_URL = 'http://10.1.0.88:8000';
+// Initialize settings with defaults
+var DEFAULT_SERVER_URL = 'https://ptv.netcavy.net';
 
 // Set default if not already configured
 if (!Settings.option('server_url')) {
