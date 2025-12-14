@@ -742,11 +742,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             
                             # Build message with platform if available
                             if minutes == 0:
-                                msg = "Arriving Now"
+                                msg = "Now"
                             else:
-                                msg = f"Next {vehicle} in {minutes} min"
+                                msg = f"{minutes} min"
                             if platform:
-                                msg += f" (Platform {platform})"
+                                msg += f" • P{platform}"
                             
                             await websocket.send_json({
                                 "type": "stealth_result",
