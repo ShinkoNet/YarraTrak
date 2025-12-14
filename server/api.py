@@ -675,6 +675,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     "type": "stealth_update",
                     "updates": initial_updates
                 })
+                print(f"Pushed initial stealth data: {initial_updates}")
         except Exception as e:
             print(f"Error parsing buttons query param: {e}")
     
