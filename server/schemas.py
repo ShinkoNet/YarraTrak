@@ -160,7 +160,7 @@ RETURN_RESULT_SCHEMA = {
             "type": "object",
             "properties": {
                 "time": {"type": "string", "description": "Departure time (HH:MM)"},
-                "platform": {"type": ["string", "null"], "description": "Platform number or null"},
+                "platform": {"type": ["string", "integer", "null"], "description": "Platform number or null"},
                 "minutes_to_depart": {"type": "integer", "minimum": 0, "description": "Minutes until departure"}
             },
             "required": ["time", "minutes_to_depart"],

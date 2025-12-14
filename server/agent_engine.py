@@ -35,7 +35,7 @@ groq_client = AsyncGroq(api_key=config.GROQ_API_KEY)
 
 # Models
 GUARDRAIL_MODEL = "openai/gpt-oss-safeguard-20b"
-WORKER_MODEL = "moonshotai/kimi-k2-instruct"
+WORKER_MODEL = "moonshotai/kimi-k2-instruct-0905"
 
 # --- Tool Definitions with Strict Schemas ---
 # All schemas use `additionalProperties: false` for strict JSON validation
@@ -239,7 +239,7 @@ async def run_guardrail(query: str, session_id: str) -> bool:
 
 # --- Worker ---
 
-WORKER_PROMPT = """You are a Melbourne public transport assistant. You MUST call a tool for every response.
+WORKER_PROMPT = """You are a Melbourne public transport assistant. You MUST call a tool for every response. Be sure to use English language.
 
 CORE FLOW:
 1. Call a DATA TOOL (search_and_get_departures, search_stops, setup_pebble_button, etc.) to get information

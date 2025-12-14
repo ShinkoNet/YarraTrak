@@ -278,7 +278,7 @@ Tests the full voice pipeline with two requests:
 
 ## Models Used
 
-- **Worker**: `moonshotai/kimi-k2-instruct` (via Groq)
+- **Worker**: `moonshotai/kimi-k2-instruct-0905` (via Groq)
 - **Guardrail**: `openai/gpt-oss-safeguard-20b` (via Groq) - when enabled
 - **Whisper**: Groq Whisper API for STT
 
