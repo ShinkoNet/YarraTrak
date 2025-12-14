@@ -234,9 +234,6 @@
         <h1>🚆 PTV Notify</h1>
         <span id="save_status" style="color: #4CAF50; font-size: 14px;"></span>
     </div>
-    <div style="margin-bottom: 20px;">
-        <button id="debug_defaults" style="background: #444; margin-top: 0;">Load Dev Defaults</button>
-    </div>
 
     <!-- Server URL is auto-detected, hidden from user -->
     <input type="hidden" id="server_url">
@@ -257,6 +254,18 @@
     <div id="buttons_container"></div>
 
     <button id="save">Save Settings</button>
+
+    <details style="margin-top: 30px;">
+        <summary style="color: #888; cursor: pointer; font-size: 14px;">Developer Tools</summary>
+        <div style="padding: 15px; background: #222; border-radius: 8px; margin-top: 10px;">
+            <button id="debug_defaults" style="background: #444; margin-top: 0; margin-bottom: 15px;">Load Dev
+                Defaults</button>
+            <div style="font-size: 12px; color: #888;">Debug Log:</div>
+            <div id="debug_info"
+                style="font-size: 11px; margin-top: 4px; color: #aaa; word-break: break-all; min-height: 40px; background: #1a1a1a; padding: 8px; border-radius: 4px;">
+                No debug info yet</div>
+        </div>
+    </details>
 
     <script>
         var serverBase = window.location.origin;
@@ -743,8 +752,12 @@
 
             } catch (e) {
                 console.error('API key validation error:', e);
-                statusEl.textContent = '✗ Connection error';
+                var url = base + '/api/v1/stations?type=train';
+                statusEl.textContent = '✗ Error: ' + (e.message || 'Connection failed');
                 statusEl.style.color = '#ff4444';
+                // Show debug info on page
+                var debugEl = document.getElementById('debug_info');
+                debugEl.textContent = 'URL: ' + url;
                 setKeyBtn.textContent = 'Set Key';
                 setKeyBtn.disabled = false;
                 return false;
