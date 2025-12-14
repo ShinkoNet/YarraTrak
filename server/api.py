@@ -277,6 +277,7 @@ async def broadcast_stealth_updates():
                 })
         
         # Broadcast to each client
+        disconnected = []
         for ws, updates in client_updates.items():
             try:
                 await ws.send_json({
@@ -285,7 +286,13 @@ async def broadcast_stealth_updates():
                 })
             except Exception as e:
                 print(f"Broadcast error: {e}")
-                # Client likely disconnected, will be cleaned up on next message
+                disconnected.append(ws)
+        
+        # Clean up disconnected clients
+        for ws in disconnected:
+            if ws in _stealth_subscriptions:
+                del _stealth_subscriptions[ws]
+                print("Removed disconnected client from stealth subscriptions")
 
 
 def start_broadcast_task():
@@ -822,6 +829,25 @@ async def websocket_endpoint(websocket: WebSocket):
                     _stealth_subscriptions[websocket] = valid_buttons
                     start_broadcast_task()
                     print(f"Client subscribed to {len(valid_buttons)} stealth buttons")
+                    
+                    # Immediately fetch and send initial data so client doesn't wait 5 seconds
+                    initial_updates = []
+                    for btn in valid_buttons:
+                        result = await fetch_departure_for_button(
+                            btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
+                        )
+                        initial_updates.append({
+                            "button_id": btn["button_id"],
+                            "minutes": result.get("minutes"),
+                            "platform": result.get("platform"),
+                            "message": result.get("message", "--")
+                        })
+                    
+                    # Send immediate update
+                    await websocket.send_json({
+                        "type": "stealth_update",
+                        "updates": initial_updates
+                    })
                 
                 await websocket.send_json({
                     "type": "stealth_subscribed",
