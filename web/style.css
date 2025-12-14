@@ -100,6 +100,40 @@ body {
     background-color: #555;
 }
 
+/* Stealth buttons with title/subtitle */
+.stealth-btn {
+    background-color: #000;
+    color: #fff;
+    border: none;
+    padding: 8px 10px;
+    margin: 2px 0;
+    width: 100%;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.stealth-btn:hover {
+    background-color: #333;
+}
+
+.stealth-btn:active {
+    background-color: #555;
+}
+
+.btn-title {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.btn-subtitle {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 2px;
+}
+
 .agent-controls {
     display: flex;
     justify-content: center;
