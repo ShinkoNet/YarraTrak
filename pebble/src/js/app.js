@@ -96,13 +96,7 @@ function generateUUID() {
 // Initialize settings with defaults
 var DEFAULT_SERVER_URL = 'https://ptv.netcavy.net';
 
-// Set default if not already configured
-if (!Settings.option('server_url')) {
-    Settings.option('server_url', DEFAULT_SERVER_URL);
-}
-
-// Track active URL to prevent duplicate connections
-var activeServerUrl = Settings.option('server_url');
+// Hardcoded server URL - always use DEFAULT_SERVER_URL
 
 Settings.config({
     url: CONFIG_URL
@@ -116,19 +110,9 @@ Settings.config({
         // Always refresh menu items to show new button config immediately
         mainMenu.items(0, buildMenuItems());
 
-        if (e.options && e.options.server_url) {
-            var newUrl = e.options.server_url;
-            if (newUrl !== activeServerUrl) {
-                console.log('Server URL changed from ' + activeServerUrl + ' to ' + newUrl);
-                activeServerUrl = newUrl;
-                reconnect();
-            } else {
-                console.log('Server URL unchanged, skipping reconnect');
-                // If not reconnecting, make sure we are connected
-                if (!wsConnected) {
-                    connectWebSocket();
-                }
-            }
+        // Reconnect if not connected (API key may have been entered)
+        if (!wsConnected) {
+            connectWebSocket();
         }
     }
 );
@@ -471,10 +455,9 @@ function showClarificationMenu(options, parentCard) {
 
 // WebSocket connection
 function connectWebSocket() {
-    var serverUrl = Settings.option('server_url') || DEFAULT_SERVER_URL;
+    var serverUrl = DEFAULT_SERVER_URL;
     var apiKey = Settings.option('api_key') || '';
 
-    console.log('Server URL from settings: ' + Settings.option('server_url'));
     console.log('Using server URL: ' + serverUrl);
 
     // Check if API key is configured
@@ -482,14 +465,6 @@ function connectWebSocket() {
         loadingCard.title('Setup Required');
         loadingCard.subtitle('');
         loadingCard.body('Open settings in\nthe Pebble app\nand enter your\nAPI key');
-        loadingCard.show();
-        return;
-    }
-
-    if (!serverUrl) {
-        loadingCard.title('Setup Required');
-        loadingCard.subtitle('');
-        loadingCard.body('Open settings in\nthe Pebble app');
         loadingCard.show();
         return;
     }

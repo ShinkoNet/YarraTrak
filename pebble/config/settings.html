@@ -268,7 +268,8 @@
     </details>
 
     <script>
-        var serverBase = window.location.origin;
+        // Hardcoded production server - ignore any saved/detected URLs
+        var serverBase = 'https://ptv.netcavy.net';
         // Separate station arrays by route type for lazy loading
         var stationsByType = { 0: [], 1: [], 3: [] }; // 0=train, 1=tram, 3=vline
         var loadedTypes = {};
@@ -286,10 +287,8 @@
         // Init UI
         var serverUrlEl = document.getElementById('server_url');
         var apiKeyEl = document.getElementById('api_key');
-        if (options.server_url) {
-            serverUrlEl.value = options.server_url;
-            serverBase = options.server_url;
-        }
+        // Always use hardcoded serverBase, ignore any saved server_url
+        serverUrlEl.value = serverBase;
         if (options.api_key) {
             apiKeyEl.value = options.api_key;
         }
@@ -365,14 +364,9 @@
         }
 
         document.getElementById('save').addEventListener('click', function () {
-            var serverUrl = serverUrlEl.value.trim();
             var apiKey = apiKeyEl.value.trim();
-            if (!serverUrl) {
-                alert('Please enter a server URL');
-                return;
-            }
 
-            var newOptions = { server_url: serverUrl, api_key: apiKey };
+            var newOptions = { server_url: serverBase, api_key: apiKey };
             for (var i = 1; i <= 3; i++) {
                 var startId = document.getElementById('btn' + i + '_start_id').value;
                 var destId = document.getElementById('btn' + i + '_dest_id').value;
