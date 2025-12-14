@@ -684,15 +684,12 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                             "type": "stealth_update",
                             "updates": initial_updates
                         })
-                        print(f"Pushed initial stealth data: {[u['message'] for u in initial_updates]}")
                     except Exception as e:
                         print(f"Error pushing initial stealth data: {e}")
                 
                 asyncio.create_task(push_initial_data())
         except Exception as e:
-            import traceback
-            print(f"Error in buttons handling: {e}")
-            traceback.print_exc()
+            print(f"Error parsing buttons: {e}")
     
     try:
         while True:
@@ -949,7 +946,6 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                                 "type": "stealth_update",
                                 "updates": initial_updates
                             })
-                            print(f"Pushed subscribe stealth data: {[u['message'] for u in initial_updates]}")
                         except Exception as e:
                             print(f"Error pushing subscribe stealth data: {e}")
                     
