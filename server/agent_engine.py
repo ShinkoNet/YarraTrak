@@ -350,9 +350,11 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
             return {"type": "ERROR", "payload": {"message": "Could not connect to AI service.", "tts_text": "Sorry, I couldn't connect to the AI service.", "error_code": "GROQ_CONNECTION"}}
         except BadRequestError as e:
             # Handle tool_use_failed - model tried to output text instead of tool call
-            if "tool_use_failed" in str(e):
+            error_str = str(e)
+            logger.warning(f"[Turn {turn}] Groq BadRequestError: {error_str}")
+            if "tool_use_failed" in error_str:
                 tool_use_retries += 1
-                print(f"[Turn {turn}] Tool use failed, retry {tool_use_retries}/{max_tool_use_retries}")
+                logger.info(f"[Turn {turn}] Tool use failed, retry {tool_use_retries}/{max_tool_use_retries}")
                 if tool_use_retries >= max_tool_use_retries:
                     return {"type": "ERROR", "payload": {"message": "Could not process request.", "tts_text": "Sorry, I had trouble processing that request.", "error_code": "TOOL_USE_FAILED"}}
                 # Add nudge toward clarification
@@ -361,7 +363,11 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
                     "content": "Please use one of the available tools. If you're unsure what the user wants, use ask_clarification to ask them."
                 })
                 continue
-            raise
+            # Other BadRequestErrors - return error to user
+            return {"type": "ERROR", "payload": {"message": "Request failed.", "tts_text": "Sorry, there was an issue processing your request.", "error_code": "GROQ_BAD_REQUEST"}}
+        except Exception as e:
+            logger.error(f"[Turn {turn}] Unexpected error in worker: {type(e).__name__}: {e}")
+            return {"type": "ERROR", "payload": {"message": f"Error: {e}", "tts_text": "Sorry, an unexpected error occurred.", "error_code": "GROQ_ERROR"}}
 
         msg = response.choices[0].message
         tool_calls = msg.tool_calls
