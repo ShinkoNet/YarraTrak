@@ -50,6 +50,11 @@
         </div>
     </div>
     <div class="debug-console">
+        <div id="api-key-form" class="api-key-form">
+            <input type="password" id="api-key-input" placeholder="Enter API Key">
+            <button onclick="saveApiKey()">Save</button>
+            <span id="api-key-status"></span>
+        </div>
         <div id="agent-log" class="log-box">
             <div class="log-entry system">System: Ready. Click Mic or type below.</div>
         </div>
@@ -60,7 +65,7 @@
             <button id="ws-toggle" onclick="toggleWsMode()" title="Toggle WebSocket mode">🔌 WS: OFF</button>
         </div>
     </div>
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=7"></script>
 </body>
 
 </html>
