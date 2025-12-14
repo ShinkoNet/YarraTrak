@@ -463,6 +463,7 @@ function showClarificationMenu(options, parentCard) {
 // WebSocket connection
 function connectWebSocket() {
     var serverUrl = Settings.option('server_url') || DEFAULT_SERVER_URL;
+    var apiKey = Settings.option('api_key') || '';
 
     console.log('Server URL from settings: ' + Settings.option('server_url'));
     console.log('Using server URL: ' + serverUrl);
@@ -475,11 +476,16 @@ function connectWebSocket() {
         return;
     }
 
-    // Convert to WebSocket URL
+    // Convert to WebSocket URL with API key
     var wsUrl = serverUrl
         .replace('https://', 'wss://')
         .replace('http://', 'ws://')
         .replace(/\/+$/, '') + '/ws';
+
+    // Add API key as query parameter if set
+    if (apiKey) {
+        wsUrl += '?api_key=' + encodeURIComponent(apiKey);
+    }
 
     console.log('Connecting to: ' + wsUrl);
 
