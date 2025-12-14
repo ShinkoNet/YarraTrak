@@ -13,6 +13,7 @@ Strict JSON Schema Enforcement:
 
 import asyncio
 import json
+import logging
 import httpx
 from groq import AsyncGroq, APITimeoutError, APIConnectionError, BadRequestError
 from pydantic import ValidationError
@@ -25,6 +26,10 @@ import os
 import json
 from .enums import RouteType
 from . import schemas
+
+# Set up logging for agent debugging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 groq_client = AsyncGroq(api_key=config.GROQ_API_KEY)
 
@@ -371,7 +376,7 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
             fn_name = tc.function.name
             fn_args = json.loads(tc.function.arguments)
 
-            print(f"[Turn {turn}] Tool: {fn_name}({fn_args})")
+            logger.info(f"[Turn {turn}] Tool call: {fn_name}({json.dumps(fn_args, default=str)})")
 
             # Terminal tools - validate with Pydantic and return
             if fn_name in TERMINAL_TOOL_NAMES:
@@ -379,7 +384,7 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
                 validated_payload, validation_errors = validate_terminal_response(fn_name, fn_args)
                 
                 if validation_errors:
-                    print(f"[Turn {turn}] Schema validation errors for {fn_name}: {validation_errors}")
+                    logger.warning(f"[Turn {turn}] Schema validation errors for {fn_name}: {validation_errors}")
                     # Log but continue with best-effort response
                 
                 # Build a summary of the assistant's response for history
@@ -454,6 +459,10 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
             else:
                 result = f"Unknown tool: {fn_name}"
 
+            # Log the tool result for debugging
+            result_preview = str(result)[:500] + "..." if len(str(result)) > 500 else str(result)
+            logger.info(f"[Turn {turn}] Tool result from {fn_name}: {result_preview}")
+
             messages.append({
                 "tool_call_id": tc.id,
                 "role": "tool",
@@ -476,6 +485,8 @@ async def run_agent(query: str, session_id: str, prefetched_context: str = "") -
         session_id: Session identifier
         prefetched_context: Optional pre-fetched departure data from speculative execution
     """
+    logger.info(f"[Query] session={session_id[:8]}... query='{query}'")
+    
     if config.ENABLE_GUARDRAIL:
         # Run guardrail and worker in parallel
         guardrail_task = asyncio.create_task(run_guardrail(query, session_id))
@@ -499,12 +510,12 @@ async def run_agent(query: str, session_id: str, prefetched_context: str = "") -
         except asyncio.CancelledError:
             return {"type": "ERROR", "payload": {"message": "Cancelled", "tts_text": "Request cancelled."}}
         except Exception as e:
-            print(f"Worker error: {e}")
+            logger.error(f"Worker error: {e}")
             return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}
     else:
         # Guardrail disabled - run worker directly
         try:
             return await run_worker(query, session_id, prefetched_context)
         except Exception as e:
-            print(f"Worker error: {e}")
+            logger.error(f"Worker error: {e}")
             return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}

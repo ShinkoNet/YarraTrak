@@ -105,19 +105,40 @@ async def get_departures(stop_id: int, route_type: int = RouteType.TRAIN) -> str
             est_time = d.get('estimated_departure_utc')
             
             raw_time = est_time if est_time else time_utc
-            time_str = to_melbourne_time(raw_time)
             
-            # Construct Output
-            # Format: [Route] towards [Direction], terminating at [Destination]. Departs: [Time] (Platform [X])
+            # Calculate minutes until departure (for LLM to use directly)
+            minutes_until = None
+            if raw_time:
+                try:
+                    dep_dt = datetime.fromisoformat(raw_time.replace('Z', '+00:00'))
+                    now_utc = datetime.now(ZoneInfo("UTC"))
+                    minutes_until = max(0, int((dep_dt - now_utc).total_seconds() / 60))
+                except Exception:
+                    pass
+            
+            # Format time for display (Melbourne local, HH:MM only)
+            time_display = "Unknown"
+            if raw_time:
+                try:
+                    dep_dt = datetime.fromisoformat(raw_time.replace('Z', '+00:00'))
+                    local_dt = dep_dt.astimezone(ZoneInfo("Australia/Melbourne"))
+                    time_display = local_dt.strftime("%H:%M")
+                except Exception:
+                    time_display = raw_time
+            
+            # Construct Output with pre-calculated minutes for LLM
+            # Format: [Route] towards [Direction]. Departs: HH:MM (in X min), Platform Y
             info = f"- {route_display} towards {dir_name}"
             
             if destination_name:
                  info += f", terminating at {destination_name}"
             
-            info += f". Departs: {time_str}"
+            info += f". Departs: {time_display}"
+            if minutes_until is not None:
+                info += f" (in {minutes_until} min)"
             
             if platform:
-                info += f" (Platform {platform})"
+                info += f", Platform {platform}"
             
             if dir_desc:
                 info += f" [{dir_desc}]"

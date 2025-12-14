@@ -105,6 +105,24 @@ var queryHistory = [];
 var messageId = 0;
 var pendingRequests = {};
 
+// Cancel all pending queries (on disconnect or new query)
+function cancelPendingQueries() {
+    for (var id in pendingRequests) {
+        if (pendingRequests[id].timeout) {
+            clearTimeout(pendingRequests[id].timeout);
+        }
+    }
+    pendingRequests = {};
+}
+
+// Calculate total duration of a vibration pattern
+function getPatternDuration(pattern) {
+    if (!Array.isArray(pattern)) return 0;
+    var total = 0;
+    for (var i = 0; i < pattern.length; i++) total += pattern[i];
+    return total;
+}
+
 // Live departure data from server broadcasts: {1: {departures: [{minutes, platform, departure_time}, ...]}, ...}
 var buttonDepartures = {};
 
@@ -292,6 +310,9 @@ mainMenu.on('select', function (e) {
 
 // Voice query flow
 function startVoiceQuery() {
+    // Cancel any pending queries to prevent memory buildup
+    cancelPendingQueries();
+
     var resultCard = new UI.Card({
         title: 'Listening...',
         scrollable: true
@@ -402,6 +423,9 @@ function runStealthQuery(buttonIndex) {
 
     loadingCard.title(title);
 
+    // Default hide delay - 5 seconds minimum
+    var hideDelay = 5000;
+
     if (dep && (dep.departure_time || dep.minutes !== null)) {
         loadingCard.subtitle('');
 
@@ -431,8 +455,24 @@ function runStealthQuery(buttonIndex) {
         }
 
         // Calculate vibration pattern locally (instant feedback, no network call)
-        if (dep.minutes !== null && dep.minutes !== undefined) {
-            playVibrationPattern(calculateVibration(dep.minutes));
+        // Use fresh minutes calculated from departure_time, not stale cached minutes
+        var pattern = null;
+        var freshMinutes = null;
+        if (dep.departure_time) {
+            var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
+            var depTime = new Date(timeStr);
+            var now = new Date();
+            var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
+            freshMinutes = Math.max(0, Math.floor(diffSec / 60));
+        } else if (dep.minutes !== null && dep.minutes !== undefined) {
+            freshMinutes = dep.minutes;
+        }
+
+        if (freshMinutes !== null) {
+            pattern = calculateVibration(freshMinutes);
+            // Wait for vibration to finish + 200ms buffer, or 5s minimum
+            hideDelay = Math.max(5000, getPatternDuration(pattern) + 200);
+            playVibrationPattern(pattern);
         } else {
             Vibe.vibrate('short');
         }
@@ -444,14 +484,19 @@ function runStealthQuery(buttonIndex) {
 
     loadingCard.show();
 
-    // Auto-hide after 5 seconds (longer to enjoy the countdown)
+    // Auto-hide after vibration completes (or 5s minimum)
     setTimeout(function () {
         if (countdownTimer) {
             clearInterval(countdownTimer);
             countdownTimer = null;
         }
+        // Clear any ongoing vibration pattern
+        if (vibeTimer) {
+            clearTimeout(vibeTimer);
+            vibeTimer = null;
+        }
         loadingCard.hide();
-    }, 5000);
+    }, hideDelay);
 }
 
 // Handle query response
@@ -615,6 +660,9 @@ function connectWebSocket() {
         wsConnected = false;
         console.log('WebSocket closed, code: ' + e.code);
 
+        // Clear stale pending requests - they won't complete anyway
+        cancelPendingQueries();
+
         if (menuShowTimer) {
             clearTimeout(menuShowTimer);
             menuShowTimer = null;
@@ -741,37 +789,6 @@ function sendQuery(text, successCb, errorCb) {
         session_id: sessionId,
         query_history: queryHistory
     }));
-}
-
-// Send stealth query - direct stop_id lookup, no LLM
-function sendStealthQuery(stopId, routeType, directionId, successCb, errorCb) {
-    if (!ws || !wsConnected) {
-        errorCb({ message: 'Not connected' });
-        return;
-    }
-
-    var id = String(++messageId);
-
-    pendingRequests[id] = {
-        successCb: successCb,
-        errorCb: errorCb,
-        timeout: setTimeout(function () {
-            delete pendingRequests[id];
-            errorCb({ message: 'Timeout' });
-        }, 15000)
-    };
-
-    var msg = {
-        type: 'stealth',
-        id: id,
-        stop_id: stopId,
-        route_type: routeType || 0
-    };
-    if (directionId !== undefined && directionId !== null) {
-        msg.direction_id = directionId;
-    }
-
-    ws.send(JSON.stringify(msg));
 }
 
 // Query history
