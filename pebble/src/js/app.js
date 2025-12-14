@@ -280,49 +280,97 @@ function startVoiceQuery() {
     });
 }
 
-// Stealth query - uses direct stop_id lookup instead of text query for speed
+// Stealth query - uses cached live departure data, no server call needed
 function runStealthQuery(buttonIndex) {
     var name = Settings.option('btn' + buttonIndex + '_name');
+    var destName = Settings.option('btn' + buttonIndex + '_dest_name');
     var stopId = Settings.option('btn' + buttonIndex + '_stop_id');
-    var routeType = Settings.option('btn' + buttonIndex + '_route_type');
-    var directionId = Settings.option('btn' + buttonIndex + '_direction_id');
 
     if (!stopId) {
         Vibe.vibrate('short');
         return;
     }
 
-    loadingCard.title(name || 'Checking...');
-    loadingCard.subtitle('');
-    loadingCard.body('');
-    loadingCard.show();
+    // Use cached live departure data
+    var dep = buttonDepartures[buttonIndex];
 
-    sendStealthQuery(stopId, routeType, directionId, function (response) {
-        // Show the result message before hiding
-        if (response.message) {
-            loadingCard.title(name || 'Result');
-            loadingCard.body(response.message);
+    // Abbreviate station names for display
+    function shortName(n) {
+        if (!n) return '?';
+        n = n.replace(/ Station$/i, '');
+        if (n.length > 10) n = n.substring(0, 10);
+        return n;
+    }
+
+    // Build title: "Narre > City"
+    var title = shortName(name) + ' > ' + shortName(destName);
+
+    loadingCard.title(title);
+
+    if (dep && dep.message) {
+        // Calculate live seconds from departure_time
+        var bodyText = '';
+        if (dep.departure_time) {
+            var depTime = new Date(dep.departure_time);
+            var now = new Date();
+            var diffMs = depTime.getTime() - now.getTime();
+            var diffSec = Math.floor(diffMs / 1000);
+
+            if (diffSec <= 0) {
+                bodyText = 'Arriving NOW!';
+            } else {
+                var mins = Math.floor(diffSec / 60);
+                var secs = diffSec % 60;
+                if (mins > 0) {
+                    bodyText = mins + ' min ' + secs + ' sec';
+                } else {
+                    bodyText = secs + ' seconds';
+                }
+            }
+        } else if (dep.minutes !== null && dep.minutes !== undefined) {
+            if (dep.minutes === 0) {
+                bodyText = 'Arriving NOW!';
+            } else {
+                bodyText = dep.minutes + ' minute' + (dep.minutes !== 1 ? 's' : '');
+            }
+        } else {
+            bodyText = dep.message;
         }
 
-        if (response.vibration) {
-            playVibrationPattern(response.vibration);
+        if (dep.platform) {
+            bodyText += '\nPlatform ' + dep.platform;
+        }
+
+        loadingCard.subtitle('');
+        loadingCard.body(bodyText);
+
+        // Get vibration pattern from server
+        if (dep.minutes !== null && dep.minutes !== undefined) {
+            sendStealthQuery(stopId, Settings.option('btn' + buttonIndex + '_route_type'),
+                Settings.option('btn' + buttonIndex + '_direction_id'),
+                function (response) {
+                    if (response.vibration) {
+                        playVibrationPattern(response.vibration);
+                    }
+                },
+                function () {
+                    Vibe.vibrate('short');
+                });
         } else {
             Vibe.vibrate('short');
         }
+    } else {
+        loadingCard.subtitle('');
+        loadingCard.body('No data yet\nWaiting for update...');
+        Vibe.vibrate('short');
+    }
 
-        // Auto-hide after 3 seconds so user can see the message
-        setTimeout(function () {
-            loadingCard.hide();
-        }, 3000);
-    }, function (error) {
-        loadingCard.title('Error');
-        loadingCard.body(error || 'Connection failed');
-        Vibe.vibrate('double');
+    loadingCard.show();
 
-        setTimeout(function () {
-            loadingCard.hide();
-        }, 2000);
-    });
+    // Auto-hide after 3 seconds
+    setTimeout(function () {
+        loadingCard.hide();
+    }, 3000);
 }
 
 // Handle query response
@@ -475,7 +523,8 @@ function connectWebSocket() {
                     buttonDepartures[u.button_id] = {
                         minutes: u.minutes,
                         platform: u.platform,
-                        message: u.message
+                        message: u.message,
+                        departure_time: u.departure_time
                     };
                 }
                 // Refresh menu to show updated times

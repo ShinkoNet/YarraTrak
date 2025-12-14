@@ -223,7 +223,14 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
                 if platform:
                     msg += f" • P{platform}"
                 
-                result = {"minutes": minutes, "platform": str(platform) if platform else None, "message": msg, "fetched_at": now}
+                # Include departure_time for client-side seconds calculation
+                result = {
+                    "minutes": minutes, 
+                    "platform": str(platform) if platform else None, 
+                    "message": msg, 
+                    "departure_time": dep_time.isoformat(),
+                    "fetched_at": now
+                }
                 _departure_cache[cache_key] = result
                 return result
         
@@ -273,7 +280,8 @@ async def broadcast_stealth_updates():
                     "button_id": button_id,
                     "minutes": result.get("minutes"),
                     "platform": result.get("platform"),
-                    "message": result.get("message", "--")
+                    "message": result.get("message", "--"),
+                    "departure_time": result.get("departure_time")
                 })
         
         # Broadcast to each client
