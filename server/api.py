@@ -751,15 +751,23 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     if button_config:
                         response["button_config"] = button_config
                     
-                    await websocket.send_json(response)
+                    # Check if connection is still open before sending
+                    if websocket.client_state.value == 1:  # CONNECTED
+                        await websocket.send_json(response)
+                    else:
+                        print(f"WebSocket closed before response could be sent (state: {websocket.client_state})")
                     
                 except Exception as e:
                     print(f"WebSocket query error: {e}")
-                    await websocket.send_json({
-                        "type": "error",
-                        "id": msg_id,
-                        "error": str(e)
-                    })
+                    try:
+                        if websocket.client_state.value == 1:
+                            await websocket.send_json({
+                                "type": "error",
+                                "id": msg_id,
+                                "error": str(e)
+                            })
+                    except Exception:
+                        pass  # Connection already closed
             
             elif msg_type == "ping":
                 # Health check
