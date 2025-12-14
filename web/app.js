@@ -261,6 +261,9 @@ function saveButtonConfigFromServer(config) {
 
     log(`Button ${btnId} configured: ${stopName} (Stop ${config.stop_id})`, "system");
     saveButtonConfig(btnId, btnConfig);
+
+    // Re-subscribe to get live updates for the new button
+    sendStealthSubscription();
 }
 
 function loadButtonConfig() {
