@@ -848,7 +848,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             "button_id": btn["button_id"],
                             "minutes": result.get("minutes"),
                             "platform": result.get("platform"),
-                            "message": result.get("message", "--")
+                            "message": result.get("message", "--"),
+                            "departure_time": result.get("departure_time")
                         })
                     
                     # Send immediate update
