@@ -297,45 +297,52 @@ mainMenu.on('select', function (e) {
     }
 });
 
-// Voice query flow
+// Reusable voice query card (created once, reused to prevent timer leaks)
+var voiceCard = new UI.Card({
+    title: 'Voice Query',
+    scrollable: true
+});
+
+voiceCard.on('click', 'select', function () {
+    startVoiceQuery();
+});
+
+voiceCard.on('click', 'back', function () {
+    voiceCard.hide();
+});
+
+// voice query flow voice query flow
 function startVoiceQuery() {
     // Cancel any pending queries to prevent memory buildup
     cancelPendingQueries();
 
-    var resultCard = new UI.Card({
-        title: 'Listening...',
-        scrollable: true
-    });
-    resultCard.show();
+    // don't show card yet - let dictation happen on top of current view this avoids window stack conflicts and memory pressure
 
     Voice.dictate('start', true, function (e) {
         if (e.err) {
             if (e.err === 'systemAborted') {
-                resultCard.hide();
                 return;
             }
-            resultCard.title('Error');
-            resultCard.body('Dictation: ' + e.err);
+            voiceCard.title('Error');
+            voiceCard.body('Dictation: ' + e.err);
+            voiceCard.show(); // Show error if it wasn't shown
             return;
         }
 
-        resultCard.title('Processing...');
-        resultCard.body('You: ' + e.transcription);
+        voiceCard.title('Processing...');
+        voiceCard.subtitle('');
+        voiceCard.body('You: ' + e.transcription);
+        voiceCard.show(); // Show card only now, after dictation implies success
 
-        sendQuery(e.transcription, function (response) {
-            handleQueryResponse(resultCard, response);
-        }, function (error) {
-            resultCard.title('Error');
-            resultCard.body(error.message || 'Query failed');
-        });
-    });
-
-    resultCard.on('click', 'select', function () {
-        startVoiceQuery();
-    });
-
-    resultCard.on('click', 'back', function () {
-        resultCard.hide();
+        // Small delay before WebSocket call - helps Pebble.js stability
+        setTimeout(function () {
+            sendQuery(e.transcription, function (response) {
+                handleQueryResponse(voiceCard, response);
+            }, function (error) {
+                voiceCard.title('Error');
+                voiceCard.body(error.message || 'Query failed');
+            });
+        }, 100);
     });
 }
 
@@ -753,12 +760,15 @@ function reconnect() {
 
 // Send query
 function sendQuery(text, successCb, errorCb) {
+    console.log('sendQuery: start');
     if (!ws || !wsConnected) {
+        console.log('sendQuery: not connected');
         errorCb({ message: 'Not connected' });
         return;
     }
 
     var id = String(++messageId);
+    console.log('sendQuery: id=' + id);
 
     pendingRequests[id] = {
         successCb: successCb,
@@ -769,13 +779,18 @@ function sendQuery(text, successCb, errorCb) {
         }, 30000)
     };
 
+    console.log('sendQuery: sending...');
+
+    // Minimal payload to test if large queryHistory is causing crash
     ws.send(JSON.stringify({
         type: 'query',
         id: id,
         text: text,
-        session_id: sessionId,
-        query_history: queryHistory
+        session_id: sessionId
+        // queryHistory temporarily removed to test memory issue
     }));
+
+    console.log('sendQuery: sent');
 }
 
 // Query history
