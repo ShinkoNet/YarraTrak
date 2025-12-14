@@ -15,6 +15,40 @@ function setApiKey(key) {
     localStorage.setItem(API_KEY_KEY, key);
 }
 
+// Save API key from form input
+function saveApiKey() {
+    const input = document.getElementById('api-key-input');
+    const status = document.getElementById('api-key-status');
+    const key = input.value.trim();
+
+    if (key) {
+        setApiKey(key);
+        input.value = '';
+        input.placeholder = 'Key saved';
+        if (status) status.textContent = 'Saved';
+        setTimeout(() => {
+            if (status) status.textContent = '';
+            input.placeholder = 'Enter API Key';
+        }, 2000);
+
+        // Reconnect WebSocket with new key if WS mode is enabled
+        if (useWebSocket) {
+            disconnectWebSocket();
+            connectWebSocket();
+        }
+    }
+}
+
+// Update API key status indicator on load
+function updateApiKeyStatus() {
+    const status = document.getElementById('api-key-status');
+    const input = document.getElementById('api-key-input');
+    if (getApiKey()) {
+        if (status) status.textContent = 'Key set';
+        if (input) input.placeholder = 'Update API Key';
+    }
+}
+
 // Get headers with optional API key
 function getApiHeaders(extraHeaders = {}) {
     const headers = { 'Content-Type': 'application/json', ...extraHeaders };
@@ -426,6 +460,12 @@ async function sendAudioToVoice(audioBlob) {
             body: formData
         });
 
+        if (res.status === 401) {
+            log("Error: Invalid or missing API key. Please enter your API key above.", "system");
+            updateStatus("API Key Required");
+            return;
+        }
+
         const responseData = await res.json();
 
         // Store learned stop for future speculative fetches
@@ -544,6 +584,13 @@ async function sendAgentQuery(overrideQuery = null) {
                     query_history: getQueryHistory()
                 })
             });
+
+            if (res.status === 401) {
+                log("Error: Invalid or missing API key. Please enter your API key above.", "system");
+                updateStatus("API Key Required");
+                return;
+            }
+
             responseData = await res.json();
         }
 
@@ -702,11 +749,13 @@ window.sendAgentQuery = sendAgentQuery;
 window.handleInput = handleInput;
 window.closeConversation = closeConversation;
 window.toggleWsMode = toggleWsMode;
+window.saveApiKey = saveApiKey;
 
 // Initialize
 window.addEventListener('load', () => {
     loadButtonConfig();
     updateWsStatus();
+    updateApiKeyStatus();
 
     // Connect WebSocket if enabled
     if (useWebSocket) {

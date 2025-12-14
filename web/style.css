@@ -289,3 +289,39 @@ button {
 .clarify-btn::before {
     content: "▸ ";
 }
+
+/* API Key Form */
+.api-key-form {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.api-key-form input {
+    flex: 1;
+    background-color: #333;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 5px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.api-key-form button {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.api-key-form button:hover {
+    background-color: #45a049;
+}
+
+#api-key-status {
+    color: #0f0;
+    font-size: 11px;
+}
