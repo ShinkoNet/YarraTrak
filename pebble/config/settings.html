@@ -249,9 +249,15 @@
         <div id="api_key_status" style="font-size: 13px; margin-top: 6px;"></div>
     </div>
 
-    <h2>Configure Buttons</h2>
+    <h2>Favourite Entries</h2>
 
-    <div id="buttons_container"></div>
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+        <button id="add_entry_btn" class="small-btn" style="background: #4CAF50; padding: 8px 16px;">+</button>
+        <button id="remove_entry_btn" class="small-btn" style="background: #f44336; padding: 8px 16px;">−</button>
+        <span id="entry_count" style="color: #888; font-size: 14px;">Entries: 0/10</span>
+    </div>
+
+    <div id="entries_container"></div>
 
     <button id="save">Save Settings</button>
 
@@ -293,19 +299,55 @@
             apiKeyEl.value = options.api_key;
         }
 
-        // Render Button Configs
-        var container = document.getElementById('buttons_container');
-        for (var i = 1; i <= 3; i++) {
-            var html = `
-                <div class="button-config" id="btn${i}_config">
+        // Dynamic Entry Management
+        var MAX_ENTRIES = 10;
+        var entryCount = 0;
+        var container = document.getElementById('entries_container');
+
+        // Migrate legacy btn1_* options to entry1_* format
+        function migrateOptions(opts) {
+            for (var i = 1; i <= 3; i++) {
+                if (opts['btn' + i + '_stop_id'] && !opts['entry' + i + '_stop_id']) {
+                    opts['entry' + i + '_stop_id'] = opts['btn' + i + '_stop_id'];
+                    opts['entry' + i + '_name'] = opts['btn' + i + '_name'];
+                    opts['entry' + i + '_route_type'] = opts['btn' + i + '_route_type'];
+                    opts['entry' + i + '_dest_id'] = opts['btn' + i + '_dest_id'];
+                    opts['entry' + i + '_dest_name'] = opts['btn' + i + '_dest_name'];
+                    opts['entry' + i + '_direction_id'] = opts['btn' + i + '_direction_id'];
+                }
+            }
+            return opts;
+        }
+        options = migrateOptions(options);
+
+        // Count existing entries from options
+        function countExistingEntries(opts) {
+            var count = 0;
+            for (var i = 1; i <= MAX_ENTRIES; i++) {
+                if (opts['entry' + i + '_stop_id']) count = i;
+            }
+            return count;
+        }
+
+        // Truncate station name to max 32 chars
+        function truncateName(name, maxLen) {
+            maxLen = maxLen || 32;
+            if (!name || name.length <= maxLen) return name;
+            return name.substring(0, maxLen - 3) + '...';
+        }
+
+        // Render a single entry form
+        function renderEntry(i) {
+            return `
+                <div class="button-config" id="entry${i}_config">
                     <div class="button-header">
-                        <h3>Button ${i}</h3>
-                        <span class="button-status" id="btn${i}_status">Not set</span>
+                        <h3>Entry ${i}</h3>
+                        <span class="button-status" id="entry${i}_status">Not set</span>
                     </div>
                     
                     <div class="form-row">
                         <label>Type</label>
-                        <select id="btn${i}_type" onchange="updateType(${i})">
+                        <select id="entry${i}_type" onchange="updateType(${i})">
                             <option value="0">Metro Train</option>
                             <option value="3">V/Line Train</option>
                             <option value="1">Tram</option>
@@ -315,47 +357,115 @@
                     <div class="form-row">
                         <label>Start Station</label>
                         <div class="search-box">
-                            <input type="text" id="btn${i}_start_search" placeholder="Search start..." autocomplete="off">
-                            <div class="search-results" id="btn${i}_start_results"></div>
-                            <input type="hidden" id="btn${i}_start_id">
+                            <input type="text" id="entry${i}_start_search" placeholder="Search start..." autocomplete="off">
+                            <div class="search-results" id="entry${i}_start_results"></div>
+                            <input type="hidden" id="entry${i}_start_id">
                         </div>
                     </div>
 
                     <div class="form-row">
                         <label>Destination</label>
                         <div class="search-box">
-                            <input type="text" id="btn${i}_dest_search" placeholder="Select start first..." autocomplete="off" disabled>
-                            <div class="search-results" id="btn${i}_dest_results"></div>
-                            <input type="hidden" id="btn${i}_dest_id">
-                            <input type="hidden" id="btn${i}_direction_id">
+                            <input type="text" id="entry${i}_dest_search" placeholder="Select start first..." autocomplete="off" disabled>
+                            <div class="search-results" id="entry${i}_dest_results"></div>
+                            <input type="hidden" id="entry${i}_dest_id">
+                            <input type="hidden" id="entry${i}_direction_id">
                         </div>
                     </div>
                 </div>
             `;
-            container.insertAdjacentHTML('beforeend', html);
         }
 
-        // Restore values
-        for (var i = 1; i <= 3; i++) {
-            if (options['btn' + i + '_route_type'] !== undefined) {
-                document.getElementById('btn' + i + '_type').value = options['btn' + i + '_route_type'];
+        // Render all entries and set up event handlers
+        function renderAllEntries() {
+            container.innerHTML = '';
+            for (var i = 1; i <= entryCount; i++) {
+                container.insertAdjacentHTML('beforeend', renderEntry(i));
+                setupEntrySearch(i);
+                restoreEntryValues(i);
             }
-            if (options['btn' + i + '_stop_id']) {
-                document.getElementById('btn' + i + '_start_id').value = options['btn' + i + '_stop_id'];
-                document.getElementById('btn' + i + '_start_search').value = options['btn' + i + '_name'] || '';
+            updateEntryCountDisplay();
+        }
+
+        // Restore values for a single entry
+        function restoreEntryValues(i) {
+            if (options['entry' + i + '_route_type'] !== undefined) {
+                document.getElementById('entry' + i + '_type').value = options['entry' + i + '_route_type'];
             }
-            if (options['btn' + i + '_dest_id']) {
-                document.getElementById('btn' + i + '_dest_id').value = options['btn' + i + '_dest_id'];
-                document.getElementById('btn' + i + '_dest_search').value = options['btn' + i + '_dest_name'] || '';
-                document.getElementById('btn' + i + '_dest_search').disabled = false;
+            if (options['entry' + i + '_stop_id']) {
+                document.getElementById('entry' + i + '_start_id').value = options['entry' + i + '_stop_id'];
+                document.getElementById('entry' + i + '_start_search').value = options['entry' + i + '_name'] || '';
             }
-            if (options['btn' + i + '_direction_id']) {
-                document.getElementById('btn' + i + '_direction_id').value = options['btn' + i + '_direction_id'];
+            if (options['entry' + i + '_dest_id']) {
+                document.getElementById('entry' + i + '_dest_id').value = options['entry' + i + '_dest_id'];
+                document.getElementById('entry' + i + '_dest_search').value = options['entry' + i + '_dest_name'] || '';
+                document.getElementById('entry' + i + '_dest_search').disabled = false;
+            }
+            if (options['entry' + i + '_direction_id']) {
+                document.getElementById('entry' + i + '_direction_id').value = options['entry' + i + '_direction_id'];
             }
             updateStatus(i);
         }
 
+        // Set up search handlers for an entry
+        function setupEntrySearch(i) {
+            setupStartSearch(
+                document.getElementById('entry' + i + '_start_search'),
+                document.getElementById('entry' + i + '_start_results'),
+                document.getElementById('entry' + i + '_start_id'),
+                i
+            );
+            setupDestSearch(
+                document.getElementById('entry' + i + '_dest_search'),
+                document.getElementById('entry' + i + '_dest_results'),
+                document.getElementById('entry' + i + '_dest_id'),
+                i
+            );
+        }
+
+        // Update entry count display
+        function updateEntryCountDisplay() {
+            document.getElementById('entry_count').textContent = 'Entries: ' + entryCount + '/' + MAX_ENTRIES;
+            document.getElementById('add_entry_btn').disabled = entryCount >= MAX_ENTRIES;
+            document.getElementById('remove_entry_btn').disabled = entryCount <= 0;
+        }
+
+        // Add a new entry
+        function addEntry() {
+            if (entryCount >= MAX_ENTRIES) return;
+            entryCount++;
+            container.insertAdjacentHTML('beforeend', renderEntry(entryCount));
+            setupEntrySearch(entryCount);
+            updateStatus(entryCount);
+            updateEntryCountDisplay();
+        }
+
+        // Remove the last entry
+        function removeEntry() {
+            if (entryCount <= 0) return;
+            var el = document.getElementById('entry' + entryCount + '_config');
+            if (el) el.remove();
+            // Clear from options cache
+            delete options['entry' + entryCount + '_stop_id'];
+            delete options['entry' + entryCount + '_name'];
+            delete options['entry' + entryCount + '_route_type'];
+            delete options['entry' + entryCount + '_dest_id'];
+            delete options['entry' + entryCount + '_dest_name'];
+            delete options['entry' + entryCount + '_direction_id'];
+            entryCount--;
+            updateEntryCountDisplay();
+        }
+
+        // Initialize entries from saved options
+        entryCount = countExistingEntries(options);
+        renderAllEntries();
+
+        // Add/Remove button handlers
+        document.getElementById('add_entry_btn').addEventListener('click', addEntry);
+        document.getElementById('remove_entry_btn').addEventListener('click', removeEntry);
+
         // Event Listeners
+
 
         // Helper to get query parameters
         function getQueryParam(name) {
@@ -366,30 +476,37 @@
         document.getElementById('save').addEventListener('click', function () {
             var apiKey = apiKeyEl.value.trim();
 
-            var newOptions = { server_url: serverBase, api_key: apiKey };
-            for (var i = 1; i <= 3; i++) {
-                var startId = document.getElementById('btn' + i + '_start_id').value;
-                var destId = document.getElementById('btn' + i + '_dest_id').value;
-                var directionId = document.getElementById('btn' + i + '_direction_id').value;
+            var newOptions = { server_url: serverBase, api_key: apiKey, entry_count: entryCount };
+            for (var i = 1; i <= entryCount; i++) {
+                var startIdEl = document.getElementById('entry' + i + '_start_id');
+                var destIdEl = document.getElementById('entry' + i + '_dest_id');
+                var directionIdEl = document.getElementById('entry' + i + '_direction_id');
+
+                if (!startIdEl || !destIdEl) continue;
+
+                var startId = startIdEl.value;
+                var destId = destIdEl.value;
+                var directionId = directionIdEl ? directionIdEl.value : '';
 
                 if (startId) {
                     if (!destId) {
-                        alert('Please select a destination for Button ' + i);
+                        alert('Please select a destination for Entry ' + i);
                         return;
                     }
-                    newOptions['btn' + i + '_stop_id'] = parseInt(startId);
-                    newOptions['btn' + i + '_name'] = document.getElementById('btn' + i + '_start_search').value;
-                    newOptions['btn' + i + '_route_type'] = parseInt(document.getElementById('btn' + i + '_type').value);
+                    newOptions['entry' + i + '_stop_id'] = parseInt(startId);
+                    newOptions['entry' + i + '_name'] = truncateName(document.getElementById('entry' + i + '_start_search').value);
+                    newOptions['entry' + i + '_route_type'] = parseInt(document.getElementById('entry' + i + '_type').value);
 
-                    newOptions['btn' + i + '_dest_id'] = parseInt(destId);
-                    newOptions['btn' + i + '_dest_name'] = document.getElementById('btn' + i + '_dest_search').value;
+                    newOptions['entry' + i + '_dest_id'] = parseInt(destId);
+                    newOptions['entry' + i + '_dest_name'] = truncateName(document.getElementById('entry' + i + '_dest_search').value);
 
                     // Include resolved direction_id!
                     if (directionId) {
-                        newOptions['btn' + i + '_direction_id'] = parseInt(directionId);
+                        newOptions['entry' + i + '_direction_id'] = parseInt(directionId);
                     }
                 }
             }
+
 
             // Check if we're in a real Pebble app or just a browser
             var returnTo = getQueryParam('return_to');
@@ -483,10 +600,10 @@
         }
 
         // Search Logic - for START station (searches all stations of type)
-        function setupStartSearch(input, results, hiddenId, btnNum) {
+        function setupStartSearch(input, results, hiddenId, entryNum) {
             input.addEventListener('input', function () {
                 var query = this.value.trim().toLowerCase();
-                var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
+                var type = parseInt(document.getElementById('entry' + entryNum + '_type').value);
                 var stations = stationsByType[type] || [];
 
                 if (query.length < 2) {
@@ -521,7 +638,7 @@
                             var stopId = this.dataset.stopId;
                             var stop = stations.find(s => s.stop_id == stopId);
                             if (stop) {
-                                selectStartStation(input.id, results.id, hiddenId.id, stop, btnNum);
+                                selectStartStation(input.id, results.id, hiddenId.id, stop, entryNum);
                             }
                         });
                     });
@@ -538,20 +655,20 @@
             input.addEventListener('keydown', function () {
                 hiddenId.value = '';
                 // Also clear destination when start changes
-                document.getElementById('btn' + btnNum + '_dest_search').value = '';
-                document.getElementById('btn' + btnNum + '_dest_id').value = '';
-                document.getElementById('btn' + btnNum + '_dest_search').disabled = true;
-                document.getElementById('btn' + btnNum + '_direction_id').value = '';
-                updateStatus(btnNum);
+                document.getElementById('entry' + entryNum + '_dest_search').value = '';
+                document.getElementById('entry' + entryNum + '_dest_id').value = '';
+                document.getElementById('entry' + entryNum + '_dest_search').disabled = true;
+                document.getElementById('entry' + entryNum + '_direction_id').value = '';
+                updateStatus(entryNum);
             });
         }
 
         // Search Logic - for DESTINATION (only shows stations on same route as start)
-        function setupDestSearch(input, results, hiddenId, btnNum) {
+        function setupDestSearch(input, results, hiddenId, entryNum) {
             input.addEventListener('input', function () {
                 var query = this.value.trim().toLowerCase();
-                var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
-                var startId = document.getElementById('btn' + btnNum + '_start_id').value;
+                var type = parseInt(document.getElementById('entry' + entryNum + '_type').value);
+                var startId = document.getElementById('entry' + entryNum + '_start_id').value;
 
                 if (!startId) {
                     results.innerHTML = '<div class="loading">Select start first</div>';
@@ -586,7 +703,7 @@
                             var stopId = this.dataset.stopId;
                             var stop = destinations.find(s => s.stop_id == stopId);
                             if (stop) {
-                                selectDestStation(input.id, results.id, hiddenId.id, stop, btnNum);
+                                selectDestStation(input.id, results.id, hiddenId.id, stop, entryNum);
                             }
                         });
                     });
@@ -602,100 +719,92 @@
 
             input.addEventListener('keydown', function () {
                 hiddenId.value = '';
-                document.getElementById('btn' + btnNum + '_direction_id').value = '';
-                updateStatus(btnNum);
+                document.getElementById('entry' + entryNum + '_direction_id').value = '';
+                updateStatus(entryNum);
             });
         }
 
-        // Apply setup to all inputs
-        for (var i = 1; i <= 3; i++) {
-            setupStartSearch(
-                document.getElementById(`btn${i}_start_search`),
-                document.getElementById(`btn${i}_start_results`),
-                document.getElementById(`btn${i}_start_id`),
-                i
-            );
-            setupDestSearch(
-                document.getElementById(`btn${i}_dest_search`),
-                document.getElementById(`btn${i}_dest_results`),
-                document.getElementById(`btn${i}_dest_id`),
-                i
-            );
-        }
+        // Note: Search handlers are now set up dynamically in setupEntrySearch()
 
-        window.selectStartStation = function (inputId, resultsId, hiddenIdStr, stop, btnNum) {
+        window.selectStartStation = function (inputId, resultsId, hiddenIdStr, stop, entryNum) {
             document.getElementById(inputId).value = stop.name;
             document.getElementById(hiddenIdStr).value = stop.stop_id;
             document.getElementById(resultsId).style.display = 'none';
 
             // Enable destination search
-            var destInput = document.getElementById('btn' + btnNum + '_dest_search');
+            var destInput = document.getElementById('entry' + entryNum + '_dest_search');
             destInput.disabled = false;
             destInput.placeholder = 'Search destination...';
             destInput.value = '';
-            document.getElementById('btn' + btnNum + '_dest_id').value = '';
-            document.getElementById('btn' + btnNum + '_direction_id').value = '';
+            document.getElementById('entry' + entryNum + '_dest_id').value = '';
+            document.getElementById('entry' + entryNum + '_direction_id').value = '';
 
-            updateStatus(btnNum);
+            updateStatus(entryNum);
         };
 
-        window.selectDestStation = function (inputId, resultsId, hiddenIdStr, stop, btnNum) {
+        window.selectDestStation = function (inputId, resultsId, hiddenIdStr, stop, entryNum) {
             document.getElementById(inputId).value = stop.name;
             document.getElementById(hiddenIdStr).value = stop.stop_id;
             document.getElementById(resultsId).style.display = 'none';
 
             // Auto-resolve direction_id!
-            var startId = parseInt(document.getElementById('btn' + btnNum + '_start_id').value);
+            var startId = parseInt(document.getElementById('entry' + entryNum + '_start_id').value);
             var destId = stop.stop_id;
-            var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
+            var type = parseInt(document.getElementById('entry' + entryNum + '_type').value);
 
             var directionId = resolveDirection(startId, destId, type);
             if (directionId !== null) {
-                document.getElementById('btn' + btnNum + '_direction_id').value = directionId;
+                document.getElementById('entry' + entryNum + '_direction_id').value = directionId;
                 console.log('Resolved direction_id:', directionId);
             }
 
-            updateStatus(btnNum);
+            updateStatus(entryNum);
         };
 
-        window.updateType = function (btnNum) {
-            document.getElementById(`btn${btnNum}_start_search`).value = '';
-            document.getElementById(`btn${btnNum}_start_id`).value = '';
-            document.getElementById(`btn${btnNum}_dest_search`).value = '';
-            document.getElementById(`btn${btnNum}_dest_id`).value = '';
-            document.getElementById(`btn${btnNum}_dest_search`).disabled = true;
-            document.getElementById(`btn${btnNum}_direction_id`).value = '';
-            updateStatus(btnNum);
+        window.updateType = function (entryNum) {
+            document.getElementById(`entry${entryNum}_start_search`).value = '';
+            document.getElementById(`entry${entryNum}_start_id`).value = '';
+            document.getElementById(`entry${entryNum}_dest_search`).value = '';
+            document.getElementById(`entry${entryNum}_dest_id`).value = '';
+            document.getElementById(`entry${entryNum}_dest_search`).disabled = true;
+            document.getElementById(`entry${entryNum}_direction_id`).value = '';
+            updateStatus(entryNum);
 
             // Lazy load this type if not loaded
-            var type = parseInt(document.getElementById('btn' + btnNum + '_type').value);
+            var type = parseInt(document.getElementById('entry' + entryNum + '_type').value);
             if (!loadedTypes[type]) {
                 loadStationData(type);
             }
         };
 
         function updateStatus(i) {
-            var start = document.getElementById(`btn${i}_start_id`).value;
-            var dest = document.getElementById(`btn${i}_dest_id`).value;
-            var dir = document.getElementById(`btn${i}_direction_id`).value;
-            var status = document.getElementById(`btn${i}_status`);
+            var startEl = document.getElementById('entry' + i + '_start_id');
+            var destEl = document.getElementById('entry' + i + '_dest_id');
+            var dirEl = document.getElementById('entry' + i + '_direction_id');
+            var statusEl = document.getElementById('entry' + i + '_status');
+
+            if (!startEl || !destEl || !dirEl || !statusEl) return;
+
+            var start = startEl.value;
+            var dest = destEl.value;
+            var dir = dirEl.value;
 
             if (start && dest && dir) {
-                status.textContent = "Ready ✓";
-                status.classList.add('configured');
-                status.classList.remove('incomplete');
+                statusEl.textContent = "Ready ✓";
+                statusEl.classList.add('configured');
+                statusEl.classList.remove('incomplete');
             } else if (start && dest) {
-                status.textContent = "Configured";
-                status.classList.add('configured');
-                status.classList.remove('incomplete');
+                statusEl.textContent = "Configured";
+                statusEl.classList.add('configured');
+                statusEl.classList.remove('incomplete');
             } else if (start) {
-                status.textContent = "Incomplete";
-                status.classList.remove('configured');
-                status.classList.add('incomplete');
+                statusEl.textContent = "Incomplete";
+                statusEl.classList.remove('configured');
+                statusEl.classList.add('incomplete');
             } else {
-                status.textContent = "Not set";
-                status.classList.remove('configured');
-                status.classList.remove('incomplete');
+                statusEl.textContent = "Not set";
+                statusEl.classList.remove('configured');
+                statusEl.classList.remove('incomplete');
             }
         }
 
@@ -825,40 +934,45 @@
             // Server
             document.getElementById('server_url').value = 'https://ptv.netcavy.net';
 
-            // Button 1: Narre Warren -> Flinders
-            document.getElementById('btn1_type').value = '0';
-            document.getElementById('btn1_start_search').value = 'Narre Warren Station';
-            document.getElementById('btn1_start_id').value = '1139';
-            document.getElementById('btn1_dest_search').value = 'Flinders Street Station';
-            document.getElementById('btn1_dest_search').disabled = false;
-            document.getElementById('btn1_dest_id').value = '1071';
-            document.getElementById('btn1_direction_id').value = '1'; // City direction
+            // First, clear all entries and add 3 new ones
+            while (entryCount > 0) removeEntry();
+            addEntry(); addEntry(); addEntry();
+
+            // Entry 1: Narre Warren -> Flinders
+            document.getElementById('entry1_type').value = '0';
+            document.getElementById('entry1_start_search').value = 'Narre Warren Station';
+            document.getElementById('entry1_start_id').value = '1139';
+            document.getElementById('entry1_dest_search').value = 'Flinders Street Station';
+            document.getElementById('entry1_dest_search').disabled = false;
+            document.getElementById('entry1_dest_id').value = '1071';
+            document.getElementById('entry1_direction_id').value = '1'; // City direction
             updateStatus(1);
 
-            // Button 2: Flinders -> Narre Warren
-            document.getElementById('btn2_type').value = '0';
-            document.getElementById('btn2_start_search').value = 'Flinders Street Station';
-            document.getElementById('btn2_start_id').value = '1071';
-            document.getElementById('btn2_dest_search').value = 'Narre Warren Station';
-            document.getElementById('btn2_dest_search').disabled = false;
-            document.getElementById('btn2_dest_id').value = '1139';
-            document.getElementById('btn2_direction_id').value = '10'; // Pakenham direction
+            // Entry 2: Flinders -> Narre Warren
+            document.getElementById('entry2_type').value = '0';
+            document.getElementById('entry2_start_search').value = 'Flinders Street Station';
+            document.getElementById('entry2_start_id').value = '1071';
+            document.getElementById('entry2_dest_search').value = 'Narre Warren Station';
+            document.getElementById('entry2_dest_search').disabled = false;
+            document.getElementById('entry2_dest_id').value = '1139';
+            document.getElementById('entry2_direction_id').value = '10'; // Pakenham direction
             updateStatus(2);
 
-            // Button 3: Southern Cross -> Brunswick
-            document.getElementById('btn3_type').value = '0';
-            document.getElementById('btn3_start_search').value = 'Southern Cross Station';
-            document.getElementById('btn3_start_id').value = '1181';
-            document.getElementById('btn3_dest_search').value = 'Brunswick Station';
-            document.getElementById('btn3_dest_search').disabled = false;
-            document.getElementById('btn3_dest_id').value = '1029';
-            document.getElementById('btn3_direction_id').value = '15'; // Upfield direction
+            // Entry 3: Southern Cross -> Brunswick
+            document.getElementById('entry3_type').value = '0';
+            document.getElementById('entry3_start_search').value = 'Southern Cross Station';
+            document.getElementById('entry3_start_id').value = '1181';
+            document.getElementById('entry3_dest_search').value = 'Brunswick Station';
+            document.getElementById('entry3_dest_search').disabled = false;
+            document.getElementById('entry3_dest_id').value = '1029';
+            document.getElementById('entry3_direction_id').value = '15'; // Upfield direction
             updateStatus(3);
 
             // Auto Save
             setTimeout(function () {
                 document.getElementById('save').click();
             }, 500);
+
         });
 
     </script>

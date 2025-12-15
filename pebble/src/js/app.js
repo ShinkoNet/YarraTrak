@@ -337,10 +337,23 @@ function buildMenuItems() {
         });
     }
 
-    // Favourite buttons from settings - show as "Start→Dest" with live departure time
-    for (var i = 1; i <= 3; i++) {
-        var startName = Settings.option('btn' + i + '_name');
-        var destName = Settings.option('btn' + i + '_dest_name');
+    // Favourite entries from settings - show as "Start→Dest" with live departure time
+    // Get entry count (or migrate from legacy 3-button setup)
+    var entryCount = Settings.option('entry_count');
+    if (entryCount === undefined || entryCount === null) {
+        // Legacy migration: count entries with stop_id set (check legacy btn or new entry)
+        entryCount = 0;
+        for (var j = 1; j <= 10; j++) {
+            if (Settings.option('entry' + j + '_stop_id') || Settings.option('btn' + j + '_stop_id')) {
+                entryCount = j;
+            }
+        }
+    }
+
+    for (var i = 1; i <= entryCount; i++) {
+        // Try new entry naming first, fall back to legacy btn naming
+        var startName = Settings.option('entry' + i + '_name') || Settings.option('btn' + i + '_name');
+        var destName = Settings.option('entry' + i + '_dest_name') || Settings.option('btn' + i + '_dest_name');
         if (startName) {
             var title = abbreviateStation(startName) + '>' + abbreviateStation(destName || '?');
             // Use live departure data if available, otherwise show "Waiting..."
@@ -369,7 +382,7 @@ function buildMenuItems() {
     // If no items at all, show setup message
     if (items.length === 0) {
         items.push({
-            title: 'No buttons set',
+            title: 'No entries set',
             subtitle: 'Configure in phone app'
         });
     }
@@ -446,9 +459,10 @@ var countdownTimer = null;
 
 // Favourite query - uses cached live departure data, opens station watching mode
 function runFavouriteQuery(buttonIndex) {
-    var name = Settings.option('btn' + buttonIndex + '_name');
-    var destName = Settings.option('btn' + buttonIndex + '_dest_name');
-    var stopId = Settings.option('btn' + buttonIndex + '_stop_id');
+    // Try new entry naming first, fall back to legacy btn naming
+    var name = Settings.option('entry' + buttonIndex + '_name') || Settings.option('btn' + buttonIndex + '_name');
+    var destName = Settings.option('entry' + buttonIndex + '_dest_name') || Settings.option('btn' + buttonIndex + '_dest_name');
+    var stopId = Settings.option('entry' + buttonIndex + '_stop_id') || Settings.option('btn' + buttonIndex + '_stop_id');
 
     // Clear any existing countdown
     if (countdownTimer) {
@@ -738,12 +752,24 @@ function connectWebSocket() {
 
     // Build buttons query param for instant data on connect
     // Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID"
+    var entryCount = Settings.option('entry_count');
+    if (entryCount === undefined || entryCount === null) {
+        // Legacy migration: scan for configured entries
+        entryCount = 0;
+        for (var j = 1; j <= 10; j++) {
+            if (Settings.option('entry' + j + '_stop_id') || Settings.option('btn' + j + '_stop_id')) {
+                entryCount = j;
+            }
+        }
+    }
+
     var buttonParts = [];
-    for (var i = 1; i <= 3; i++) {
-        var stopId = Settings.option('btn' + i + '_stop_id');
+    for (var i = 1; i <= entryCount; i++) {
+        // Try new entry naming first, fall back to legacy btn naming
+        var stopId = Settings.option('entry' + i + '_stop_id') || Settings.option('btn' + i + '_stop_id');
         if (stopId) {
-            var routeType = Settings.option('btn' + i + '_route_type') || 0;
-            var directionId = Settings.option('btn' + i + '_direction_id');
+            var routeType = Settings.option('entry' + i + '_route_type') || Settings.option('btn' + i + '_route_type') || 0;
+            var directionId = Settings.option('entry' + i + '_direction_id') || Settings.option('btn' + i + '_direction_id');
             var part = i + ':' + stopId + ':' + routeType;
             if (directionId !== undefined && directionId !== null) {
                 part += ':' + directionId;
@@ -1004,37 +1030,43 @@ function addToHistory(stopInfo) {
     }
 }
 
-// Save button config from server
+// Save button config from server (LLM set_button command)
 function saveButtonConfig(config) {
     if (!config || !config.button_id) return;
 
-    var btnId = config.button_id;
-    console.log('Saving button ' + btnId + ' config: ' + JSON.stringify(config));
+    var entryId = config.button_id;
+    console.log('Saving entry ' + entryId + ' config: ' + JSON.stringify(config));
 
-    Settings.option('btn' + btnId + '_name', config.name || ('Button ' + btnId));
-    Settings.option('btn' + btnId + '_stop_id', config.stop_id);
-    Settings.option('btn' + btnId + '_route_type', config.route_type || 0);
+    Settings.option('entry' + entryId + '_name', config.name || ('Entry ' + entryId));
+    Settings.option('entry' + entryId + '_stop_id', config.stop_id);
+    Settings.option('entry' + entryId + '_route_type', config.route_type || 0);
 
     // Also save dest_name if provided
     if (config.dest_name) {
-        Settings.option('btn' + btnId + '_dest_name', config.dest_name);
+        Settings.option('entry' + entryId + '_dest_name', config.dest_name);
     }
 
     if (config.direction_id !== undefined && config.direction_id !== null) {
-        Settings.option('btn' + btnId + '_direction_id', config.direction_id);
+        Settings.option('entry' + entryId + '_direction_id', config.direction_id);
     }
 
-    // Clear stale departure cache for this button so we don't use old data
-    delete buttonDepartures[btnId];
+    // Update entry_count if this entry extends the count
+    var currentCount = Settings.option('entry_count') || 0;
+    if (entryId > currentCount) {
+        Settings.option('entry_count', entryId);
+    }
 
-    // Refresh menu to show new button configuration
+    // Clear stale departure cache for this entry so we don't use old data
+    delete buttonDepartures[entryId];
+
+    // Refresh menu to show new entry configuration
     mainMenu.items(0, buildMenuItems());
 
     // Vibrate to confirm
     Vibe.vibrate('short');
-    console.log('Button ' + btnId + ' saved successfully');
+    console.log('Entry ' + entryId + ' saved successfully');
 
-    // Reconnect WebSocket with new buttons in URL to get fresh data
+    // Reconnect WebSocket with new entries in URL to get fresh data
     // Delayed to allow LLM response panel to display first
     setTimeout(function () {
         reconnect();
