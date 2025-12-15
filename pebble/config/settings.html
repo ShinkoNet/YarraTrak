@@ -329,10 +329,64 @@
             return count;
         }
 
-        // Truncate station name to max 32 chars
+        // Smart station name abbreviation
+        // Handles tram stops, train stations, and common Melbourne patterns
         function truncateName(name, maxLen) {
             maxLen = maxLen || 32;
-            if (!name || name.length <= maxLen) return name;
+            if (!name) return '';
+
+            // Remove common verbose suffixes (order matters - most specific first)
+            name = name.replace(/ Railway Station$/i, '');
+            name = name.replace(/ Station$/i, '');
+            name = name.replace(/ Tram Stop$/i, '');
+            name = name.replace(/ Stop$/i, '');
+
+            // Abbreviate common street suffixes
+            name = name.replace(/Street/gi, 'St');
+            name = name.replace(/Road/gi, 'Rd');
+            name = name.replace(/Avenue/gi, 'Ave');
+            name = name.replace(/Boulevard/gi, 'Blvd');
+            name = name.replace(/Parade/gi, 'Pde');
+            name = name.replace(/Drive/gi, 'Dr');
+            name = name.replace(/Crescent/gi, 'Cres');
+            name = name.replace(/Highway/gi, 'Hwy');
+
+            // Common Melbourne station abbreviations (user's list + tram additions)
+            var abbrevs = {
+                // Train stations (user's preferred abbreviations)
+                'Flinders St': 'City',
+                'Southern Cross': 'S Cross',
+                'South Morang': 'S Morang',
+                'South Yarra': 'S Yarra',
+                'South Kensington': 'S Kensi',
+                'Melbourne Central': 'M Cntral',
+                'North Melbourne': 'N Melb',
+                'North Richmond': 'N Rchmnd',
+                'East Richmond': 'E Rchmnd',
+                'West Richmond': 'W Rchmnd',
+                'East Malvern': 'E Mlvn',
+                'East Camberwell': 'E Camb',
+                'Mount Waverley': 'Mt Wav',
+                'Narre Warren': 'Narre',
+                'Flagstaff': 'Flgstf',
+                'Parliament': 'Prlmnt',
+                // Tram stops (street abbreviations)
+                'Victoria St': 'Vic St',
+                'Elizabeth St': 'Eliz St',
+                'Collins St': 'Collins',
+                'Bourke St': 'Bourke',
+                'Swanston St': 'Swanston',
+                'Sydney Rd': 'Sydney'
+            };
+
+            for (var full in abbrevs) {
+                if (name.indexOf(full) !== -1) {
+                    name = name.replace(full, abbrevs[full]);
+                }
+            }
+
+            // If still too long, truncate with ellipsis
+            if (name.length <= maxLen) return name;
             return name.substring(0, maxLen - 3) + '...';
         }
 

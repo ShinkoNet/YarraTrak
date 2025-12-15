@@ -288,45 +288,25 @@ var mainMenu = new UI.Menu({
 function buildMenuItems() {
     var items = [];
 
-    // Smart station name abbreviation for Aplite menu display
-    // Uses recognizable short forms instead of just truncating
+    // Station name abbreviation for Aplite menu display
+    // Names are pre-abbreviated by settings.html, this just handles final length
     function abbreviateStation(name, maxLen) {
         if (!name) return '';
-        maxLen = maxLen || 16; // Aplite safe width
+        maxLen = maxLen || 12; // Tight width for "Start>Dest" format
 
-        // Remove " Station" suffix
-        name = name.replace(/ Station$/i, '');
+        // Names should already be abbreviated by settings.html
+        // Just ensure it fits the menu display
+        if (name.length <= maxLen) return name;
 
-        // Common abbreviations for Melbourne stations
-        var abbrevs = {
-            'Flinders Street': 'City',
-            'Southern Cross': 'S Cross',
-            'South Morang': 'S Morang',
-            'South Yarra': 'S Yarra',
-            'South Kensington': 'S Kensi',
-            'Melbourne Central': 'M Cntral',
-            'North Melbourne': 'N Melb',
-            'North Richmond': 'N Rchmnd',
-            'East Richmond': 'E Rchmnd',
-            'West Richmond': 'W Rchmnd',
-            'East Malvern': 'E Mlvn',
-            'East Camberwell': 'E Camb',
-            'Mount Waverley': 'Mt Wav',
-            'Narre Warren': 'Narre',
-            'Flagstaff': 'Flgstf',
-            'Parliament': 'Prlmnt'
-        };
-
-        if (abbrevs[name]) return abbrevs[name];
-
-        // Multi-word names: ALWAYS abbreviate (2 chars + 5 chars)
+        // For multi-word, take first word's first 2 chars + second word
         var words = name.split(' ');
         if (words.length > 1) {
-            return words[0].substring(0, 2) + ' ' + words[1].substring(0, 5);
+            var short = words[0].substring(0, 2) + ' ' + words[1].substring(0, maxLen - 3);
+            return short.substring(0, maxLen);
         }
 
-        // Single word - max 7 chars
-        return name.substring(0, 7);
+        // Single word - just truncate
+        return name.substring(0, maxLen);
     }
 
     // Voice option only if microphone available (aplite doesn't have mic)
