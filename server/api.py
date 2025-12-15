@@ -154,39 +154,6 @@ async def _generate_audio(ticket_id: str, text: str):
     _cleanup_audio_store()
 
 
-# --- Vibration Encoding ---
-
-def calculate_vibration(minutes: int) -> list[int]:
-    """
-    Encode minutes as haptic pattern.
-    - Hours: 1000ms on, 400ms off
-    - Tens: 500ms on, 300ms off
-    - Ones: 150ms on, 150ms off
-    """
-    if minutes == 0:
-        return [80, 120, 150, 250, 80, 120, 80, 120, 150, 250, 150, 650, 150, 250, 300]
-
-    minutes = max(0, min(720, minutes))
-    hours = minutes // 60
-    tens = (minutes % 60) // 10
-    ones = minutes % 10
-
-    pattern = []
-    for _ in range(hours):
-        pattern.extend([1000, 400])
-    if hours > 0 and (tens > 0 or ones > 0) and pattern:
-        pattern[-1] += 200
-
-    for _ in range(tens):
-        pattern.extend([500, 300])
-    if tens > 0 and ones > 0 and pattern:
-        pattern[-1] += 100
-
-    for _ in range(ones):
-        pattern.extend([150, 150])
-
-    return pattern
-
 
 # --- Live Stealth Broadcast ---
 
@@ -415,7 +382,6 @@ async def stealth_mode(req: StealthRequest, _: None = Depends(verify_api_key)):
                            RouteType.VLINE: "train", RouteType.NIGHT_BUS: "bus"}.get(req.route_type, "service")
 
                 return {
-                    "vibration": calculate_vibration(minutes),
                     "message": "Arriving Now" if minutes == 0 else f"Next {vehicle} in {minutes} min"
                 }
 
@@ -509,8 +475,7 @@ async def voice_query(
             if hasattr(departure, "model_dump"):
                 departure = departure.model_dump()
             
-            if departure.get("minutes_to_depart") is not None:
-                payload["vibration"] = calculate_vibration(departure["minutes_to_depart"])
+            # Vibration is now calculated client-side from departure timestamps
 
         # Return learned stop for client to store
         if payload.get("_stop_info"):
@@ -563,8 +528,7 @@ async def text_query(request: AgentRequest, background_tasks: BackgroundTasks, _
             if hasattr(departure, "model_dump"):
                 departure = departure.model_dump()
 
-            if departure.get("minutes_to_depart") is not None:
-                payload["vibration"] = calculate_vibration(departure["minutes_to_depart"])
+            # Vibration is now calculated client-side from departure timestamps
 
         # Return learned stop for client to store
         if payload.get("_stop_info"):
@@ -757,8 +721,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                         if departure:
                             if hasattr(departure, "model_dump"):
                                 departure = departure.model_dump()
-                            if departure.get("minutes_to_depart") is not None:
-                                payload["vibration"] = calculate_vibration(departure["minutes_to_depart"])
+                            # Vibration is now calculated client-side from departure timestamps
                         
                         if payload.get("_stop_info"):
                             learned_stop = payload.pop("_stop_info")
@@ -815,7 +778,6 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     await websocket.send_json({
                         "type": "stealth_result",
                         "id": msg_id,
-                        "vibration": [100, 100],
                         "message": "Not configured"
                     })
                     continue
@@ -828,7 +790,6 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                         await websocket.send_json({
                             "type": "stealth_result",
                             "id": msg_id,
-                            "vibration": [200, 200],
                             "message": "No services"
                         })
                         continue
@@ -864,7 +825,6 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                             await websocket.send_json({
                                 "type": "stealth_result",
                                 "id": msg_id,
-                                "vibration": calculate_vibration(minutes),
                                 "message": msg,
                                 "minutes": minutes,
                                 "platform": str(platform) if platform else None
@@ -876,7 +836,6 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                         await websocket.send_json({
                             "type": "stealth_result",
                             "id": msg_id,
-                            "vibration": [200, 200, 200],
                             "message": "No future services"
                         })
                         
@@ -885,7 +844,6 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     await websocket.send_json({
                         "type": "stealth_result",
                         "id": msg_id,
-                        "vibration": [500, 100, 500],
                         "message": "Error"
                     })
             

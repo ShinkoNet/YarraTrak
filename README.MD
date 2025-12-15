@@ -10,9 +10,10 @@ A voice-enabled public transport assistant for Melbourne, Australia. Get real-ti
 - **Multi-turn Conversations** - Context-aware follow-ups and clarifications
 - **Speculative Execution** - Pre-fetches departures for frequently queried stops, reducing latency by ~55%
 - **Disruption Alerts** - Bus replacements, delays, and service changes
-- **Stealth Mode** - Quick-access buttons on the watch for instant "next departure" checks (vibration only, no voice)
+- **Stealth Mode** - Quick-access buttons for instant departure checks with big countdown timer
+- **Station Watching** - Press a button to watch countdown with progress bar; vibrates each minute
 - **Agent Configuration** - Ask the agent to "set button 1 to my stop" to configure Stealth Mode
-- **Haptic Feedback** - Vibration patterns encode departure times for discreet use
+- **Haptic Feedback** - Vibration patterns encode departure times (hours/tens/ones pulses)
 - **MCP Integration** - Use with Claude Desktop via Model Context Protocol
 
 ## Note about this environment

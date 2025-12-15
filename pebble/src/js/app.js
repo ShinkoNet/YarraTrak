@@ -9,6 +9,10 @@ var Voice = require('ui/voice');
 var Settings = require('settings');
 var Vibe = require('ui/vibe');
 var Feature = require('platform/feature');
+var Window = require('ui/window');
+var Text = require('ui/text');
+var Rect = require('ui/rect');
+var Vector2 = require('vector2');
 
 // Custom vibration pattern player
 // Pebble.js only supports 'short', 'long', 'double' - we simulate patterns
@@ -72,8 +76,15 @@ function playVibrationPattern(pattern) {
 // Encodes minutes as haptic pattern: Hours=1000ms, Tens=500ms, Ones=150ms
 function calculateVibration(minutes) {
     if (minutes === 0) {
-        console.log('calculateVibration: 0 mins -> special pattern');
-        return [80, 120, 150, 250, 80, 120, 80, 120, 150, 250, 150, 650, 150, 250, 300];
+        return [
+            500, 150,
+            150, 150,
+            150, 150,
+            500, 150,
+            500, 500,
+            500, 150,
+            500
+        ];
     }
 
     minutes = Math.max(0, Math.min(720, minutes));
@@ -201,14 +212,68 @@ Settings.config({
     }
 );
 
-// Loading screen
+// Loading screen (used during WebSocket connection)
 var loadingCard = new UI.Card({
     title: 'PTV Notify',
     subtitle: 'Starting...',
     scrollable: false
 });
 
-// Main menu
+// Custom watching window with big timer
+// Screen layout (144x168 Aplite): timer big at top, platform medium, route small at bottom
+var watchingWindow = new Window({
+    backgroundColor: 'black'
+});
+
+// Get screen dimensions
+var screenWidth = Feature.resolution().x;  // 144 for Aplite
+var screenHeight = Feature.resolution().y; // 168 for Aplite
+
+// Timer text - BIG monospace (top of screen)
+var timerText = new Text({
+    position: new Vector2(0, 15),
+    size: new Vector2(screenWidth, 55),
+    font: 'leco-42-numbers',
+    color: 'white',
+    textAlign: 'center',
+    text: '...'
+});
+watchingWindow.add(timerText);
+
+// Platform text - medium (middle)
+var platformText = new Text({
+    position: new Vector2(0, 75),
+    size: new Vector2(screenWidth, 30),
+    font: 'gothic-24-bold',
+    color: 'white',
+    textAlign: 'center',
+    text: ''
+});
+watchingWindow.add(platformText);
+
+// Route text - small (bottom, 2 lines max)
+var routeText = new Text({
+    position: new Vector2(5, 115),
+    size: new Vector2(screenWidth - 10, 50),
+    font: 'gothic-18',
+    color: 'lightGray',
+    textAlign: 'center',
+    text: ''
+});
+watchingWindow.add(routeText);
+
+// Progress bar - shows seconds visually (shrinks as time passes)
+var progressBar = new Rect({
+    position: new Vector2(0, screenHeight - 6),
+    size: new Vector2(screenWidth, 4),
+    backgroundColor: 'white'
+});
+watchingWindow.add(progressBar);
+
+// Back button handler for watching window
+watchingWindow.on('click', 'back', function () {
+    stopWatching();
+});
 var mainMenu = new UI.Menu({
     backgroundColor: Feature.color('black', 'black'),
     textColor: Feature.color('white', 'white'),
@@ -285,7 +350,13 @@ function buildMenuItems() {
                 if (dep.minutes === 0) {
                     subtitle = 'Now';
                 } else if (dep.minutes !== null && dep.minutes !== undefined) {
-                    subtitle = dep.minutes + ' min';
+                    if (dep.minutes >= 60) {
+                        var hrs = Math.floor(dep.minutes / 60);
+                        var mins = dep.minutes % 60;
+                        subtitle = hrs + 'hr ' + mins + 'm';
+                    } else {
+                        subtitle = dep.minutes + ' min';
+                    }
                 }
                 if (dep.platform) {
                     subtitle += ' • P' + dep.platform;
@@ -471,29 +542,33 @@ function runStealthQuery(buttonIndex) {
             Vibe.vibrate('short');
         }
     } else {
-        loadingCard.title('Waiting...');
-        loadingCard.subtitle('');
-        loadingCard.body(watchingRouteText);
+        timerText.text('...');
+        platformText.text('');
+        routeText.text(watchingRouteText);
         lastVibratedMinutes = null;
         lastDepartureTime = null;
         Vibe.vibrate('short');
     }
 
-    loadingCard.show();
+    watchingWindow.show();
     // Panel stays open until user presses back - no auto-hide!
 }
 
 // Update the watching display with current departure info
-// Layout: title=timer (biggest), subtitle=platform, body=route
-function updateWatchingDisplay(dep, routeText) {
+// Uses custom watchingWindow with separate Text elements
+function updateWatchingDisplay(dep, route) {
     if (!dep) {
-        loadingCard.title('Waiting...');
-        loadingCard.subtitle('');
-        loadingCard.body(routeText || '');
+        timerText.text('...');
+        platformText.text('');
+        routeText.text(route || '');
+        progressBar.size(new Vector2(screenWidth, 4));  // Full bar when waiting
         return;
     }
 
-    var timerText = '';
+    var timerValue = '';
+    var timerFont = 'leco-42-numbers';  // Default: monospace numbers
+    var progressWidth = screenWidth;  // Default full width
+
     if (dep.departure_time) {
         var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
         var depTime = new Date(timeStr);
@@ -501,25 +576,53 @@ function updateWatchingDisplay(dep, routeText) {
         var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
 
         if (diffSec <= 0) {
-            timerText = 'NOW!';
+            timerValue = 'NOW!';
+            timerFont = 'bitham-42-bold';  // Switch to font with letters
+            progressWidth = 0;  // Empty bar when arriving
         } else {
-            var mins = Math.floor(diffSec / 60);
+            var totalMins = Math.floor(diffSec / 60);
             var secs = diffSec % 60;
-            if (mins > 0) {
-                timerText = mins + ':' + (secs < 10 ? '0' : '') + secs;
+            if (totalMins >= 60) {
+                // Show H:MM:SS for 60+ minutes
+                var hrs = Math.floor(totalMins / 60);
+                var mins = totalMins % 60;
+                timerValue = hrs + ':' + (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+                // Progress bar: shrinks with seconds
+                progressWidth = Math.floor(screenWidth * secs / 60);
+            } else if (totalMins > 0) {
+                timerValue = totalMins + ':' + (secs < 10 ? '0' : '') + secs;
+                // Progress bar: shrinks with seconds
+                progressWidth = Math.floor(screenWidth * secs / 60);
             } else {
-                timerText = secs + 's';
+                // Under 1 minute: show NOW! (matches menu subtitle)
+                timerValue = 'NOW!';
+                timerFont = 'bitham-42-bold';
+                progressWidth = 0;  // Hide progress bar for NOW!
             }
         }
     } else if (dep.minutes !== null && dep.minutes !== undefined) {
-        timerText = dep.minutes === 0 ? 'NOW!' : dep.minutes + ' min';
+        if (dep.minutes === 0) {
+            timerValue = 'NOW!';
+            timerFont = 'bitham-42-bold';
+        } else {
+            if (dep.minutes >= 60) {
+                var hrs = Math.floor(dep.minutes / 60);
+                var mins = dep.minutes % 60;
+                timerValue = hrs + ':' + (mins < 10 ? '0' : '') + mins;
+            } else {
+                timerValue = dep.minutes + ' min';
+            }
+        }
+        progressWidth = dep.minutes === 0 ? 0 : screenWidth;
     } else {
-        timerText = '...';
+        timerValue = '...';
     }
 
-    loadingCard.title(timerText);
-    loadingCard.subtitle(dep.platform ? 'Platform ' + dep.platform : '');
-    loadingCard.body(routeText || '');
+    timerText.font(timerFont);
+    timerText.text(timerValue);
+    platformText.text(dep.platform ? 'Platform ' + dep.platform : '');
+    routeText.text(route || '');
+    progressBar.size(new Vector2(progressWidth, 4));
 }
 
 // Stop station watching mode
@@ -536,13 +639,8 @@ function stopWatching() {
         clearTimeout(vibeTimer);
         vibeTimer = null;
     }
-    loadingCard.hide();
+    watchingWindow.hide();
 }
-
-// Back button handler for watching card
-loadingCard.on('click', 'back', function () {
-    stopWatching();
-});
 
 // Handle query response
 function handleQueryResponse(card, response) {
@@ -561,8 +659,10 @@ function handleQueryResponse(card, response) {
         card.title('Departures');
         card.body(payload.tts_text || 'No info');
 
-        if (payload.vibration) {
-            playVibrationPattern(payload.vibration);
+        // Calculate vibration locally from departure time
+        var departure = payload.departure;
+        if (departure && departure.minutes_to_depart !== undefined) {
+            playVibrationPattern(calculateVibration(departure.minutes_to_depart));
         }
     } else if (data.type === 'CLARIFICATION') {
         var payload = data.payload;
@@ -927,16 +1027,18 @@ function saveButtonConfig(config) {
     // Clear stale departure cache for this button so we don't use old data
     delete buttonDepartures[btnId];
 
-    // Reconnect WebSocket with new buttons in URL to get fresh data
-    // This ensures only ONE subscription mechanism (URL params) is used
-    reconnect();
-
     // Refresh menu to show new button configuration
     mainMenu.items(0, buildMenuItems());
 
     // Vibrate to confirm
     Vibe.vibrate('short');
     console.log('Button ' + btnId + ' saved successfully');
+
+    // Reconnect WebSocket with new buttons in URL to get fresh data
+    // Delayed to allow LLM response panel to display first
+    setTimeout(function () {
+        reconnect();
+    }, 500);
 }
 
 // Start the app

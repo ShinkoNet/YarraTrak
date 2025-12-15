@@ -5,6 +5,31 @@ const MAX_QUERY_HISTORY = 10;
 const WS_MODE_KEY = "ptv_ws_mode";
 const API_KEY_KEY = "ptv_api_key";
 
+// Calculate vibration pattern locally (same logic as Pebble app)
+// Encodes minutes as haptic pattern: Hours=1000ms, Tens=500ms, Ones=150ms
+function calculateVibration(minutes) {
+    if (minutes === 0) {
+        // "Shave and a haircut" rhythm for NOW!
+        return [500, 150, 150, 150, 150, 150, 500, 150, 500, 500, 500, 150, 500];
+    }
+
+    minutes = Math.max(0, Math.min(720, minutes));
+    const hours = Math.floor(minutes / 60);
+    const tens = Math.floor((minutes % 60) / 10);
+    const ones = minutes % 10;
+
+    const pattern = [];
+    for (let i = 0; i < hours; i++) pattern.push(1000, 400);
+    if (hours > 0 && (tens > 0 || ones > 0) && pattern.length) pattern[pattern.length - 1] += 200;
+
+    for (let i = 0; i < tens; i++) pattern.push(500, 300);
+    if (tens > 0 && ones > 0 && pattern.length) pattern[pattern.length - 1] += 100;
+
+    for (let i = 0; i < ones; i++) pattern.push(150, 150);
+
+    return pattern;
+}
+
 // Get API key from localStorage
 function getApiKey() {
     return localStorage.getItem(API_KEY_KEY) || '';
@@ -395,20 +420,23 @@ async function sendStealth(id) {
         });
         const data = await res.json();
 
-        if (data.vibration && data.vibration.length > 0) {
-            log(data.message || "Done", "system");
-            updateStatus(data.message || "Done");
+        // Server no longer sends vibration - we calculate locally
+        log(data.message || "Done", "system");
+        updateStatus(data.message || "Done");
 
-            // Visual Feedback
-            document.body.style.backgroundColor = "#555";
-            setTimeout(() => document.body.style.backgroundColor = "#333", 200);
+        // Visual Feedback
+        document.body.style.backgroundColor = "#555";
+        setTimeout(() => document.body.style.backgroundColor = "#333", 200);
 
-            if (navigator.vibrate) {
-                navigator.vibrate(data.vibration);
+        // Calculate vibration pattern from message (extract minutes)
+        // Message format: "X min" or "Arriving Now" or "Now"
+        if (navigator.vibrate) {
+            let minutes = 0;
+            const match = data.message && data.message.match(/(\d+)\s*min/);
+            if (match) {
+                minutes = parseInt(match[1], 10);
             }
-        } else {
-            log(data.message || "No data", "system");
-            updateStatus(data.message || "No data");
+            navigator.vibrate(calculateVibration(minutes));
         }
     } catch (e) {
         console.error(e);
@@ -515,8 +543,10 @@ async function sendAudioToVoice(audioBlob) {
             log(`Agent: ${payload.tts_text}`, "agent");
             updateStatus(payload.tts_text);
 
-            if (payload.vibration) {
-                if (navigator.vibrate) navigator.vibrate(payload.vibration);
+            // Calculate vibration locally from departure time
+            const departure = payload.departure;
+            if (departure && departure.minutes_to_depart !== undefined) {
+                if (navigator.vibrate) navigator.vibrate(calculateVibration(departure.minutes_to_depart));
                 document.body.style.backgroundColor = "#ccc";
                 setTimeout(() => document.body.style.backgroundColor = "#333", 200);
             }
@@ -636,9 +666,10 @@ async function sendAgentQuery(overrideQuery = null) {
             log(`Agent: ${payload.tts_text}`, "agent");
             updateStatus(payload.tts_text);
 
-            // Vibration
-            if (payload.vibration) {
-                if (navigator.vibrate) navigator.vibrate(payload.vibration);
+            // Calculate vibration locally from departure time
+            const departure = payload.departure;
+            if (departure && departure.minutes_to_depart !== undefined) {
+                if (navigator.vibrate) navigator.vibrate(calculateVibration(departure.minutes_to_depart));
                 document.body.style.backgroundColor = "#ccc";
                 setTimeout(() => document.body.style.backgroundColor = "#333", 200);
             }

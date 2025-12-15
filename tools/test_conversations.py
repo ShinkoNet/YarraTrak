@@ -193,42 +193,6 @@ class TestToolSelection:
         assert result["type"] in ["CLARIFICATION", "RESULT", "ERROR"]
 
 
-class TestVibrationEncoding:
-    """Test vibration pattern generation."""
-
-    def test_vibration_zero_minutes(self):
-        from server.api import calculate_vibration
-        pattern = calculate_vibration(0)
-        assert len(pattern) > 0
-        # Special "arriving now" pattern
-
-    def test_vibration_single_digit(self):
-        from server.api import calculate_vibration
-        pattern = calculate_vibration(5)
-        # 5 ones = 5 x (150, 150) pairs
-        assert len(pattern) == 10
-
-    def test_vibration_tens(self):
-        from server.api import calculate_vibration
-        pattern = calculate_vibration(20)
-        # 2 tens = 2 x (500, 300) pairs
-        assert len(pattern) == 4
-
-    def test_vibration_mixed(self):
-        from server.api import calculate_vibration
-        pattern = calculate_vibration(23)
-        # 2 tens + 3 ones, with separator adjustment
-        assert len(pattern) > 0
-
-    def test_vibration_hour(self):
-        from server.api import calculate_vibration
-        pattern = calculate_vibration(65)
-        # 1 hour + 5 minutes
-        assert len(pattern) > 0
-        # First pulse should be 1000ms (hour indicator)
-        assert pattern[0] == 1000
-
-
 # --- Run Configuration ---
 
 if __name__ == "__main__":

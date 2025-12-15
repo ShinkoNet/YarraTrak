@@ -270,11 +270,30 @@ The prompt instructs the model to ask clarification before erroring on no result
 - "Sandringam" not found → ask "Did you mean Sandringham?"
 - Only `return_error` after clarification fails
 
-### Vibration Encoding
-Minutes encoded as haptic patterns:
+### Vibration Encoding (Client-Side)
+Minutes encoded as haptic patterns by clients (Pebble and web app):
 - Hours: 1000ms pulse
 - Tens: 500ms pulse
 - Ones: 150ms pulse
+- NOW! (0 min): "Shave and a haircut" special rhythm
+
+Clients calculate vibration locally from `departure_time` or `minutes_to_depart`.
+
+### Station Watching Mode
+
+When a stealth button is pressed, the Pebble enters **watching mode**:
+
+- **Custom Window**: Uses `Window` with `Text` + `Rect` elements (not `Card`)
+- **Big Timer**: LECO 42pt monospace font; switches to BITHAM for "NOW!"
+- **Progress Bar**: White bar at bottom shrinks as seconds count down, hidden for NOW!
+- **Hours Format**: Shows `H:MM:SS` for 60+ minute waits
+- **Vibration**: Buzzes on each minute boundary and train transitions
+- **Persistent**: Panel stays open until back button pressed
+
+Key functions in `pebble/src/js/app.js`:
+- `runStealthQuery()` - Opens watching window
+- `updateWatchingDisplay()` - Updates timer, platform, route, progress bar
+- `stopWatching()` - Cleans up and hides window
 
 ## Testing
 
