@@ -331,9 +331,12 @@
 
         // Smart station name abbreviation
         // Handles tram stops, train stations, and common Melbourne patterns
-        function truncateName(name, maxLen) {
+        // routeType: 0=Train, 1=Tram, 3=V/Line
+        function truncateName(name, maxLen, routeType) {
             maxLen = maxLen || 32;
             if (!name) return '';
+            routeType = routeType || 0;  // Default to train
+            var isTrain = (routeType === 0 || routeType === 3);
 
             // Remove common verbose suffixes (order matters - most specific first)
             name = name.replace(/ Railway Station$/i, '');
@@ -351,39 +354,43 @@
             name = name.replace(/Crescent/gi, 'Cres');
             name = name.replace(/Highway/gi, 'Hwy');
 
-            // Common Melbourne station abbreviations (user's list + tram additions)
-            var abbrevs = {
-                // Train stations (user's preferred abbreviations)
-                'Flinders St': 'City',
-                'Southern Cross': 'S Cross',
-                'South Morang': 'S Morang',
-                'South Yarra': 'S Yarra',
-                'South Kensington': 'S Kensi',
-                'Melbourne Central': 'M Cntral',
-                'North Melbourne': 'N Melb',
-                'North Richmond': 'N Rchmnd',
-                'East Richmond': 'E Rchmnd',
-                'West Richmond': 'W Rchmnd',
-                'East Malvern': 'E Mlvn',
-                'East Camberwell': 'E Camb',
-                'Mount Waverley': 'Mt Wav',
-                'Narre Warren': 'Narre',
-                'Flagstaff': 'Flgstf',
-                'Parliament': 'Prlmnt',
-                // Tram stops (street abbreviations)
-                'Victoria St': 'Vic St',
-                'Elizabeth St': 'Eliz St',
-                'Collins St': 'Collins',
-                'Bourke St': 'Bourke',
-                'Swanston St': 'Swanston',
-                'Sydney Rd': 'Sydney'
-            };
-
-            for (var full in abbrevs) {
-                if (name.indexOf(full) !== -1) {
-                    name = name.replace(full, abbrevs[full]);
+            // Train-only specific abbreviations (applied first)
+            if (isTrain) {
+                var trainAbbrevs = {
+                    'Flinders St': 'City',
+                    'Southern Cross': 'Sth Cross',
+                    'Melbourne Central': 'M Cntral',
+                    'Flagstaff': 'Flgstf',
+                    'Parliament': 'Prlmnt'
+                };
+                for (var full in trainAbbrevs) {
+                    if (name.indexOf(full) !== -1) {
+                        name = name.replace(full, trainAbbrevs[full]);
+                    }
                 }
             }
+
+            // Tram stop abbreviations (street names, applied to all)
+            var tramAbbrevs = {
+                'Victoria St': 'Vic St',
+                'Elizabeth St': 'Eliz St',
+                'Collins St': 'Coll St',
+                'Bourke St': 'Brk St',
+                'Swanston St': 'Swnst St',
+                'Sydney Rd': 'Syd Rd'
+            };
+            for (var full in tramAbbrevs) {
+                if (name.indexOf(full) !== -1) {
+                    name = name.replace(full, tramAbbrevs[full]);
+                }
+            }
+
+            // Generic directional abbreviations (word boundaries - won't match "Southern", "Northcote", etc)
+            name = name.replace(/\bSouth\b/gi, 'S');
+            name = name.replace(/\bNorth\b/gi, 'N');
+            name = name.replace(/\bEast\b/gi, 'E');
+            name = name.replace(/\bWest\b/gi, 'W');
+            name = name.replace(/\bMount\b/gi, 'Mt');
 
             // If still too long, truncate with ellipsis
             if (name.length <= maxLen) return name;
@@ -547,12 +554,13 @@
                         alert('Please select a destination for Entry ' + i);
                         return;
                     }
+                    var routeType = parseInt(document.getElementById('entry' + i + '_type').value);
                     newOptions['entry' + i + '_stop_id'] = parseInt(startId);
-                    newOptions['entry' + i + '_name'] = truncateName(document.getElementById('entry' + i + '_start_search').value);
-                    newOptions['entry' + i + '_route_type'] = parseInt(document.getElementById('entry' + i + '_type').value);
+                    newOptions['entry' + i + '_name'] = truncateName(document.getElementById('entry' + i + '_start_search').value, 32, routeType);
+                    newOptions['entry' + i + '_route_type'] = routeType;
 
                     newOptions['entry' + i + '_dest_id'] = parseInt(destId);
-                    newOptions['entry' + i + '_dest_name'] = truncateName(document.getElementById('entry' + i + '_dest_search').value);
+                    newOptions['entry' + i + '_dest_name'] = truncateName(document.getElementById('entry' + i + '_dest_search').value, 32, routeType);
 
                     // Include resolved direction_id!
                     if (directionId) {
