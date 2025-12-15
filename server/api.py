@@ -46,7 +46,7 @@ async def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")):
 
 # --- Request Models ---
 
-class StealthRequest(BaseModel):
+class FavouriteRequest(BaseModel):
     button_id: int
     stop_id: int
     stop_name: str | None = None
@@ -90,7 +90,7 @@ except Exception as e:
 _audio_store: dict[str, dict] = {}
 
 # --- Button Configurations (for MCP/agent setup) ---
-# This allows the agent to configure stealth buttons via set_button WebSocket message
+# This allows the agent to configure favourite buttons via set_button WebSocket message
 _button_configs: dict[str, dict] = {}
 
 # --- API Key → Button Registry (for pre-warming cache) ---
@@ -98,15 +98,15 @@ _button_configs: dict[str, dict] = {}
 # Background broadcast loop keeps ALL registered buttons warm, not just connected clients
 _api_key_buttons: dict[str, list[dict]] = {}  # api_key → [{button_id, stop_id, route_type, direction_id}, ...]
 
-# --- Live Stealth Updates ---
+# --- Live Favourite Updates ---
 # Subscription registry: websocket -> list of button configs with stop/direction info
-_stealth_subscriptions: dict[WebSocket, list[dict]] = {}
+_favourite_subscriptions: dict[WebSocket, list[dict]] = {}
 
 # Shared departure cache: (stop_id, route_type, direction_id) -> {departures: [...], fetched_at}
 # With multi-departure caching, we can use longer TTL - client switches between cached departures
 _departure_cache: dict[tuple, dict] = {}
-STEALTH_CACHE_TTL = 30.0  # seconds (was 4s, increased since client caches multiple departures)
-STEALTH_BROADCAST_INTERVAL = 15.0  # seconds (was 5s, client has second-by-second countdown)
+FAVOURITE_CACHE_TTL = 30.0  # seconds (was 4s, increased since client caches multiple departures)
+FAVOURITE_BROADCAST_INTERVAL = 15.0  # seconds (was 5s, client has second-by-second countdown)
 
 # Background task reference
 _broadcast_task: asyncio.Task | None = None
@@ -154,8 +154,7 @@ async def _generate_audio(ticket_id: str, text: str):
     _cleanup_audio_store()
 
 
-
-# --- Live Stealth Broadcast ---
+# --- Live Favourite Broadcast ---
 
 async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id: int | None, max_departures: int = 3) -> dict:
     """
@@ -168,7 +167,7 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
     
     # Check cache
     cached = _departure_cache.get(cache_key)
-    if cached and (now - cached["fetched_at"]) < STEALTH_CACHE_TTL:
+    if cached and (now - cached["fetched_at"]) < FAVOURITE_CACHE_TTL:
         return cached
     
     # Fetch from PTV API
@@ -212,24 +211,24 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
         return result
         
     except Exception as e:
-        print(f"Stealth fetch error: {e}")
+        print(f"Favourite fetch error: {e}")
         return {"departures": [], "fetched_at": now}
 
 
-async def broadcast_stealth_updates():
+async def broadcast_favourite_updates():
     """
     Background task that broadcasts departure updates to all subscribed clients every 15 seconds.
     Also pre-warms cache for all registered API key buttons (even disconnected clients).
     """
     while True:
-        await asyncio.sleep(STEALTH_BROADCAST_INTERVAL)
+        await asyncio.sleep(FAVOURITE_BROADCAST_INTERVAL)
         
         # Collect all unique stop/direction combos from BOTH connected clients AND registry
         all_buttons: dict[tuple, list[tuple[WebSocket, int]]] = {}  # cache_key -> [(ws, button_id), ...]
         registry_cache_keys: set[tuple] = set()  # Cache keys from registry (for pre-warming)
         
         # Connected clients
-        for ws, buttons in list(_stealth_subscriptions.items()):
+        for ws, buttons in list(_favourite_subscriptions.items()):
             for btn in buttons:
                 cache_key = (btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id"))
                 if cache_key not in all_buttons:
@@ -271,7 +270,7 @@ async def broadcast_stealth_updates():
         for ws, updates in client_updates.items():
             try:
                 await ws.send_json({
-                    "type": "stealth_update",
+                    "type": "favourite_update",
                     "updates": updates
                 })
             except Exception as e:
@@ -280,17 +279,17 @@ async def broadcast_stealth_updates():
         
         # Clean up disconnected clients
         for ws in disconnected:
-            if ws in _stealth_subscriptions:
-                del _stealth_subscriptions[ws]
-                print("Removed disconnected client from stealth subscriptions")
+            if ws in _favourite_subscriptions:
+                del _favourite_subscriptions[ws]
+                print("Removed disconnected client from favourite subscriptions")
 
 
 def start_broadcast_task():
     """Start the background broadcast task if not already running."""
     global _broadcast_task
     if _broadcast_task is None or _broadcast_task.done():
-        _broadcast_task = asyncio.create_task(broadcast_stealth_updates())
-        print("Stealth broadcast task started")
+        _broadcast_task = asyncio.create_task(broadcast_favourite_updates())
+        print("Favourite broadcast task started")
 
 
 def stop_broadcast_task():
@@ -299,7 +298,7 @@ def stop_broadcast_task():
     if _broadcast_task and not _broadcast_task.done():
         _broadcast_task.cancel()
         _broadcast_task = None
-        print("Stealth broadcast task stopped")
+        print("Favourite broadcast task stopped")
 
 
 # --- Endpoints ---
@@ -347,8 +346,8 @@ async def get_stations(type: str = "train", _: None = Depends(verify_api_key)):
     return {"stations": all_stops}
 
 
-@app.post("/api/v1/stealth")
-async def stealth_mode(req: StealthRequest, _: None = Depends(verify_api_key)):
+@app.post("/api/v1/favourite")
+async def favourite_departure(req: FavouriteRequest, _: None = Depends(verify_api_key)):
     """
     Quick departure check for pre-configured buttons.
     Returns vibration pattern encoding minutes until next departure.
@@ -388,7 +387,7 @@ async def stealth_mode(req: StealthRequest, _: None = Depends(verify_api_key)):
         return {"vibration": [200, 200, 200], "message": "No future services"}
 
     except Exception as e:
-        print(f"Stealth error: {e}")
+        print(f"Favourite error: {e}")
         return {"vibration": [500, 100, 500], "message": "Error"}
 
 
@@ -629,7 +628,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
             
             if parsed_buttons:
                 # Register subscription for connected client
-                _stealth_subscriptions[websocket] = parsed_buttons
+                _favourite_subscriptions[websocket] = parsed_buttons
                 
                 # Update API key registry (for pre-warming after disconnect/reconnect)
                 if api_key:
@@ -661,11 +660,11 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                             })
                         
                         await websocket.send_json({
-                            "type": "stealth_update",
+                            "type": "favourite_update",
                             "updates": initial_updates
                         })
                     except Exception as e:
-                        print(f"Error pushing initial stealth data: {e}")
+                        print(f"Error pushing initial favourite data: {e}")
                 
                 asyncio.create_task(push_initial_data())
         except Exception as e:
@@ -768,7 +767,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     "id": msg_id
                 })
             
-            elif msg_type == "stealth":
+            elif msg_type == "favourite":
                 # Direct departure fetch - no LLM, just stop_id/route_type/direction_id
                 stop_id = message.get("stop_id")
                 route_type = message.get("route_type", RouteType.TRAIN)
@@ -776,7 +775,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                 
                 if not stop_id:
                     await websocket.send_json({
-                        "type": "stealth_result",
+                        "type": "favourite_result",
                         "id": msg_id,
                         "message": "Not configured"
                     })
@@ -788,7 +787,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     
                     if not departures:
                         await websocket.send_json({
-                            "type": "stealth_result",
+                            "type": "favourite_result",
                             "id": msg_id,
                             "message": "No services"
                         })
@@ -823,7 +822,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                                 msg += f" • P{platform}"
                             
                             await websocket.send_json({
-                                "type": "stealth_result",
+                                "type": "favourite_result",
                                 "id": msg_id,
                                 "message": msg,
                                 "minutes": minutes,
@@ -834,15 +833,15 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     
                     if not found:
                         await websocket.send_json({
-                            "type": "stealth_result",
+                            "type": "favourite_result",
                             "id": msg_id,
                             "message": "No future services"
                         })
                         
                 except Exception as e:
-                    print(f"WebSocket stealth error: {e}")
+                    print(f"WebSocket favourite error: {e}")
                     await websocket.send_json({
-                        "type": "stealth_result",
+                        "type": "favourite_result",
                         "id": msg_id,
                         "message": "Error"
                     })
@@ -895,8 +894,8 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     "config": _button_configs[str(button_id)]
                 })
             
-            elif msg_type == "subscribe_stealth":
-                # Subscribe to live stealth updates
+            elif msg_type == "subscribe_favourites":
+                # Subscribe to live favourite updates
                 buttons = message.get("buttons", [])
                 valid_buttons = []
                 
@@ -910,9 +909,9 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                         })
                 
                 if valid_buttons:
-                    _stealth_subscriptions[websocket] = valid_buttons
+                    _favourite_subscriptions[websocket] = valid_buttons
                     start_broadcast_task()
-                    print(f"Client subscribed to {len(valid_buttons)} stealth buttons")
+                    print(f"Client subscribed to {len(valid_buttons)} favourite buttons")
                     
                     # Fetch and push initial data in background (non-blocking, parallel)
                     async def push_subscribe_data():
@@ -935,16 +934,16 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                                 })
                             
                             await websocket.send_json({
-                                "type": "stealth_update",
+                                "type": "favourite_update",
                                 "updates": initial_updates
                             })
                         except Exception as e:
-                            print(f"Error pushing subscribe stealth data: {e}")
+                            print(f"Error pushing subscribe favourite data: {e}")
                     
                     asyncio.create_task(push_subscribe_data())
                 
                 await websocket.send_json({
-                    "type": "stealth_subscribed",
+                    "type": "favourites_subscribed",
                     "id": msg_id,
                     "buttons": len(valid_buttons)
                 })
@@ -958,13 +957,13 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                 
     except WebSocketDisconnect:
         # Clean up subscription on disconnect
-        if websocket in _stealth_subscriptions:
-            del _stealth_subscriptions[websocket]
+        if websocket in _favourite_subscriptions:
+            del _favourite_subscriptions[websocket]
         print("WebSocket client disconnected")
     except Exception as e:
         # Clean up subscription on error
-        if websocket in _stealth_subscriptions:
-            del _stealth_subscriptions[websocket]
+        if websocket in _favourite_subscriptions:
+            del _favourite_subscriptions[websocket]
         print(f"WebSocket error: {e}")
 
 

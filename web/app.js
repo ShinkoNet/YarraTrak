@@ -151,9 +151,9 @@ function connectWebSocket() {
         wsConnected = true;
         log("WebSocket connected", "system");
         updateWsStatus();
-        // Note: server will push stealth_update immediately if buttons were in URL
-        // Still call sendStealthSubscription for mid-session updates
-        sendStealthSubscription();
+        // Note: server will push favourite_update immediately if buttons were in URL
+        // Still call sendFavouriteSubscription for mid-session updates
+        sendFavouriteSubscription();
     };
 
     ws.onclose = () => {
@@ -175,8 +175,8 @@ function connectWebSocket() {
         try {
             const msg = JSON.parse(event.data);
 
-            // Handle live stealth updates (broadcast, no pending request)
-            if (msg.type === 'stealth_update') {
+            // Handle live favourite updates (broadcast, no pending request)
+            if (msg.type === 'favourite_update') {
                 updateButtonSubtitles(msg.updates || []);
                 return;
             }
@@ -314,7 +314,7 @@ function saveButtonConfigFromServer(config) {
     saveButtonConfig(btnId, btnConfig);
 
     // Re-subscribe to get live updates for the new button
-    sendStealthSubscription();
+    sendFavouriteSubscription();
 }
 
 function loadButtonConfig() {
@@ -354,8 +354,8 @@ function updateButtonUI(index, config) {
     }
 }
 
-// Subscribe to live stealth updates
-function sendStealthSubscription() {
+// Subscribe to live favourite updates
+function sendFavouriteSubscription() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
     const buttons = [];
@@ -372,9 +372,9 @@ function sendStealthSubscription() {
     }
 
     if (buttons.length > 0) {
-        log(`Subscribing to ${buttons.length} stealth buttons`, "system");
+        log(`Subscribing to ${buttons.length} favourite buttons`, "system");
         ws.send(JSON.stringify({
-            type: 'subscribe_stealth',
+            type: 'subscribe_favourites',
             buttons: buttons
         }));
     }
@@ -394,7 +394,7 @@ function updateButtonSubtitles(updates) {
 }
 // ----------------------------------
 
-async function sendStealth(id) {
+async function sendFavourite(id) {
     const config = getButtonConfig(id);
     if (!config) {
         log(`Button ${id} not configured. Ask the agent to set it up.`, "system");
@@ -406,7 +406,7 @@ async function sendStealth(id) {
     updateStatus("Checking...");
 
     try {
-        const res = await fetch(`${API_BASE}/stealth`, {
+        const res = await fetch(`${API_BASE}/favourite`, {
             method: 'POST',
             headers: getApiHeaders(),
             body: JSON.stringify({
@@ -495,11 +495,11 @@ async function sendAudioToVoice(audioBlob) {
     formData.append("session_id", currentSessionId);
     formData.append("query_history", JSON.stringify(getQueryHistory()));
 
-    // Show Close Button, Hide Stealth Controls and previous clarify options
+    // Show Close Button, Hide Favourite Controls and previous clarify options
     const closeBtn = document.getElementById('btn-close');
-    const stealthControls = document.getElementById('stealth-controls');
+    const favouriteControls = document.getElementById('favourite-controls');
     if (closeBtn) closeBtn.style.display = 'block';
-    if (stealthControls) stealthControls.style.display = 'none';
+    if (favouriteControls) favouriteControls.style.display = 'none';
     clearClarifyOptions();
 
     try {
@@ -609,11 +609,11 @@ async function sendAgentQuery(overrideQuery = null) {
     if (!overrideQuery) log(`User: ${query}`, "user"); // Don't log again if it's a chip click
     updateStatus("Thinking...");
 
-    // Show Close Button, Hide Stealth Controls and previous clarify options
+    // Show Close Button, Hide Favourite Controls and previous clarify options
     const closeBtn = document.getElementById('btn-close');
-    const stealthControls = document.getElementById('stealth-controls');
+    const favouriteControls = document.getElementById('favourite-controls');
     if (closeBtn) closeBtn.style.display = 'block';
-    if (stealthControls) stealthControls.style.display = 'none';
+    if (favouriteControls) favouriteControls.style.display = 'none';
     clearClarifyOptions();
 
     try {
@@ -791,10 +791,10 @@ async function closeConversation() {
     if (logBox) logBox.innerHTML = '<div class="log-entry system">System: Ready. Click Mic or type below.</div>';
 
     const closeBtn = document.getElementById('btn-close');
-    const stealthControls = document.getElementById('stealth-controls');
+    const favouriteControls = document.getElementById('favourite-controls');
 
     if (closeBtn) closeBtn.style.display = 'none';
-    if (stealthControls) stealthControls.style.display = 'block';
+    if (favouriteControls) favouriteControls.style.display = 'block';
 
     clearClarifyOptions();
     updateStatus("Ready");
@@ -803,7 +803,7 @@ async function closeConversation() {
 }
 
 // Expose functions to window
-window.sendStealth = sendStealth;
+window.sendFavourite = sendFavourite;
 window.toggleMic = toggleMic;
 window.sendAgentQuery = sendAgentQuery;
 window.handleInput = handleInput;

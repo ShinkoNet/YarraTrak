@@ -146,7 +146,7 @@ var buttonDepartures = {};
 var watchingButtonIndex = null;  // Which button is being watched (null = not watching)
 var lastVibratedMinutes = null;  // Last minute count we vibrated (to detect changes)
 var lastDepartureTime = null;    // Track departure_time to detect train transitions
-var watchingRouteText = null;    // Current route text for display (stored globally for stealth_update)
+var watchingRouteText = null;    // Current route text for display (stored globally for favourite_update)
 
 // Get the current valid departure from the cached array
 // Auto-switches to next departure when first train has passed
@@ -337,7 +337,7 @@ function buildMenuItems() {
         });
     }
 
-    // Stealth buttons from settings - show as "Start→Dest" with live departure time
+    // Favourite buttons from settings - show as "Start→Dest" with live departure time
     for (var i = 1; i <= 3; i++) {
         var startName = Settings.option('btn' + i + '_name');
         var destName = Settings.option('btn' + i + '_dest_name');
@@ -362,7 +362,7 @@ function buildMenuItems() {
                     subtitle += ' • P' + dep.platform;
                 }
             }
-            items.push({ title: title, subtitle: subtitle, data: { stealth: i } });
+            items.push({ title: title, subtitle: subtitle, data: { favourite: i } });
         }
     }
 
@@ -385,8 +385,8 @@ mainMenu.on('show', function () {
 mainMenu.on('select', function (e) {
     if (e.item.title === 'Ask') {
         startVoiceQuery();
-    } else if (e.item.data && e.item.data.stealth) {
-        runStealthQuery(e.item.data.stealth);
+    } else if (e.item.data && e.item.data.favourite) {
+        runFavouriteQuery(e.item.data.favourite);
     }
 });
 
@@ -444,8 +444,8 @@ function startVoiceQuery() {
 // Countdown timer for live seconds display
 var countdownTimer = null;
 
-// Stealth query - uses cached live departure data, opens station watching mode
-function runStealthQuery(buttonIndex) {
+// Favourite query - uses cached live departure data, opens station watching mode
+function runFavouriteQuery(buttonIndex) {
     var name = Settings.option('btn' + buttonIndex + '_name');
     var destName = Settings.option('btn' + buttonIndex + '_dest_name');
     var stopId = Settings.option('btn' + buttonIndex + '_stop_id');
@@ -473,7 +473,7 @@ function runStealthQuery(buttonIndex) {
         return n.replace(/ Station$/i, '');
     }
 
-    // Build route text for body (stored globally for stealth_update handler)
+    // Build route text for body (stored globally for favourite_update handler)
     watchingRouteText = cleanName(name) + ' > ' + cleanName(destName);
 
     if (dep && (dep.departure_time || dep.minutes !== null)) {
@@ -791,10 +791,10 @@ function connectWebSocket() {
 
         loadingCard.subtitle('Loading...');
 
-        // Set fallback timer - show menu after 2s even if no stealth_update received
+        // Set fallback timer - show menu after 2s even if no favourite_update received
         menuShowTimer = setTimeout(function () {
             if (isFirstLoad) {
-                console.log('Fallback: showing menu without stealth data');
+                console.log('Fallback: showing menu without favourite data');
                 mainMenu.items(0, buildMenuItems());
                 loadingCard.hide();
                 mainMenu.show();
@@ -840,8 +840,8 @@ function connectWebSocket() {
         try {
             var msg = JSON.parse(event.data);
 
-            // Handle live stealth updates (broadcast, no pending request)
-            if (msg.type === 'stealth_update') {
+            // Handle live favourite updates (broadcast, no pending request)
+            if (msg.type === 'favourite_update') {
                 var updates = msg.updates || [];
                 for (var i = 0; i < updates.length; i++) {
                     var u = updates[i];
@@ -893,7 +893,7 @@ function connectWebSocket() {
                 // Refresh menu to show updated times
                 mainMenu.items(0, buildMenuItems());
 
-                // On first stealth_update, show menu immediately (data is ready!)
+                // On first favourite_update, show menu immediately (data is ready!)
                 if (isFirstLoad && !hasReceivedData) {
                     hasReceivedData = true;
                     if (menuShowTimer) {

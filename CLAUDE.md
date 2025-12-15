@@ -82,7 +82,7 @@ The agent uses `tool_choice="required"` to ensure all responses come via tool ca
 - `search_and_get_departures` - Combined search + fetch with smart ranking
 - `search_stops` / `search_routes` - Discovery
 - `get_departures` / `get_route_directions` - Direct lookups
-- `configure_pebble_button` - Generate button config for user (Stealth Mode)
+- `configure_pebble_button` - Generate button config for user (Favourites)
 
 **Terminal Tools** (end the loop, return to user):
 - `return_result` - Structured departure data with TTS text
@@ -117,7 +117,7 @@ When `ENABLE_GUARDRAIL = True`, a guardrail model runs in parallel with the work
 
 | File | Purpose |
 |------|---------|
-| `server/api.py` | FastAPI endpoints (`/voice`, `/query`, `/stealth`), vibration encoding, speculative fetch |
+| `server/api.py` | FastAPI endpoints (`/voice`, `/query`, `/favourite`), vibration encoding, speculative fetch |
 | `server/agent_engine.py` | Guardrail + worker, tool definitions, session handling, prefill logic |
 | `server/tools.py` | PTV API tool implementations, query sanitization, speculative fetch, disruption filtering |
 | `server/ptv_client.py` | PTV API client with HMAC-SHA1 signing |
@@ -132,18 +132,18 @@ When `ENABLE_GUARDRAIL = True`, a guardrail model runs in parallel with the work
 |----------|---------|
 | `POST /api/v1/voice` | Voice input: ASR + speculative fetch (parallel) + Agent. Accepts `file`, `session_id`, `query_history` |
 | `POST /api/v1/query` | Text input: speculative fetch + Agent. Accepts JSON `{query, session_id, query_history}` |
-| `POST /api/v1/stealth` | Direct PTV lookup for pre-configured buttons (no LLM). Used by Web Simulator. |
+| `POST /api/v1/favourite` | Direct PTV lookup for pre-configured buttons (no LLM). Used by Web Simulator. |
 | `GET /api/v1/media/{ticket}` | Retrieve TTS audio by ticket ID |
 | `GET /pebble-config.html` | Serves the Pebble configuration page (single source of truth for settings) |
 
 ### Frontend
 
-`web/app.js` - Vanilla JS SPA with stealth buttons, voice I/O, clarification chips.
+`web/app.js` - Vanilla JS SPA with favourite buttons, voice I/O, clarification chips.
 
 **localStorage keys:**
 - `ptv_session_id` - Persistent session ID (survives page refresh)
 - `ptv_query_history` - Array of learned stops for speculative fetch (max 10)
-- `ptv_btn_1/2/3` - Stealth button configurations
+- `ptv_btn_1/2/3` - Favourite button configurations
 
 ## Environment Variables
 
@@ -228,20 +228,20 @@ Agent handles:
 ```
 wss://server/ws?api_key=KEY&buttons=1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:...
 ```
-The `buttons` param enables instant departure data push on connection (no waiting for subscribe_stealth message).
+The `buttons` param enables instant departure data push on connection (no waiting for subscribe_favourites message).
 
 **Client -> Server:**
 - `query`: Standard agent query
-- `stealth`: Direct departure check `{type: "stealth", stop_id: 123, ...}` - returns vibration + platform
-- `subscribe_stealth`: Subscribe to live updates `{type: "subscribe_stealth", buttons: [{button_id, stop_id, route_type, direction_id}, ...]}`
+- `favourite`: Direct departure check `{type: "favourite", stop_id: 123, ...}` - returns vibration + platform
+- `subscribe_favourites`: Subscribe to live updates `{type: "subscribe_favourites", buttons: [{button_id, stop_id, route_type, direction_id}, ...]}`
 - `set_button`: Configure a button `{type: "set_button", button_id: 1, stop_id: 123, ...}`
 - `get_buttons`: Request all button configs
 
 **Server -> Client:**
 - `result`: Agent response
-- `stealth_result`: Vibration pattern + message + platform `{type: "stealth_result", minutes: 5, platform: "2", ...}`
-- `stealth_update`: Live broadcast (every 15s) `{type: "stealth_update", updates: [{button_id, minutes, platform, message}, ...]}`
-- `stealth_subscribed`: Confirmation of subscription `{type: "stealth_subscribed", buttons: 3}`
+- `favourite_result`: Vibration pattern + message + platform `{type: "favourite_result", minutes: 5, platform: "2", ...}`
+- `favourite_update`: Live broadcast (every 15s) `{type: "favourite_update", updates: [{button_id, minutes, platform, message}, ...]}`
+- `favourites_subscribed`: Confirmation of subscription `{type: "favourites_subscribed", buttons: 3}`
 - `button_set`: Confirmation of button update `{type: "button_set", button_id: 1, config: ...}`
 - `buttons`: All button configs
 
@@ -281,7 +281,7 @@ Clients calculate vibration locally from `departure_time` or `minutes_to_depart`
 
 ### Station Watching Mode
 
-When a stealth button is pressed, the Pebble enters **watching mode**:
+When a favourite button is pressed, the Pebble enters **watching mode**:
 
 - **Custom Window**: Uses `Window` with `Text` + `Rect` elements (not `Card`)
 - **Big Timer**: LECO 42pt monospace font; switches to BITHAM for "NOW!"
@@ -291,7 +291,7 @@ When a stealth button is pressed, the Pebble enters **watching mode**:
 - **Persistent**: Panel stays open until back button pressed
 
 Key functions in `pebble/src/js/app.js`:
-- `runStealthQuery()` - Opens watching window
+- `runFavouriteQuery()` - Opens watching window
 - `updateWatchingDisplay()` - Updates timer, platform, route, progress bar
 - `stopWatching()` - Cleans up and hides window
 
