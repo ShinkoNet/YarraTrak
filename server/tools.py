@@ -476,7 +476,7 @@ async def configure_pebble_button(
     direction_id: int | None = None,
     direction_name: str | None = None
 ) -> str:
-    \"\"\"
+    """
     Generate configuration for a Pebble favourite button.
     Returns structured data that will be pushed to the connected Pebble client.
     
