@@ -93,6 +93,11 @@ _audio_store: dict[str, dict] = {}
 # This allows the agent to configure stealth buttons via set_button WebSocket message
 _button_configs: dict[str, dict] = {}
 
+# --- API Key → Button Registry (for pre-warming cache) ---
+# Populated from: WebSocket connect (learns buttons), LLM set_button (dynamic update)
+# Background broadcast loop keeps ALL registered buttons warm, not just connected clients
+_api_key_buttons: dict[str, list[dict]] = {}  # api_key → [{button_id, stop_id, route_type, direction_id}, ...]
+
 # --- Live Stealth Updates ---
 # Subscription registry: websocket -> list of button configs with stop/direction info
 _stealth_subscriptions: dict[WebSocket, list[dict]] = {}
@@ -246,17 +251,17 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
 
 async def broadcast_stealth_updates():
     """
-    Background task that broadcasts departure updates to all subscribed clients every 5 seconds.
+    Background task that broadcasts departure updates to all subscribed clients every 15 seconds.
+    Also pre-warms cache for all registered API key buttons (even disconnected clients).
     """
     while True:
         await asyncio.sleep(STEALTH_BROADCAST_INTERVAL)
         
-        if not _stealth_subscriptions:
-            continue
-        
-        # Collect all unique stop/direction combos across all clients
+        # Collect all unique stop/direction combos from BOTH connected clients AND registry
         all_buttons: dict[tuple, list[tuple[WebSocket, int]]] = {}  # cache_key -> [(ws, button_id), ...]
+        registry_cache_keys: set[tuple] = set()  # Cache keys from registry (for pre-warming)
         
+        # Connected clients
         for ws, buttons in list(_stealth_subscriptions.items()):
             for btn in buttons:
                 cache_key = (btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id"))
@@ -264,13 +269,24 @@ async def broadcast_stealth_updates():
                     all_buttons[cache_key] = []
                 all_buttons[cache_key].append((ws, btn["button_id"]))
         
-        # Fetch all unique stops (with cache deduplication)
+        # Registry (for pre-warming disconnected API key buttons)
+        for api_key, buttons in _api_key_buttons.items():
+            for btn in buttons:
+                cache_key = (btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id"))
+                registry_cache_keys.add(cache_key)
+        
+        # Skip if nothing to do
+        if not all_buttons and not registry_cache_keys:
+            continue
+        
+        # Fetch all unique stops (connected clients + registry)
+        all_cache_keys = set(all_buttons.keys()) | registry_cache_keys
         fetch_results: dict[tuple, dict] = {}
-        for cache_key in all_buttons:
+        for cache_key in all_cache_keys:
             stop_id, route_type, direction_id = cache_key
             fetch_results[cache_key] = await fetch_departure_for_button(stop_id, route_type, direction_id)
         
-        # Build per-client update messages
+        # Build per-client update messages (only for connected clients)
         client_updates: dict[WebSocket, list[dict]] = {}
         for cache_key, clients in all_buttons.items():
             result = fetch_results[cache_key]
@@ -283,7 +299,7 @@ async def broadcast_stealth_updates():
                     "departures": departures  # Array of {minutes, platform, departure_time}
                 })
         
-        # Broadcast to each client
+        # Broadcast to each connected client
         disconnected = []
         for ws, updates in client_updates.items():
             try:
@@ -320,6 +336,13 @@ def stop_broadcast_task():
 
 
 # --- Endpoints ---
+
+
+@app.on_event("startup")
+async def startup_start_broadcast():
+    """Start the broadcast task on server startup to keep registry buttons warm."""
+    start_broadcast_task()
+    print("Broadcast task started on startup - registry buttons will stay warm")
 
 
 
@@ -641,8 +664,14 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     })
             
             if parsed_buttons:
-                # Register subscription
+                # Register subscription for connected client
                 _stealth_subscriptions[websocket] = parsed_buttons
+                
+                # Update API key registry (for pre-warming after disconnect/reconnect)
+                if api_key:
+                    _api_key_buttons[api_key] = parsed_buttons
+                    print(f"Registry updated for {api_key[:8]}... with {len(parsed_buttons)} buttons")
+                
                 start_broadcast_task()
                 print(f"Client connected with {len(parsed_buttons)} buttons in URL")
                 
@@ -887,6 +916,19 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     "direction_id": message.get("direction_id"),
                     "direction_name": message.get("direction_name")
                 }
+                
+                # Update API key registry (for pre-warming cache)
+                if api_key:
+                    existing = _api_key_buttons.get(api_key, [])
+                    # Merge or replace by button_id
+                    updated = [b for b in existing if b.get("button_id") != button_id]
+                    updated.append({
+                        "button_id": button_id,
+                        "stop_id": message.get("stop_id"),
+                        "route_type": message.get("route_type", RouteType.TRAIN),
+                        "direction_id": message.get("direction_id")
+                    })
+                    _api_key_buttons[api_key] = updated
                 
                 await websocket.send_json({
                     "type": "button_set",

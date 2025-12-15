@@ -15,7 +15,7 @@ python -m uvicorn server.api:app --host 0.0.0.0 --port 8000 --reload
 
 ### Run Tests
 ```bash
-pytest tests/ -v
+pytest tools/ -v
 ```
 
 ### Run the MCP Server (for Claude Desktop integration)
@@ -28,9 +28,15 @@ python -m server.mcp_server
 pip install -r server/requirements.txt
 ```
 
-### Deploy to Production
+### Deploy server code to Production
 ```bash
+#git commit and push first!
 ssh root@web01.waifu.trash "cd /srv/http/ptv-notify && git pull && systemctl restart netcavy-ptv"
+```
+
+### Deploy app to watch and read code
+```bash
+pebble build && pebble install --phone=10.1.0.244 --logs
 ```
 
 ## Architecture
@@ -234,10 +240,23 @@ The `buttons` param enables instant departure data push on connection (no waitin
 **Server -> Client:**
 - `result`: Agent response
 - `stealth_result`: Vibration pattern + message + platform `{type: "stealth_result", minutes: 5, platform: "2", ...}`
-- `stealth_update`: Live broadcast (every 5s) `{type: "stealth_update", updates: [{button_id, minutes, platform, message}, ...]}`
+- `stealth_update`: Live broadcast (every 15s) `{type: "stealth_update", updates: [{button_id, minutes, platform, message}, ...]}`
 - `stealth_subscribed`: Confirmation of subscription `{type: "stealth_subscribed", buttons: 3}`
 - `button_set`: Confirmation of button update `{type: "button_set", button_id: 1, config: ...}`
 - `buttons`: All button configs
+
+### Dynamic Button Registry & Cache Pre-Warming
+
+The server maintains an **API key → button registry** (`_api_key_buttons`) that enables instant departure data on reconnection:
+
+1. **First connect** (cold): Pebble sends buttons in URL → server fetches PTV API (~1-2s per button) → registry learns buttons
+2. **Background loop** (every 15s): Pre-warms cache for ALL registered buttons (connected + disconnected)
+3. **Subsequent connects**: Cache hit → instant response
+
+**How registry is populated:**
+- WebSocket connect with `?buttons=...` → registry updated
+- LLM `set_button` call → registry updated
+- Both trigger background loop to warm the new button
 
 ## Key Behaviors
 
@@ -260,9 +279,9 @@ Minutes encoded as haptic patterns:
 ## Testing
 
 Tests hit the real Groq API (no mocking). Key test files:
-- `tests/test_conversations.py` - Agent scenarios, multi-turn, tool selection
-- `tests/conftest.py` - Loads `.env` for tests
-- `test_latency.py` - End-to-end latency testing for voice pipeline and speculative execution
+- `tools/test_conversations.py` - Agent scenarios, multi-turn, tool selection
+- `tools/conftest.py` - Loads `.env` for tests
+- `tools/test_latency.py` - End-to-end latency testing for voice pipeline and speculative execution
 
 Guardrail tests skip when `ENABLE_GUARDRAIL = False`.
 
