@@ -131,6 +131,12 @@ function getPatternDuration(pattern) {
 // Live departure data from server broadcasts: {1: {departures: [{minutes, platform, departure_time}, ...]}, ...}
 var buttonDepartures = {};
 
+// Station watching mode - keep panel open and vibrate on minute changes
+var watchingButtonIndex = null;  // Which button is being watched (null = not watching)
+var lastVibratedMinutes = null;  // Last minute count we vibrated (to detect changes)
+var lastDepartureTime = null;    // Track departure_time to detect train transitions
+var watchingRouteText = null;    // Current route text for display (stored globally for stealth_update)
+
 // Get the current valid departure from the cached array
 // Auto-switches to next departure when first train has passed
 function getCurrentDeparture(buttonIndex) {
@@ -366,9 +372,8 @@ function startVoiceQuery() {
 
 // Countdown timer for live seconds display
 var countdownTimer = null;
-var autoHideTimer = null;
 
-// Stealth query - uses cached live departure data, no server call needed
+// Stealth query - uses cached live departure data, opens station watching mode
 function runStealthQuery(buttonIndex) {
     var name = Settings.option('btn' + buttonIndex + '_name');
     var destName = Settings.option('btn' + buttonIndex + '_dest_name');
@@ -380,105 +385,31 @@ function runStealthQuery(buttonIndex) {
         countdownTimer = null;
     }
 
-    // Clear any pending auto-hide from previous activity
-    if (autoHideTimer) {
-        console.log('Cancelling pending auto-hide timer');
-        clearTimeout(autoHideTimer);
-        autoHideTimer = null;
-    }
-
     if (!stopId) {
         Vibe.vibrate('short');
         return;
     }
 
+    // Enter station watching mode
+    watchingButtonIndex = buttonIndex;
+
     // Use cached live departure data - auto-switches between departures
     var dep = getCurrentDeparture(buttonIndex);
 
-    // Abbreviate station names for display
-    function shortName(n) {
+    // Clean station names (remove " Station" suffix but keep full name)
+    function cleanName(n) {
         if (!n) return '?';
-        n = n.replace(/ Station$/i, '');
-        if (n.length > 10) n = n.substring(0, 10);
-        return n;
+        return n.replace(/ Station$/i, '');
     }
 
-    // Format countdown body text
-    function formatCountdown() {
-        if (!dep || !dep.departure_time) return null;
-
-        // Parse UTC time - server sends ISO format like "2025-12-14T07:59:00+00:00"
-        // Some JS engines don't parse +00:00 correctly, so normalize to Z
-        var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
-        var depTime = new Date(timeStr);
-        var now = new Date();
-        var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
-
-        // Debug: log if something looks wrong
-        if (diffSec < -60 || diffSec > 86400) {
-            console.log('Time calc may be wrong: departure=' + dep.departure_time +
-                ', parsed=' + depTime.toISOString() + ', now=' + now.toISOString() +
-                ', diff=' + diffSec + 's');
-        }
-
-        var bodyText = '';
-        if (diffSec <= 0) {
-            bodyText = 'Arriving NOW!';
-        } else {
-            var mins = Math.floor(diffSec / 60);
-            var secs = diffSec % 60;
-            if (mins > 0) {
-                bodyText = mins + ' min ' + secs + ' sec';
-            } else {
-                bodyText = secs + ' seconds';
-            }
-        }
-
-        if (dep.platform) {
-            bodyText += '\nPlatform ' + dep.platform;
-        }
-        return bodyText;
-    }
-
-    // Build title: "Narre > City"
-    var title = shortName(name) + ' > ' + shortName(destName);
-
-    loadingCard.title(title);
-
-    // Default hide delay - 5 seconds minimum
-    var hideDelay = 5000;
+    // Build route text for body (stored globally for stealth_update handler)
+    watchingRouteText = cleanName(name) + ' > ' + cleanName(destName);
 
     if (dep && (dep.departure_time || dep.minutes !== null)) {
-        loadingCard.subtitle('');
+        // Update display with route info
+        updateWatchingDisplay(dep, watchingRouteText);
 
-        // Initial update
-        var bodyText = formatCountdown();
-        if (!bodyText) {
-            // Fallback if no departure_time
-            if (dep.minutes !== null && dep.minutes !== undefined) {
-                bodyText = dep.minutes === 0 ? 'Arriving NOW!' : dep.minutes + ' minute' + (dep.minutes !== 1 ? 's' : '');
-            } else {
-                bodyText = 'Loading...';
-            }
-            if (dep.platform) {
-                bodyText += '\nPlatform ' + dep.platform;
-            }
-        }
-        loadingCard.body(bodyText);
-
-        // Start live countdown timer (update every second)
-        if (dep.departure_time) {
-            countdownTimer = setInterval(function () {
-                var newText = formatCountdown();
-                if (newText) {
-                    loadingCard.body(newText);
-                }
-            }, 1000);
-        }
-
-        // Calculate vibration pattern locally (instant feedback, no network call)
-        // Use fresh minutes calculated from departure_time, not stale cached minutes
-        var pattern = null;
+        // Calculate fresh minutes from departure_time
         var freshMinutes = null;
         if (dep.departure_time) {
             var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
@@ -490,43 +421,128 @@ function runStealthQuery(buttonIndex) {
             freshMinutes = dep.minutes;
         }
 
+        // Update display
+        updateWatchingDisplay(dep, watchingRouteText);
+
+        // Start live countdown timer (update every second, vibrate on minute change)
+        if (dep.departure_time) {
+            countdownTimer = setInterval(function () {
+                var currentDep = getCurrentDeparture(watchingButtonIndex);
+                if (currentDep) {
+                    updateWatchingDisplay(currentDep, watchingRouteText);
+
+                    // Check for minute change - vibrate instantly when crossing minute boundary
+                    if (currentDep.departure_time) {
+                        var timeStr = currentDep.departure_time.replace(/\+00:00$/, 'Z');
+                        var depTime = new Date(timeStr);
+                        var now = new Date();
+                        var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
+                        var currentMinutes = Math.max(0, Math.floor(diffSec / 60));
+
+                        // Check if this is a new train (departure_time changed)
+                        var isNewTrain = lastDepartureTime && currentDep.departure_time !== lastDepartureTime;
+
+                        if (isNewTrain) {
+                            // Train transition - vibrate the new train's time
+                            console.log('[Watch] New train detected: ' + currentMinutes + ' mins');
+                            lastVibratedMinutes = currentMinutes;
+                            lastDepartureTime = currentDep.departure_time;
+                            playVibrationPattern(calculateVibration(currentMinutes));
+                        } else if (lastVibratedMinutes !== null && currentMinutes < lastVibratedMinutes) {
+                            // Minute decreased - vibrate!
+                            console.log('[Watch] Minute boundary: ' + lastVibratedMinutes + ' -> ' + currentMinutes);
+                            lastVibratedMinutes = currentMinutes;
+                            playVibrationPattern(calculateVibration(currentMinutes));
+                        }
+                    }
+                }
+            }, 1000);
+        }
+
+        // Initial vibration
         if (freshMinutes !== null) {
-            console.log('freshMinutes calculated: ' + freshMinutes);
-            pattern = calculateVibration(freshMinutes);
-            // Wait for vibration to finish + 200ms buffer, or 5s minimum
-            var patDur = getPatternDuration(pattern);
-            hideDelay = Math.max(5000, patDur + 200);
-            console.log('calculated hideDelay: ' + hideDelay + ' (pattern duration: ' + patDur + ')');
-            playVibrationPattern(pattern);
+            console.log('[Watch] Starting watch, initial minutes: ' + freshMinutes);
+            lastVibratedMinutes = freshMinutes;
+            lastDepartureTime = dep.departure_time;
+            playVibrationPattern(calculateVibration(freshMinutes));
         } else {
-            console.log('freshMinutes is null, short vibe');
+            lastVibratedMinutes = null;
+            lastDepartureTime = null;
             Vibe.vibrate('short');
         }
     } else {
+        loadingCard.title('Waiting...');
         loadingCard.subtitle('');
-        loadingCard.body('No data yet\nWaiting for update...');
+        loadingCard.body(watchingRouteText);
+        lastVibratedMinutes = null;
+        lastDepartureTime = null;
         Vibe.vibrate('short');
     }
 
     loadingCard.show();
-
-    // Auto-hide after vibration completes (or 5s minimum)
-    console.log('Scheduling auto-hide in ' + hideDelay + 'ms');
-    autoHideTimer = setTimeout(function () {
-        console.log('Auto-hiding card now');
-        autoHideTimer = null;
-        if (countdownTimer) {
-            clearInterval(countdownTimer);
-            countdownTimer = null;
-        }
-        // Clear any ongoing vibration pattern
-        if (vibeTimer) {
-            clearTimeout(vibeTimer);
-            vibeTimer = null;
-        }
-        loadingCard.hide();
-    }, hideDelay);
+    // Panel stays open until user presses back - no auto-hide!
 }
+
+// Update the watching display with current departure info
+// Layout: title=timer (biggest), subtitle=platform, body=route
+function updateWatchingDisplay(dep, routeText) {
+    if (!dep) {
+        loadingCard.title('Waiting...');
+        loadingCard.subtitle('');
+        loadingCard.body(routeText || '');
+        return;
+    }
+
+    var timerText = '';
+    if (dep.departure_time) {
+        var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
+        var depTime = new Date(timeStr);
+        var now = new Date();
+        var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
+
+        if (diffSec <= 0) {
+            timerText = 'NOW!';
+        } else {
+            var mins = Math.floor(diffSec / 60);
+            var secs = diffSec % 60;
+            if (mins > 0) {
+                timerText = mins + ':' + (secs < 10 ? '0' : '') + secs;
+            } else {
+                timerText = secs + 's';
+            }
+        }
+    } else if (dep.minutes !== null && dep.minutes !== undefined) {
+        timerText = dep.minutes === 0 ? 'NOW!' : dep.minutes + ' min';
+    } else {
+        timerText = '...';
+    }
+
+    loadingCard.title(timerText);
+    loadingCard.subtitle(dep.platform ? 'Platform ' + dep.platform : '');
+    loadingCard.body(routeText || '');
+}
+
+// Stop station watching mode
+function stopWatching() {
+    console.log('[Watch] Stopping watch mode');
+    watchingButtonIndex = null;
+    lastVibratedMinutes = null;
+    lastDepartureTime = null;
+    if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+    }
+    if (vibeTimer) {
+        clearTimeout(vibeTimer);
+        vibeTimer = null;
+    }
+    loadingCard.hide();
+}
+
+// Back button handler for watching card
+loadingCard.on('click', 'back', function () {
+    stopWatching();
+});
 
 // Handle query response
 function handleQueryResponse(card, response) {
@@ -733,6 +749,46 @@ function connectWebSocket() {
                     buttonDepartures[u.button_id] = {
                         departures: u.departures || []  // Array of {minutes, platform, departure_time}
                     };
+
+                    // Station watching mode: vibrate when minutes change
+                    if (watchingButtonIndex === u.button_id) {
+                        var dep = getCurrentDeparture(u.button_id);
+                        if (dep) {
+                            // Calculate fresh minutes
+                            var freshMinutes = null;
+                            if (dep.departure_time) {
+                                var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
+                                var depTime = new Date(timeStr);
+                                var now = new Date();
+                                var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
+                                freshMinutes = Math.max(0, Math.floor(diffSec / 60));
+                            } else if (dep.minutes !== null) {
+                                freshMinutes = dep.minutes;
+                            }
+
+                            if (freshMinutes !== null) {
+                                // Check if this is a new train (departure_time changed)
+                                var isNewTrain = lastDepartureTime && dep.departure_time !== lastDepartureTime;
+                                // Check if minutes decreased OR we switched to a new train
+                                var shouldVibrate = (lastVibratedMinutes !== null && freshMinutes < lastVibratedMinutes) || isNewTrain;
+
+                                if (shouldVibrate) {
+                                    console.log('[Watch] Minute change: ' + lastVibratedMinutes + ' -> ' + freshMinutes + (isNewTrain ? ' (new train)' : ''));
+                                    lastVibratedMinutes = freshMinutes;
+                                    lastDepartureTime = dep.departure_time;
+                                    playVibrationPattern(calculateVibration(freshMinutes));
+                                } else if (lastVibratedMinutes === null) {
+                                    // First data after "waiting" state
+                                    console.log('[Watch] First data received: ' + freshMinutes + ' mins');
+                                    lastVibratedMinutes = freshMinutes;
+                                    lastDepartureTime = dep.departure_time;
+                                    playVibrationPattern(calculateVibration(freshMinutes));
+                                }
+                            }
+                            // Update display
+                            updateWatchingDisplay(dep, watchingRouteText);
+                        }
+                    }
                 }
                 // Refresh menu to show updated times
                 mainMenu.items(0, buildMenuItems());
@@ -744,7 +800,10 @@ function connectWebSocket() {
                         clearTimeout(menuShowTimer);
                         menuShowTimer = null;
                     }
-                    loadingCard.hide();
+                    // Don't hide loadingCard if we're in watching mode
+                    if (watchingButtonIndex === null) {
+                        loadingCard.hide();
+                    }
                     mainMenu.show();
                     isFirstLoad = false;
                 }
