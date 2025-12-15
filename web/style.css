@@ -100,8 +100,8 @@ body {
     background-color: #555;
 }
 
-/* Stealth buttons with title/subtitle */
-.stealth-btn {
+/* Favourite buttons with title/subtitle */
+.favourite-btn {
     background-color: #000;
     color: #fff;
     border: none;
@@ -115,11 +115,11 @@ body {
     font-family: inherit;
 }
 
-.stealth-btn:hover {
+.favourite-btn:hover {
     background-color: #333;
 }
 
-.stealth-btn:active {
+.favourite-btn:active {
     background-color: #555;
 }
 
