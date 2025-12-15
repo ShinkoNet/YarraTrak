@@ -461,14 +461,26 @@ function runFavouriteQuery(buttonIndex) {
     // Use cached live departure data - auto-switches between departures
     var dep = getCurrentDeparture(buttonIndex);
 
-    // Clean station names (remove " Station" suffix but keep full name)
-    function cleanName(n) {
+    // Clean station names for watching window (must fit ~2 lines)
+    // Names are pre-cleaned by settings.html, we just ensure they're short enough
+    function shortenForWatch(n, maxLen) {
         if (!n) return '?';
-        return n.replace(/ Station$/i, '');
+        maxLen = maxLen || 14;
+        // If still too long, take first 2 chars of first word + rest
+        if (n.length > maxLen) {
+            var words = n.split(' ');
+            if (words.length > 1) {
+                n = words[0].substring(0, 2) + ' ' + words.slice(1).join(' ');
+            }
+            if (n.length > maxLen) {
+                n = n.substring(0, maxLen - 2) + '..';
+            }
+        }
+        return n;
     }
 
     // Build route text for body (stored globally for favourite_update handler)
-    watchingRouteText = cleanName(name) + ' > ' + cleanName(destName);
+    watchingRouteText = shortenForWatch(name) + ' > ' + shortenForWatch(destName);
 
     if (dep && (dep.departure_time || dep.minutes !== null)) {
         // Update display with route info

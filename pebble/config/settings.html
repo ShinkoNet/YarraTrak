@@ -338,11 +338,11 @@
             routeType = routeType || 0;  // Default to train
             var isTrain = (routeType === 0 || routeType === 3);
 
-            // Remove common verbose suffixes (order matters - most specific first)
-            name = name.replace(/ Railway Station$/i, '');
-            name = name.replace(/ Station$/i, '');
-            name = name.replace(/ Tram Stop$/i, '');
-            name = name.replace(/ Stop$/i, '');
+            // Remove verbose station/stop identifiers (anywhere in string, not just end)
+            name = name.replace(/ Railway Station/gi, '');
+            name = name.replace(/ Station/gi, '');
+            name = name.replace(/ Tram Stop/gi, '');
+            name = name.replace(/ Stop/gi, '');
 
             // Abbreviate common street suffixes
             name = name.replace(/Street/gi, 'St');
