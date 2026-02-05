@@ -185,6 +185,19 @@
               "seq": 7
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 29
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 7
+            }
+          }
         }
       }
     },
@@ -223,19 +236,6 @@
       "zone": "Zone 1",
       "free_zone": false,
       "routes": {
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 19
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 13
-            }
-          }
-        },
         "6": {
           "name": "Frankston",
           "dirs": {
@@ -246,19 +246,6 @@
             "5": {
               "name": "Frankston",
               "seq": 7
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 24
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 13
             }
           }
         }
@@ -512,6 +499,19 @@
               "seq": 32
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 32
+            }
+          }
         }
       }
     },
@@ -609,6 +609,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 31
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 31
             }
           }
@@ -1054,6 +1067,19 @@
               "seq": 34
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 34
+            }
+          }
         }
       }
     },
@@ -1089,6 +1115,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 17
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 15
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 17
             }
           }
@@ -1165,6 +1204,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 16
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 16
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 16
             }
           }
@@ -1291,6 +1343,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 22
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 10
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 22
             }
           }
@@ -1470,6 +1535,19 @@
               "seq": 31
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 31
+            }
+          }
         }
       }
     },
@@ -1580,6 +1658,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 28
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 28
             }
           }
@@ -1844,6 +1935,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 36
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 1
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 36
             }
           }
@@ -2163,19 +2267,6 @@
             }
           }
         },
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 26
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 3
-            }
-          }
-        },
         "5": {
           "name": "Mernda",
           "dirs": {
@@ -2225,32 +2316,6 @@
             "8": {
               "name": "Lilydale",
               "seq": 3
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 31
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 3
-            }
-          }
-        },
-        "14": {
-          "name": "Sunbury",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 14
-            },
-            "14": {
-              "name": "Sunbury",
-              "seq": 1
             }
           }
         },
@@ -2925,6 +2990,19 @@
               "seq": 29
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 29
+            }
+          }
         }
       }
     },
@@ -3013,19 +3091,6 @@
       "zone": "Zone 1",
       "free_zone": false,
       "routes": {
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 21
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 11
-            }
-          }
-        },
         "6": {
           "name": "Frankston",
           "dirs": {
@@ -3036,19 +3101,6 @@
             "5": {
               "name": "Frankston",
               "seq": 5
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 26
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 11
             }
           }
         }
@@ -3353,6 +3405,19 @@
               "seq": 19
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 13
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 19
+            }
+          }
         }
       }
     },
@@ -3388,6 +3453,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 21
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 11
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 21
             }
           }
@@ -3842,6 +3920,19 @@
               "seq": 29
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 3
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 29
+            }
+          }
         }
       }
     },
@@ -4020,19 +4111,6 @@
             }
           }
         },
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 25
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 2
-            }
-          }
-        },
         "5": {
           "name": "Mernda",
           "dirs": {
@@ -4081,32 +4159,6 @@
             },
             "8": {
               "name": "Lilydale",
-              "seq": 2
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 30
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 2
-            }
-          }
-        },
-        "14": {
-          "name": "Sunbury",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 15
-            },
-            "14": {
-              "name": "Sunbury",
               "seq": 2
             }
           }
@@ -4183,6 +4235,19 @@
             },
             "3": {
               "name": "Cranbourne",
+              "seq": 30
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 30
             }
           }
@@ -4612,6 +4677,19 @@
               "seq": 18
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 14
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 18
+            }
+          }
         }
       }
     },
@@ -4634,6 +4712,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 30
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 30
             }
           }
@@ -4735,6 +4826,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 26
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 6
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 26
             }
           }
@@ -5042,6 +5146,19 @@
               "seq": 20
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 12
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 20
+            }
+          }
         }
       }
     },
@@ -5064,6 +5181,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 33
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 4
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 33
             }
           }
@@ -5114,6 +5244,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 35
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 2
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 35
             }
           }
@@ -5219,19 +5362,6 @@
             }
           }
         },
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 24
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 1
-            }
-          }
-        },
         "5": {
           "name": "Mernda",
           "dirs": {
@@ -5281,32 +5411,6 @@
             "8": {
               "name": "Lilydale",
               "seq": 1
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 29
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 1
-            }
-          }
-        },
-        "14": {
-          "name": "Sunbury",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 16
-            },
-            "14": {
-              "name": "Sunbury",
-              "seq": 3
             }
           }
         },
@@ -5524,19 +5628,6 @@
             }
           }
         },
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 23
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 9
-            }
-          }
-        },
         "6": {
           "name": "Frankston",
           "dirs": {
@@ -5573,19 +5664,6 @@
             "8": {
               "name": "Lilydale",
               "seq": 6
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 28
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 9
             }
           }
         },
@@ -5877,6 +5955,19 @@
               "seq": 25
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 7
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 25
+            }
+          }
         }
       }
     },
@@ -6091,19 +6182,6 @@
       "zone": "Zone 1",
       "free_zone": false,
       "routes": {
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 22
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 10
-            }
-          }
-        },
         "6": {
           "name": "Frankston",
           "dirs": {
@@ -6114,19 +6192,6 @@
             "5": {
               "name": "Frankston",
               "seq": 4
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 27
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 10
             }
           }
         },
@@ -6194,19 +6259,6 @@
             }
           }
         },
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 27
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 4
-            }
-          }
-        },
         "5": {
           "name": "Mernda",
           "dirs": {
@@ -6256,32 +6308,6 @@
             "8": {
               "name": "Lilydale",
               "seq": 4
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 32
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 4
-            }
-          }
-        },
-        "14": {
-          "name": "Sunbury",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 17
-            },
-            "14": {
-              "name": "Sunbury",
-              "seq": 5
             }
           }
         },
@@ -6434,6 +6460,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 24
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 8
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 24
             }
           }
@@ -6726,19 +6765,6 @@
       "zone": "Zone 1",
       "free_zone": false,
       "routes": {
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 20
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 12
-            }
-          }
-        },
         "6": {
           "name": "Frankston",
           "dirs": {
@@ -6749,19 +6775,6 @@
             "5": {
               "name": "Frankston",
               "seq": 6
-            }
-          }
-        },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 25
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 12
             }
           }
         }
@@ -7242,6 +7255,19 @@
               "seq": 23
             }
           }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 9
+            },
+            "14": {
+              "name": "Sunbury",
+              "seq": 23
+            }
+          }
         }
       }
     },
@@ -7452,6 +7478,19 @@
             },
             "10": {
               "name": "Pakenham",
+              "seq": 27
+            }
+          }
+        },
+        "14": {
+          "name": "Sunbury",
+          "dirs": {
+            "1": {
+              "name": "City",
+              "seq": 5
+            },
+            "14": {
+              "name": "Sunbury",
               "seq": 27
             }
           }
