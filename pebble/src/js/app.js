@@ -333,15 +333,31 @@ function buildMenuItems() {
             var dep = getCurrentDeparture(i);
             var subtitle = 'Waiting...';
             if (dep) {
-                if (dep.minutes === 0) {
+                var roundedMinutes = dep.minutes;
+
+                // Recalculate precision minutes if we have departure_time
+                if (dep.departure_time) {
+                    var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
+                    var depTime = new Date(timeStr);
+                    var now = new Date();
+                    var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
+                    roundedMinutes = Math.max(0, Math.floor(diffSec / 60));
+
+                    // Unified rounding logic: >= 30s rounds UP
+                    if (diffSec % 60 >= 30) {
+                        roundedMinutes++;
+                    }
+                }
+
+                if (roundedMinutes === 0) {
                     subtitle = 'Now';
-                } else if (dep.minutes !== null && dep.minutes !== undefined) {
-                    if (dep.minutes >= 60) {
-                        var hrs = Math.floor(dep.minutes / 60);
-                        var mins = dep.minutes % 60;
+                } else if (roundedMinutes !== null && roundedMinutes !== undefined) {
+                    if (roundedMinutes >= 60) {
+                        var hrs = Math.floor(roundedMinutes / 60);
+                        var mins = roundedMinutes % 60;
                         subtitle = hrs + 'hr ' + mins + 'm';
                     } else {
-                        subtitle = dep.minutes + ' min';
+                        subtitle = roundedMinutes + ' min';
                     }
                 }
                 if (dep.platform) {
