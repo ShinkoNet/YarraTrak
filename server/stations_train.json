@@ -2381,19 +2381,6 @@
             }
           }
         },
-        "4": {
-          "name": "Cranbourne",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 28
-            },
-            "3": {
-              "name": "Cranbourne",
-              "seq": 8
-            }
-          }
-        },
         "5": {
           "name": "Mernda",
           "dirs": {
@@ -2459,19 +2446,6 @@
             }
           }
         },
-        "11": {
-          "name": "Pakenham",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 33
-            },
-            "10": {
-              "name": "Pakenham",
-              "seq": 8
-            }
-          }
-        },
         "12": {
           "name": "Sandringham",
           "dirs": {
@@ -2482,19 +2456,6 @@
             "12": {
               "name": "Sandringham",
               "seq": 1
-            }
-          }
-        },
-        "14": {
-          "name": "Sunbury",
-          "dirs": {
-            "1": {
-              "name": "City",
-              "seq": 18
-            },
-            "14": {
-              "name": "Sunbury",
-              "seq": 4
             }
           }
         },
