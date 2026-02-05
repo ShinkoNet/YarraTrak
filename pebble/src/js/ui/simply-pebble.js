@@ -23,49 +23,49 @@ var simply = require('ui/simply');
 
 var state;
 
-var BoolType = function(x) {
+var BoolType = function (x) {
   return x ? 1 : 0;
 };
 
-var StringType = function(x) {
+var StringType = function (x) {
   return (x === undefined) ? '' : '' + x;
 };
 
-var UTF8ByteLength = function(x) {
+var UTF8ByteLength = function (x) {
   return unescape(encodeURIComponent(x)).length;
 };
 
-var EnumerableType = function(x) {
+var EnumerableType = function (x) {
   if (x && x.hasOwnProperty('length')) {
     return x.length;
   }
   return x ? Number(x) : 0;
 };
 
-var StringLengthType = function(x) {
+var StringLengthType = function (x) {
   return UTF8ByteLength(StringType(x));
 };
 
-var TimeType = function(x) {
+var TimeType = function (x) {
   if (x instanceof Date) {
     x = x.getTime() / 1000;
   }
   return (x ? Number(x) : 0) + state.timeOffset;
 };
 
-var ImageType = function(x) {
+var ImageType = function (x) {
   if (x && typeof x !== 'number') {
     return ImageService.resolve(x);
   }
   return x ? Number(x) : 0;
 };
 
-var PositionType = function(x) {
+var PositionType = function (x) {
   this.positionX(x.x);
   this.positionY(x.y);
 };
 
-var SizeType = function(x) {
+var SizeType = function (x) {
   this.sizeW(x.x);
   this.sizeH(x.y);
 };
@@ -139,7 +139,7 @@ var namedColorMap = {
   'clearWhite': 0x3F,
 };
 
-var namedColorMapUpper = (function() {
+var namedColorMapUpper = (function () {
   var map = {};
   for (var k in namedColorMap) {
     map[k.toUpperCase()] = namedColorMap[k];
@@ -147,7 +147,7 @@ var namedColorMapUpper = (function() {
   return map;
 })();
 
-var ColorType = function(color) {
+var ColorType = function (color) {
   if (typeof color === 'string') {
     var name = myutil.toCConstantName(color);
     name = name.replace(/_+/g, '');
@@ -162,7 +162,7 @@ var ColorType = function(color) {
   return argb;
 };
 
-var Font = function(x) {
+var Font = function (x) {
   var id = Resource.getId(x);
   if (id) {
     return id;
@@ -175,76 +175,76 @@ var Font = function(x) {
   return x;
 };
 
-var TextOverflowMode = function(x) {
+var TextOverflowMode = function (x) {
   switch (x) {
-    case 'wrap'    : return 0;
+    case 'wrap': return 0;
     case 'ellipsis': return 1;
-    case 'fill'    : return 2;
+    case 'fill': return 2;
   }
   return Number(x);
 };
 
-var TextAlignment = function(x) {
+var TextAlignment = function (x) {
   switch (x) {
-    case 'left'  : return 0;
+    case 'left': return 0;
     case 'center': return 1;
-    case 'right' : return 2;
+    case 'right': return 2;
   }
   return Number(x);
 };
 
-var TimeUnits = function(x) {
+var TimeUnits = function (x) {
   var z = 0;
   x = myutil.toObject(x, true);
   for (var k in x) {
     switch (k) {
       case 'seconds': z |= (1 << 0); break;
       case 'minutes': z |= (1 << 1); break;
-      case 'hours'  : z |= (1 << 2); break;
-      case 'days'   : z |= (1 << 3); break;
-      case 'months' : z |= (1 << 4); break;
-      case 'years'  : z |= (1 << 5); break;
+      case 'hours': z |= (1 << 2); break;
+      case 'days': z |= (1 << 3); break;
+      case 'months': z |= (1 << 4); break;
+      case 'years': z |= (1 << 5); break;
     }
   }
   return z;
 };
 
-var CompositingOp = function(x) {
+var CompositingOp = function (x) {
   switch (x) {
     case 'assign':
     case 'normal': return 0;
     case 'assignInverted':
     case 'invert': return 1;
-    case 'or'    : return 2;
-    case 'and'   : return 3;
-    case 'clear' : return 4;
-    case 'set'   : return 5;
+    case 'or': return 2;
+    case 'and': return 3;
+    case 'clear': return 4;
+    case 'set': return 5;
   }
   return Number(x);
 };
 
-var AnimationCurve = function(x) {
+var AnimationCurve = function (x) {
   switch (x) {
-    case 'linear'   : return 0;
-    case 'easeIn'   : return 1;
-    case 'easeOut'  : return 2;
+    case 'linear': return 0;
+    case 'easeIn': return 1;
+    case 'easeOut': return 2;
     case 'easeInOut': return 3;
   }
   return Number(x);
 };
 
-var MenuRowAlign = function(x) {
-  switch(x) {
-    case 'none'   : return 0;
-    case 'center' : return 1;
-    case 'top'    : return 2;
-    case 'bottom' : return 3;
+var MenuRowAlign = function (x) {
+  switch (x) {
+    case 'none': return 0;
+    case 'center': return 1;
+    case 'top': return 2;
+    case 'bottom': return 3;
   }
   return x ? Number(x) : 0;
 };
 
-var makeArrayType = function(types) {
-  return function(x) {
+var makeArrayType = function (types) {
+  return function (x) {
     var index = types.indexOf(x);
     if (index !== -1) {
       return index;
@@ -253,8 +253,8 @@ var makeArrayType = function(types) {
   };
 };
 
-var makeFlagsType = function(types) {
-  return function(x) {
+var makeFlagsType = function (types) {
+  return function (x) {
     var z = 0;
     for (var k in x) {
       if (!x[k]) { continue; }
@@ -513,6 +513,12 @@ var VibePacket = new struct([
   ['uint8', 'type', VibeType],
 ]);
 
+var VibeCustomPacket = new struct([
+  [Packet, 'packet'],
+  ['uint8', 'count'],
+  ['data', 'durations'],
+]);
+
 var LightPacket = new struct([
   [Packet, 'packet'],
   ['uint8', 'type', LightType],
@@ -766,6 +772,7 @@ var CommandPackets = [
   CardImagePacket,
   CardStylePacket,
   VibePacket,
+  VibeCustomPacket,
   LightPacket,
   AccelPeekPacket,
   AccelConfigPacket,
@@ -816,7 +823,7 @@ var clearFlagMap = {
 
 var SimplyPebble = {};
 
-SimplyPebble.init = function() {
+SimplyPebble.init = function () {
   // Register listeners for app message communication
   Pebble.addEventListener('appmessage', SimplyPebble.onAppMessage);
 
@@ -838,7 +845,7 @@ SimplyPebble.init = function() {
 };
 
 // messagequeue is an app message queue that guarantees delivery and order
-var MessageQueue = function() {
+var MessageQueue = function () {
   this._queue = [];
   this._sending = false;
 
@@ -846,11 +853,11 @@ var MessageQueue = function() {
   this._cycle = this.cycle.bind(this);
 };
 
-MessageQueue.prototype.stop = function() {
+MessageQueue.prototype.stop = function () {
   this._sending = false;
 };
 
-MessageQueue.prototype.consume = function() {
+MessageQueue.prototype.consume = function () {
   this._queue.shift();
   if (this._queue.length === 0) {
     return this.stop();
@@ -858,15 +865,15 @@ MessageQueue.prototype.consume = function() {
   this.cycle();
 };
 
-MessageQueue.prototype.checkSent = function(message, fn) {
-  return function() {
+MessageQueue.prototype.checkSent = function (message, fn) {
+  return function () {
     if (message === this._sent) {
       fn();
     }
   }.bind(this);
 };
 
-MessageQueue.prototype.cycle = function() {
+MessageQueue.prototype.cycle = function () {
   if (!this._sending) {
     return;
   }
@@ -880,7 +887,7 @@ MessageQueue.prototype.cycle = function() {
   Pebble.sendAppMessage(head, success, failure);
 };
 
-MessageQueue.prototype.send = function(message) {
+MessageQueue.prototype.send = function (message) {
   this._queue.push(message);
   if (this._sending) {
     return;
@@ -889,7 +896,7 @@ MessageQueue.prototype.send = function(message) {
   this.cycle();
 };
 
-var toByteArray = function(packet) {
+var toByteArray = function (packet) {
   var type = CommandPackets.indexOf(packet);
   var size = Math.max(packet._size, packet._cursor);
   packet.packetType(type);
@@ -905,7 +912,7 @@ var toByteArray = function(packet) {
 };
 
 // packetqueue is a packet queue that combines multiple packets into a single packet
-var PacketQueue = function() {
+var PacketQueue = function () {
   this._message = [];
 
   this._send = this.send.bind(this);
@@ -913,7 +920,7 @@ var PacketQueue = function() {
 
 PacketQueue.prototype._maxPayloadSize = (Platform.version() === 'aplite' ? 1024 : 2044) - 32;
 
-PacketQueue.prototype.add = function(packet) {
+PacketQueue.prototype.add = function (packet) {
   var byteArray = toByteArray(packet);
   if (this._message.length + byteArray.length > this._maxPayloadSize) {
     this.send();
@@ -923,7 +930,7 @@ PacketQueue.prototype.add = function(packet) {
   this._timeout = setTimeout(this._send, 0);
 };
 
-PacketQueue.prototype.send = function() {
+PacketQueue.prototype.send = function () {
   if (this._message.length === 0) {
     return;
   }
@@ -931,7 +938,7 @@ PacketQueue.prototype.send = function() {
   this._message = [];
 };
 
-SimplyPebble.sendMultiPacket = function(packet) {
+SimplyPebble.sendMultiPacket = function (packet) {
   var byteArray = toByteArray(packet);
   var totalSize = byteArray.length;
   var segmentSize = state.packetQueue._maxPayloadSize - Packet._size;
@@ -943,7 +950,7 @@ SimplyPebble.sendMultiPacket = function(packet) {
   }
 };
 
-SimplyPebble.sendPacket = function(packet) {
+SimplyPebble.sendPacket = function (packet) {
   if (packet._cursor < state.packetQueue._maxPayloadSize) {
     state.packetQueue.add(packet);
   } else {
@@ -951,11 +958,11 @@ SimplyPebble.sendPacket = function(packet) {
   }
 };
 
-SimplyPebble.ready = function() {
+SimplyPebble.ready = function () {
   SimplyPebble.sendPacket(ReadyPacket);
 };
 
-SimplyPebble.wakeupSet = function(timestamp, cookie, notifyIfMissed) {
+SimplyPebble.wakeupSet = function (timestamp, cookie, notifyIfMissed) {
   WakeupSetPacket
     .timestamp(timestamp)
     .cookie(cookie)
@@ -963,37 +970,37 @@ SimplyPebble.wakeupSet = function(timestamp, cookie, notifyIfMissed) {
   SimplyPebble.sendPacket(WakeupSetPacket);
 };
 
-SimplyPebble.wakeupCancel = function(id) {
+SimplyPebble.wakeupCancel = function (id) {
   SimplyPebble.sendPacket(WakeupCancelPacket.id(id === 'all' ? -1 : id));
 };
 
-SimplyPebble.windowShow = function(def) {
+SimplyPebble.windowShow = function (def) {
   SimplyPebble.sendPacket(WindowShowPacket.prop(def));
 };
 
-SimplyPebble.windowHide = function(id) {
+SimplyPebble.windowHide = function (id) {
   SimplyPebble.sendPacket(WindowHidePacket.id(id));
 };
 
-SimplyPebble.windowProps = function(def) {
+SimplyPebble.windowProps = function (def) {
   WindowPropsPacket
     .prop(def)
     .backgroundColor(def.backgroundColor || 'white');
   SimplyPebble.sendPacket(WindowPropsPacket);
 };
 
-SimplyPebble.windowButtonConfig = function(def) {
+SimplyPebble.windowButtonConfig = function (def) {
   SimplyPebble.sendPacket(WindowButtonConfigPacket.buttonMask(def));
 };
 
-var toStatusDef = function(statusDef) {
+var toStatusDef = function (statusDef) {
   if (typeof statusDef === 'boolean') {
     statusDef = { status: statusDef };
   }
   return statusDef;
 };
 
-SimplyPebble.windowStatusBar = function(def) {
+SimplyPebble.windowStatusBar = function (def) {
   var statusDef = toStatusDef(def);
   WindowStatusBarPacket
     .separator(statusDef.separator || 'dotted')
@@ -1003,7 +1010,7 @@ SimplyPebble.windowStatusBar = function(def) {
   SimplyPebble.sendPacket(WindowStatusBarPacket);
 };
 
-SimplyPebble.windowStatusBarCompat = function(def) {
+SimplyPebble.windowStatusBarCompat = function (def) {
   if (typeof def.fullscreen === 'boolean') {
     SimplyPebble.windowStatusBar(!def.fullscreen);
   } else if (def.status !== undefined) {
@@ -1011,14 +1018,14 @@ SimplyPebble.windowStatusBarCompat = function(def) {
   }
 };
 
-var toActionDef = function(actionDef) {
+var toActionDef = function (actionDef) {
   if (typeof actionDef === 'boolean') {
     actionDef = { action: actionDef };
   }
   return actionDef;
 };
 
-SimplyPebble.windowActionBar = function(def) {
+SimplyPebble.windowActionBar = function (def) {
   var actionDef = toActionDef(def);
   WindowActionBarPacket
     .up(actionDef.up)
@@ -1029,11 +1036,11 @@ SimplyPebble.windowActionBar = function(def) {
   SimplyPebble.sendPacket(WindowActionBarPacket);
 };
 
-SimplyPebble.image = function(id, gbitmap) {
+SimplyPebble.image = function (id, gbitmap) {
   SimplyPebble.sendPacket(ImagePacket.id(id).prop(gbitmap));
 };
 
-var toClearFlags = function(clear) {
+var toClearFlags = function (clear) {
   if (clear === true || clear === 'all') {
     clear = ~0;
   } else if (typeof clear === 'string') {
@@ -1050,11 +1057,11 @@ var toClearFlags = function(clear) {
   return clear;
 };
 
-SimplyPebble.cardClear = function(clear) {
+SimplyPebble.cardClear = function (clear) {
   SimplyPebble.sendPacket(CardClearPacket.flags(toClearFlags(clear)));
 };
 
-SimplyPebble.cardText = function(field, text, color) {
+SimplyPebble.cardText = function (field, text, color) {
   CardTextPacket
     .index(field)
     .color(color || 'clearWhite')
@@ -1062,15 +1069,15 @@ SimplyPebble.cardText = function(field, text, color) {
   SimplyPebble.sendPacket(CardTextPacket);
 };
 
-SimplyPebble.cardImage = function(field, image) {
+SimplyPebble.cardImage = function (field, image) {
   SimplyPebble.sendPacket(CardImagePacket.index(field).image(image));
 };
 
-SimplyPebble.cardStyle = function(field, style) {
+SimplyPebble.cardStyle = function (field, style) {
   SimplyPebble.sendPacket(CardStylePacket.style(style));
 };
 
-SimplyPebble.card = function(def, clear, pushing) {
+SimplyPebble.card = function (def, clear, pushing) {
   if (arguments.length === 3) {
     SimplyPebble.windowShow({ type: 'card', pushing: pushing });
   }
@@ -1094,26 +1101,39 @@ SimplyPebble.card = function(def, clear, pushing) {
   }
 };
 
-SimplyPebble.vibe = function(type) {
+SimplyPebble.vibe = function (type) {
   SimplyPebble.sendPacket(VibePacket.type(type));
 };
 
-SimplyPebble.light = function(type) {
+SimplyPebble.vibeCustom = function (pattern) {
+  var buffer = new ArrayBuffer(pattern.length * 2);
+  var view = new DataView(buffer);
+  for (var i = 0; i < pattern.length; i++) {
+    view.setUint16(i * 2, pattern[i], true);
+  }
+
+  VibeCustomPacket
+    .count(pattern.length)
+    .durations(buffer);
+  SimplyPebble.sendPacket(VibeCustomPacket);
+};
+
+SimplyPebble.light = function (type) {
   SimplyPebble.sendPacket(LightPacket.type(type));
 };
 
 var accelListeners = [];
 
-SimplyPebble.accelPeek = function(callback) {
+SimplyPebble.accelPeek = function (callback) {
   accelListeners.push(callback);
   SimplyPebble.sendPacket(AccelPeekPacket);
 };
 
-SimplyPebble.accelConfig = function(def) {
+SimplyPebble.accelConfig = function (def) {
   SimplyPebble.sendPacket(AccelConfigPacket.prop(def));
 };
 
-SimplyPebble.voiceDictationStart = function(callback, enableConfirmation) {
+SimplyPebble.voiceDictationStart = function (callback, enableConfirmation) {
   if (Platform.version() === 'aplite') {
     // If there is no microphone, call with an error event
     callback({
@@ -1137,13 +1157,13 @@ SimplyPebble.voiceDictationStart = function(callback, enableConfirmation) {
   SimplyPebble.sendPacket(VoiceDictationStartPacket.enableConfirmation(enableConfirmation));
 };
 
-SimplyPebble.voiceDictationStop = function() {
+SimplyPebble.voiceDictationStop = function () {
   // Send the message and delete the callback
   SimplyPebble.sendPacket(VoiceDictationStopPacket);
   delete state.dictationCallback;
 };
 
-SimplyPebble.onVoiceData = function(packet) {
+SimplyPebble.onVoiceData = function (packet) {
   if (!state.dictationCallback) {
     // Something bad happened
     console.log("No callback specified for dictation session");
@@ -1159,19 +1179,19 @@ SimplyPebble.onVoiceData = function(packet) {
   }
 };
 
-SimplyPebble.menuClear = function() {
+SimplyPebble.menuClear = function () {
   SimplyPebble.sendPacket(MenuClearPacket);
 };
 
-SimplyPebble.menuClearSection = function(section) {
+SimplyPebble.menuClearSection = function (section) {
   SimplyPebble.sendPacket(MenuClearSectionPacket.section(section));
 };
 
-SimplyPebble.menuProps = function(def) {
+SimplyPebble.menuProps = function (def) {
   SimplyPebble.sendPacket(MenuPropsPacket.prop(def));
 };
 
-SimplyPebble.menuSection = function(section, def, clear) {
+SimplyPebble.menuSection = function (section, def, clear) {
   if (clear !== undefined) {
     SimplyPebble.menuClearSection(section);
   }
@@ -1185,7 +1205,7 @@ SimplyPebble.menuSection = function(section, def, clear) {
   SimplyPebble.sendPacket(MenuSectionPacket);
 };
 
-SimplyPebble.menuItem = function(section, item, def) {
+SimplyPebble.menuItem = function (section, item, def) {
   MenuItemPacket
     .section(section)
     .item(item)
@@ -1197,7 +1217,7 @@ SimplyPebble.menuItem = function(section, item, def) {
   SimplyPebble.sendPacket(MenuItemPacket);
 };
 
-SimplyPebble.menuSelection = function(section, item, align) {
+SimplyPebble.menuSelection = function (section, item, align) {
   if (section === undefined) {
     SimplyPebble.sendPacket(MenuGetSelectionPacket);
     return;
@@ -1205,7 +1225,7 @@ SimplyPebble.menuSelection = function(section, item, align) {
   SimplyPebble.sendPacket(MenuSelectionPacket.section(section).item(item).align(align || 'center'));
 };
 
-SimplyPebble.menu = function(def, clear, pushing) {
+SimplyPebble.menu = function (def, clear, pushing) {
   if (typeof pushing === 'boolean') {
     SimplyPebble.windowShow({ type: 'menu', pushing: pushing });
   }
@@ -1217,15 +1237,15 @@ SimplyPebble.menu = function(def, clear, pushing) {
   SimplyPebble.menuProps(def);
 };
 
-SimplyPebble.elementInsert = function(id, type, index) {
+SimplyPebble.elementInsert = function (id, type, index) {
   SimplyPebble.sendPacket(ElementInsertPacket.id(id).type(type).index(index));
 };
 
-SimplyPebble.elementRemove = function(id) {
+SimplyPebble.elementRemove = function (id) {
   SimplyPebble.sendPacket(ElementRemovePacket.id(id));
 };
 
-SimplyPebble.elementFrame = function(packet, def, altDef) {
+SimplyPebble.elementFrame = function (packet, def, altDef) {
   var position = def.position || (altDef ? altDef.position : undefined);
   var position2 = def.position2 || (altDef ? altDef.position2 : undefined);
   var size = def.size || (altDef ? altDef.size : undefined);
@@ -1236,7 +1256,7 @@ SimplyPebble.elementFrame = function(packet, def, altDef) {
   packet.size(size);
 };
 
-SimplyPebble.elementCommon = function(id, def) {
+SimplyPebble.elementCommon = function (id, def) {
   if ('strokeColor' in def) {
     ElementCommonPacket.borderColor(def.strokeColor);
   }
@@ -1250,23 +1270,23 @@ SimplyPebble.elementCommon = function(id, def) {
   SimplyPebble.sendPacket(ElementCommonPacket);
 };
 
-SimplyPebble.elementRadius = function(id, def) {
+SimplyPebble.elementRadius = function (id, def) {
   SimplyPebble.sendPacket(ElementRadiusPacket.id(id).radius(def.radius));
 };
 
-SimplyPebble.elementAngle = function(id, def) {
+SimplyPebble.elementAngle = function (id, def) {
   SimplyPebble.sendPacket(ElementAnglePacket.id(id).angle(def.angleStart || def.angle));
 };
 
-SimplyPebble.elementAngle2 = function(id, def) {
+SimplyPebble.elementAngle2 = function (id, def) {
   SimplyPebble.sendPacket(ElementAngle2Packet.id(id).angle2(def.angleEnd || def.angle2));
 };
 
-SimplyPebble.elementText = function(id, text, timeUnits) {
+SimplyPebble.elementText = function (id, text, timeUnits) {
   SimplyPebble.sendPacket(ElementTextPacket.id(id).updateTimeUnits(timeUnits).text(text));
 };
 
-SimplyPebble.elementTextStyle = function(id, def) {
+SimplyPebble.elementTextStyle = function (id, def) {
   ElementTextStylePacket.id(id).prop(def);
   var font = Font(def.font);
   if (typeof font === 'number') {
@@ -1277,11 +1297,11 @@ SimplyPebble.elementTextStyle = function(id, def) {
   SimplyPebble.sendPacket(ElementTextStylePacket);
 };
 
-SimplyPebble.elementImage = function(id, image, compositing) {
+SimplyPebble.elementImage = function (id, image, compositing) {
   SimplyPebble.sendPacket(ElementImagePacket.id(id).image(image).compositing(compositing));
 };
 
-SimplyPebble.elementAnimate = function(id, def, animateDef, duration, easing) {
+SimplyPebble.elementAnimate = function (id, def, animateDef, duration, easing) {
   SimplyPebble.elementFrame(ElementAnimatePacket, animateDef, def);
   ElementAnimatePacket
     .id(id)
@@ -1290,11 +1310,11 @@ SimplyPebble.elementAnimate = function(id, def, animateDef, duration, easing) {
   SimplyPebble.sendPacket(ElementAnimatePacket);
 };
 
-SimplyPebble.stageClear = function() {
+SimplyPebble.stageClear = function () {
   SimplyPebble.sendPacket(StageClearPacket);
 };
 
-SimplyPebble.stageElement = function(id, type, def, index) {
+SimplyPebble.stageElement = function (id, type, def, index) {
   if (index !== undefined) {
     SimplyPebble.elementInsert(id, type, index);
   }
@@ -1325,7 +1345,7 @@ SimplyPebble.stageRemove = SimplyPebble.elementRemove;
 
 SimplyPebble.stageAnimate = SimplyPebble.elementAnimate;
 
-SimplyPebble.stage = function(def, clear, pushing) {
+SimplyPebble.stage = function (def, clear, pushing) {
   if (arguments.length === 3) {
     SimplyPebble.windowShow({ type: 'window', pushing: pushing });
   }
@@ -1341,7 +1361,7 @@ SimplyPebble.stage = function(def, clear, pushing) {
 
 SimplyPebble.window = SimplyPebble.stage;
 
-var toArrayBuffer = function(array, length) {
+var toArrayBuffer = function (array, length) {
   length = length || array.length;
   var copy = new DataView(new ArrayBuffer(length));
   for (var i = 0; i < length; ++i) {
@@ -1350,7 +1370,7 @@ var toArrayBuffer = function(array, length) {
   return copy;
 };
 
-SimplyPebble.onLaunchReason = function(packet) {
+SimplyPebble.onLaunchReason = function (packet) {
   var reason = LaunchReasonTypes[packet.reason()];
   var args = packet.args();
   var remoteTime = packet.time();
@@ -1372,7 +1392,7 @@ SimplyPebble.onLaunchReason = function(packet) {
   }
 };
 
-SimplyPebble.onWakeupSetResult = function(packet) {
+SimplyPebble.onWakeupSetResult = function (packet) {
   var id = packet.id();
   switch (id) {
     case -8: id = 'range'; break;
@@ -1383,7 +1403,7 @@ SimplyPebble.onWakeupSetResult = function(packet) {
   Wakeup.emitSetResult(id, packet.cookie());
 };
 
-SimplyPebble.onAccelData = function(packet) {
+SimplyPebble.onAccelData = function (packet) {
   var samples = packet.samples();
   var accels = [];
   AccelData._view = packet._view;
@@ -1403,7 +1423,7 @@ SimplyPebble.onAccelData = function(packet) {
   }
 };
 
-SimplyPebble.onPacket = function(buffer, offset) {
+SimplyPebble.onPacket = function (buffer, offset) {
   Packet._view = buffer;
   Packet._offset = offset;
   var packet = CommandPackets[Packet.type()];
@@ -1465,9 +1485,9 @@ SimplyPebble.onPacket = function(buffer, offset) {
   }
 };
 
-SimplyPebble.onAppMessage = function(e) {
+SimplyPebble.onAppMessage = function (e) {
   var data = e.payload[0];
-  
+
   Packet._view = toArrayBuffer(data);
 
   var offset = 0;
