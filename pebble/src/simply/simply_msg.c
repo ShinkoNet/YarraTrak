@@ -67,6 +67,12 @@ struct __attribute__((__packed__)) VibePacket {
   VibeType type:8;
 };
 
+struct __attribute__((__packed__)) VibeCustomPacket {
+  Packet packet;
+  uint8_t count;
+  uint16_t durations[];
+};
+
 typedef struct LightPacket LightPacket;
 
 struct __attribute__((__packed__)) LightPacket {
@@ -168,6 +174,24 @@ static void handle_vibe_packet(Simply *simply, Packet *data) {
   }
 }
 
+static void handle_vibe_custom_packet(Simply *simply, Packet *data) {
+  struct VibeCustomPacket *packet = (struct VibeCustomPacket*) data;
+  uint32_t *durations = malloc(sizeof(uint32_t) * packet->count);
+  if (!durations) return;
+  
+  for (int i = 0; i < packet->count; i++) {
+    durations[i] = packet->durations[i];
+  }
+  
+  VibePattern pattern = {
+    .durations = durations,
+    .num_segments = packet->count,
+  };
+  
+  vibes_enqueue_custom_pattern(pattern);
+  free(durations);
+}
+
 static void handle_light_packet(Simply *simply, Packet *data) {
   LightPacket *packet = (LightPacket*) data;
   switch (packet->type) {
@@ -187,6 +211,9 @@ static bool simply_base_handle_packet(Simply *simply, Packet *packet) {
       return true;
     case CommandVibe:
       handle_vibe_packet(simply, packet);
+      return true;
+    case CommandVibeCustom:
+      handle_vibe_custom_packet(simply, packet);
       return true;
     case CommandLight:
       handle_light_packet(simply, packet);

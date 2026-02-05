@@ -20,9 +20,8 @@ var Vector2 = require('vector2');
 var vibeTimer = null;
 
 function playVibrationPattern(pattern) {
-    // Clear any ongoing pattern
+    // Clear any ongoing pattern (legacy timer)
     if (vibeTimer) {
-        // console.log('Clearing existing vibeTimer');
         clearTimeout(vibeTimer);
         vibeTimer = null;
     }
@@ -39,52 +38,15 @@ function playVibrationPattern(pattern) {
         return;
     }
 
-    var index = 0;
-
-    function playNext() {
-        if (index >= pattern.length) {
-            vibeTimer = null;
-            return;
-        }
-
-        var duration = pattern[index];
-        var isVibration = (index % 2 === 0); // Even indices are vibrations
-
-        if (isVibration && duration > 0) {
-            // Map duration to preset: <250ms = short, else long
-            // short ~50ms, long ~500ms on Pebble
-            if (duration < 250) {
-                Vibe.vibrate('short');
-            } else {
-                Vibe.vibrate('long');
-            }
-        }
-
-        index++;
-
-        // Schedule next step after this duration
-        if (index < pattern.length) {
-            vibeTimer = setTimeout(playNext, duration);
-        }
-    }
-
-    console.log('Starting vibration pattern: ' + JSON.stringify(pattern));
-    playNext();
+    console.log('Sending custom vibration pattern: ' + JSON.stringify(pattern));
+    Vibe.vibrateCustom(pattern);
 }
 
 // Calculate vibration pattern locally (no network call needed)
 // Encodes minutes as haptic pattern: Hours=1000ms, Tens=500ms, Ones=150ms
 function calculateVibration(minutes) {
     if (minutes === 0) {
-        return [
-            500, 150,
-            150, 150,
-            150, 150,
-            500, 150,
-            500, 500,
-            500, 150,
-            500
-        ];
+        return [43, 300, 43, 71, 43, 43, 43, 100, 43, 300, 43, 643, 43, 300, 43];
     }
 
     minutes = Math.max(0, Math.min(720, minutes));
@@ -93,13 +55,13 @@ function calculateVibration(minutes) {
     var ones = minutes % 10;
 
     var pattern = [];
-    for (var i = 0; i < hours; i++) pattern.push(1000, 400);
+    for (var i = 0; i < hours; i++) pattern.push(800, 300);
     if (hours > 0 && (tens > 0 || ones > 0) && pattern.length) pattern[pattern.length - 1] += 200;
 
-    for (var i = 0; i < tens; i++) pattern.push(500, 300);
+    for (var i = 0; i < tens; i++) pattern.push(300, 150);
     if (tens > 0 && ones > 0 && pattern.length) pattern[pattern.length - 1] += 100;
 
-    for (var i = 0; i < ones; i++) pattern.push(150, 150);
+    for (var i = 0; i < ones; i++) pattern.push(80, 180);
 
     console.log('calculateVibration: ' + minutes + ' mins -> ' + JSON.stringify(pattern));
     return pattern;
@@ -229,9 +191,20 @@ var watchingWindow = new Window({
 var screenWidth = Feature.resolution().x;  // 144 for Aplite
 var screenHeight = Feature.resolution().y; // 168 for Aplite
 
+// Status text - small (top)
+var watchingStatusText = new Text({
+    position: new Vector2(0, 0),
+    size: new Vector2(screenWidth, 20),
+    font: 'gothic-18',
+    color: 'white',
+    textAlign: 'center',
+    text: 'Next Service'
+});
+watchingWindow.add(watchingStatusText);
+
 // Timer text - BIG monospace (top of screen)
 var timerText = new Text({
-    position: new Vector2(0, 15),
+    position: new Vector2(0, 18),
     size: new Vector2(screenWidth, 55),
     font: 'leco-42-numbers',
     color: 'white',
@@ -273,6 +246,26 @@ watchingWindow.add(progressBar);
 // Back button handler for watching window
 watchingWindow.on('click', 'back', function () {
     stopWatching();
+});
+
+// Up button: Show Current/Next Service (offset 0)
+watchingWindow.on('click', 'up', function () {
+    if (watchingDepartureOffset !== 0) {
+        watchingDepartureOffset = 0;
+        // Update display immediately
+        var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
+        updateWatchingDisplay(currentDep, watchingRouteText);
+    }
+});
+
+// Down button: Show Next Service (offset 1)
+watchingWindow.on('click', 'down', function () {
+    if (watchingDepartureOffset !== 1) {
+        watchingDepartureOffset = 1;
+        // Update display immediately
+        var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
+        updateWatchingDisplay(currentDep, watchingRouteText);
+    }
 });
 var mainMenu = new UI.Menu({
     backgroundColor: Feature.color('black', 'black'),
@@ -436,6 +429,41 @@ function startVoiceQuery() {
 
 // Countdown timer for live seconds display
 var countdownTimer = null;
+var watchingDepartureOffset = 0;
+
+// Get departure by offset (0 = next/current, 1 = service after)
+function getDepartureByOffset(buttonIndex, offset) {
+    var cache = buttonDepartures[buttonIndex];
+    if (!cache || !cache.departures || cache.departures.length === 0) {
+        return null;
+    }
+
+    var now = new Date();
+    // Find the current base index
+    var baseIndex = -1;
+    for (var i = 0; i < cache.departures.length; i++) {
+        var dep = cache.departures[i];
+        if (dep.departure_time) {
+            var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
+            var depTime = new Date(timeStr);
+            if (depTime.getTime() > now.getTime() - 60000) {
+                baseIndex = i;
+                break;
+            }
+        } else if (dep.minutes !== null && dep.minutes !== undefined) {
+            baseIndex = i;
+            break;
+        }
+    }
+
+    if (baseIndex === -1) return null;
+
+    var targetIndex = baseIndex + offset;
+    if (targetIndex >= 0 && targetIndex < cache.departures.length) {
+        return cache.departures[targetIndex];
+    }
+    return null;
+}
 
 // Favourite query - uses cached live departure data, opens station watching mode
 function runFavouriteQuery(buttonIndex) {
@@ -457,9 +485,10 @@ function runFavouriteQuery(buttonIndex) {
 
     // Enter station watching mode
     watchingButtonIndex = buttonIndex;
+    watchingDepartureOffset = 0; // Reset to next train
 
     // Use cached live departure data - auto-switches between departures
-    var dep = getCurrentDeparture(buttonIndex);
+    var dep = getDepartureByOffset(buttonIndex, watchingDepartureOffset);
 
     // Clean station names for watching window (must fit ~2 lines)
     // Names are pre-cleaned by settings.html, we just ensure they're short enough
@@ -504,7 +533,7 @@ function runFavouriteQuery(buttonIndex) {
         // Start live countdown timer (update every second, vibrate on minute change)
         if (dep.departure_time) {
             countdownTimer = setInterval(function () {
-                var currentDep = getCurrentDeparture(watchingButtonIndex);
+                var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
                 if (currentDep) {
                     updateWatchingDisplay(currentDep, watchingRouteText);
 
@@ -524,12 +553,15 @@ function runFavouriteQuery(buttonIndex) {
                             console.log('[Watch] New train detected: ' + currentMinutes + ' mins');
                             lastVibratedMinutes = currentMinutes;
                             lastDepartureTime = currentDep.departure_time;
-                            playVibrationPattern(calculateVibration(currentMinutes + 1));
+                            var extra = (diffSec % 60 >= 30) ? 1 : 0;
+                            playVibrationPattern(calculateVibration(currentMinutes + extra));
                         } else if (lastVibratedMinutes !== null && currentMinutes < lastVibratedMinutes) {
+                            // Minute decreased - vibrate!
                             // Minute decreased - vibrate!
                             console.log('[Watch] Minute boundary: ' + lastVibratedMinutes + ' -> ' + currentMinutes);
                             lastVibratedMinutes = currentMinutes;
-                            playVibrationPattern(calculateVibration(currentMinutes + 1));
+                            var extra = (diffSec % 60 >= 30) ? 1 : 0;
+                            playVibrationPattern(calculateVibration(currentMinutes + extra));
                         }
                     }
                 }
@@ -541,7 +573,12 @@ function runFavouriteQuery(buttonIndex) {
             console.log('[Watch] Starting watch, initial minutes: ' + freshMinutes);
             lastVibratedMinutes = freshMinutes;
             lastDepartureTime = dep.departure_time;
-            playVibrationPattern(calculateVibration(freshMinutes + 1));
+
+            var extra = 0;
+            if (typeof diffSec !== 'undefined' && diffSec % 60 >= 30) {
+                extra = 1;
+            }
+            playVibrationPattern(calculateVibration(freshMinutes + extra));
         } else {
             lastVibratedMinutes = null;
             lastDepartureTime = null;
@@ -634,6 +671,14 @@ function updateWatchingDisplay(dep, route) {
     timerText.text(timerValue);
     platformText.text(dep.platform ? 'Platform ' + dep.platform : '');
     routeText.text(route || '');
+
+    // Update top status text
+    if (watchingDepartureOffset === 0) {
+        watchingStatusText.text('Next Service');
+    } else {
+        watchingStatusText.text('Service After');
+    }
+
     progressBar.size(new Vector2(progressWidth, 4));
 }
 
