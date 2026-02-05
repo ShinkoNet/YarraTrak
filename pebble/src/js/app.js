@@ -524,12 +524,12 @@ function runFavouriteQuery(buttonIndex) {
                             console.log('[Watch] New train detected: ' + currentMinutes + ' mins');
                             lastVibratedMinutes = currentMinutes;
                             lastDepartureTime = currentDep.departure_time;
-                            playVibrationPattern(calculateVibration(currentMinutes));
+                            playVibrationPattern(calculateVibration(currentMinutes + 1));
                         } else if (lastVibratedMinutes !== null && currentMinutes < lastVibratedMinutes) {
                             // Minute decreased - vibrate!
                             console.log('[Watch] Minute boundary: ' + lastVibratedMinutes + ' -> ' + currentMinutes);
                             lastVibratedMinutes = currentMinutes;
-                            playVibrationPattern(calculateVibration(currentMinutes));
+                            playVibrationPattern(calculateVibration(currentMinutes + 1));
                         }
                     }
                 }
@@ -541,7 +541,7 @@ function runFavouriteQuery(buttonIndex) {
             console.log('[Watch] Starting watch, initial minutes: ' + freshMinutes);
             lastVibratedMinutes = freshMinutes;
             lastDepartureTime = dep.departure_time;
-            playVibrationPattern(calculateVibration(freshMinutes));
+            playVibrationPattern(calculateVibration(freshMinutes + 1));
         } else {
             lastVibratedMinutes = null;
             lastDepartureTime = null;
@@ -600,10 +600,16 @@ function updateWatchingDisplay(dep, route) {
                 // Progress bar: shrinks with seconds
                 progressWidth = Math.floor(screenWidth * secs / 60);
             } else {
-                // Under 1 minute: show NOW! (matches menu subtitle)
-                timerValue = 'NOW!';
-                timerFont = 'bitham-42-bold';
-                progressWidth = 0;  // Hide progress bar for NOW!
+                // Under 1 minute
+                if (secs >= 30) {
+                    timerValue = '0:' + secs;
+                    progressWidth = Math.floor(screenWidth * secs / 60);
+                } else {
+                    // Under 30 seconds: show NOW!
+                    timerValue = 'NOW!';
+                    timerFont = 'bitham-42-bold';
+                    progressWidth = 0;  // Hide progress bar for NOW!
+                }
             }
         }
     } else if (dep.minutes !== null && dep.minutes !== undefined) {
