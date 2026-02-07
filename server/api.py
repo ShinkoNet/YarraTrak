@@ -21,6 +21,7 @@ from . import agent_engine
 from . import config
 from . import tools
 from .ptv_client import PTVClient
+from . import route_geometry
 
 app = FastAPI(title="PTV Notify", version="1.0.0")
 
@@ -111,6 +112,14 @@ FAVOURITE_BROADCAST_INTERVAL = 15.0  # seconds (was 5s, client has second-by-sec
 # Background task reference
 _broadcast_task: asyncio.Task | None = None
 
+# Run position cache
+_run_position_cache: dict[tuple, dict] = {}
+RUN_POSITION_TTL = 8.0  # seconds
+POSITION_BROADCAST_INTERVAL = 5.0  # seconds
+
+# Watch position tasks (per websocket)
+_watch_tasks: dict[WebSocket, asyncio.Task] = {}
+
 
 def _cleanup_audio_store():
     """Remove expired audio tickets (5 min TTL)."""
@@ -118,6 +127,126 @@ def _cleanup_audio_store():
     expired = [k for k, v in _audio_store.items() if now - v["created_at"] > 300]
     for k in expired:
         del _audio_store[k]
+
+
+def _extract_vehicle_position(run_data: dict) -> tuple[float, float] | None:
+    """Extract vehicle position from PTV run response."""
+    if not isinstance(run_data, dict):
+        return None
+
+    candidates = []
+    if "vehicle_position" in run_data:
+        candidates.append(run_data.get("vehicle_position"))
+    if "run" in run_data and isinstance(run_data.get("run"), dict):
+        candidates.append(run_data["run"].get("vehicle_position"))
+
+    for vp in candidates:
+        if not isinstance(vp, dict):
+            continue
+        lat = vp.get("latitude") if vp.get("latitude") is not None else vp.get("lat")
+        lon = vp.get("longitude") if vp.get("longitude") is not None else vp.get("lon")
+        if lon is None and vp.get("lng") is not None:
+            lon = vp.get("lng")
+        if lat is not None and lon is not None:
+            try:
+                return float(lat), float(lon)
+            except Exception:
+                return None
+    return None
+
+
+def _extract_vehicle_desc(run_data: dict) -> str | None:
+    """Extract vehicle descriptor from PTV run response."""
+    if not isinstance(run_data, dict):
+        return None
+
+    candidates = []
+    if "vehicle_descriptor" in run_data:
+        candidates.append(run_data.get("vehicle_descriptor"))
+    if "run" in run_data and isinstance(run_data.get("run"), dict):
+        candidates.append(run_data["run"].get("vehicle_descriptor"))
+
+    for vd in candidates:
+        if not isinstance(vd, dict):
+            continue
+        desc = vd.get("description") or vd.get("name") or vd.get("vehicle_description")
+        if desc:
+            return str(desc)
+    return None
+
+
+async def _get_run_position(run_ref: int, route_type: int) -> dict | None:
+    """Fetch run position with short-lived cache."""
+    now = time.time()
+    cache_key = (run_ref, route_type)
+    cached = _run_position_cache.get(cache_key)
+    if cached and (now - cached["fetched_at"]) < RUN_POSITION_TTL:
+        return cached
+
+    try:
+        data = await ptv_client.get_run(
+            route_type,
+            run_ref,
+            expand=["VehiclePosition", "VehicleDescriptor"],
+        )
+        vehicle_pos = _extract_vehicle_position(data)
+        vehicle_desc = _extract_vehicle_desc(data)
+        result = {
+            "vehicle_pos": vehicle_pos,
+            "vehicle_desc": vehicle_desc,
+            "fetched_at": now,
+        }
+        _run_position_cache[cache_key] = result
+        return result
+    except Exception as e:
+        print(f"Run position fetch error: {e}")
+        return None
+
+
+def _cancel_watch_task(websocket: WebSocket) -> None:
+    task = _watch_tasks.pop(websocket, None)
+    if task and not task.done():
+        task.cancel()
+
+
+async def _watch_position_loop(
+    websocket: WebSocket,
+    run_ref: int,
+    route_type: int,
+    route_id: int | None,
+    direction_id: int | None,
+    stop_id: int,
+):
+    while True:
+        try:
+            if websocket.client_state.value != 1:
+                break
+
+            distance_km = None
+            vehicle_desc = None
+
+            if route_type == RouteType.TRAIN and run_ref:
+                run_data = await _get_run_position(run_ref, route_type)
+                if run_data:
+                    vehicle_desc = run_data.get("vehicle_desc")
+                    pos = run_data.get("vehicle_pos")
+                    if pos:
+                        lat, lon = pos
+                        distance_km = route_geometry.distance_to_stop(
+                            route_id, direction_id, lat, lon, stop_id
+                        )
+
+            await websocket.send_json({
+                "type": "position_update",
+                "distance_km": distance_km,
+                "vehicle_desc": vehicle_desc,
+            })
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Position update error: {e}")
+
+        await asyncio.sleep(POSITION_BROADCAST_INTERVAL)
 
 
 async def _generate_audio(ticket_id: str, text: str):
@@ -172,7 +301,7 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
     
     # Fetch from PTV API
     try:
-        data = await ptv_client.get_departures(route_type, stop_id, max_results=10, expand=["Direction"])
+        data = await ptv_client.get_departures(route_type, stop_id, max_results=10, expand=["Direction", "Run"])
         departures = data.get("departures", [])
         
         if not departures:
@@ -196,11 +325,16 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
                 minutes = int((dep_time - now_utc).total_seconds() / 60)
                 minutes = max(0, min(720, minutes))
                 platform = d.get("platform_number")
+                run_ref = d.get("run_ref") or d.get("run_id")
                 
                 collected.append({
                     "minutes": minutes,
                     "platform": str(platform) if platform else None,
-                    "departure_time": dep_time.isoformat()
+                    "departure_time": dep_time.isoformat(),
+                    "run_ref": run_ref,
+                    "route_id": d.get("route_id"),
+                    "direction_id": d.get("direction_id"),
+                    "route_type": route_type,
                 })
                 
                 if len(collected) >= max_departures:
@@ -309,6 +443,7 @@ async def startup_start_broadcast():
     """Start the broadcast task on server startup to keep registry buttons warm."""
     start_broadcast_task()
     print("Broadcast task started on startup - registry buttons will stay warm")
+    route_geometry.load_train_routes()
 
 
 
@@ -845,6 +980,50 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                         "id": msg_id,
                         "message": "Error"
                     })
+
+            elif msg_type == "watch_start":
+                run_ref = message.get("run_ref")
+                stop_id = message.get("stop_id")
+                route_type = message.get("route_type", RouteType.TRAIN)
+                route_id = message.get("route_id")
+                direction_id = message.get("direction_id")
+
+                if not run_ref or stop_id is None:
+                    await websocket.send_json({
+                        "type": "error",
+                        "id": msg_id,
+                        "error": "watch_start requires run_ref and stop_id"
+                    })
+                    continue
+
+                try:
+                    run_ref = int(run_ref)
+                    stop_id = int(stop_id)
+                    route_type = int(route_type) if route_type is not None else RouteType.TRAIN
+                    route_id = int(route_id) if route_id is not None else None
+                    direction_id = int(direction_id) if direction_id is not None else None
+                except Exception:
+                    await websocket.send_json({
+                        "type": "error",
+                        "id": msg_id,
+                        "error": "watch_start invalid numeric fields"
+                    })
+                    continue
+
+                _cancel_watch_task(websocket)
+                _watch_tasks[websocket] = asyncio.create_task(
+                    _watch_position_loop(
+                        websocket,
+                        run_ref,
+                        route_type,
+                        route_id,
+                        direction_id,
+                        stop_id,
+                    )
+                )
+
+            elif msg_type == "watch_stop":
+                _cancel_watch_task(websocket)
             
             elif msg_type == "get_buttons":
                 # Return button configurations stored on server
@@ -959,11 +1138,13 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
         # Clean up subscription on disconnect
         if websocket in _favourite_subscriptions:
             del _favourite_subscriptions[websocket]
+        _cancel_watch_task(websocket)
         print("WebSocket client disconnected")
     except Exception as e:
         # Clean up subscription on error
         if websocket in _favourite_subscriptions:
             del _favourite_subscriptions[websocket]
+        _cancel_watch_task(websocket)
         print(f"WebSocket error: {e}")
 
 

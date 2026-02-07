@@ -109,6 +109,10 @@ var watchingButtonIndex = null;  // Which button is being watched (null = not wa
 var lastVibratedMinutes = null;  // Last minute count we vibrated (to detect changes)
 var lastDepartureTime = null;    // Track departure_time to detect train transitions
 var watchingRouteText = null;    // Current route text for display (stored globally for favourite_update)
+var watchingDistanceKm = null;   // Latest distance to stop (km)
+var watchingVehicleDesc = null;  // Latest vehicle descriptor
+var watchingRunRef = null;       // Current watched run_ref
+var watchingStopId = null;       // Current watched stop_id
 
 // Get the current valid departure from the cached array
 // Auto-switches to next departure when first train has passed
@@ -255,6 +259,7 @@ watchingWindow.on('click', 'up', function () {
         // Update display immediately
         var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
         updateWatchingDisplay(currentDep, watchingRouteText);
+        sendWatchStart(currentDep, watchingStopId);
     }
 });
 
@@ -265,6 +270,7 @@ watchingWindow.on('click', 'down', function () {
         // Update display immediately
         var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
         updateWatchingDisplay(currentDep, watchingRouteText);
+        sendWatchStart(currentDep, watchingStopId);
     }
 });
 var mainMenu = new UI.Menu({
@@ -481,6 +487,39 @@ function getDepartureByOffset(buttonIndex, offset) {
     return null;
 }
 
+function formatDistanceText(distanceKm, vehicleDesc) {
+    var distText = distanceKm.toFixed(1) + ' km away';
+    if (vehicleDesc) {
+        return distText + ' • ' + vehicleDesc;
+    }
+    return distText;
+}
+
+function sendWatchStart(dep, stopId) {
+    if (!ws || !wsConnected) return;
+    if (!dep || !dep.run_ref || stopId === null || stopId === undefined) return;
+
+    if (watchingRunRef === dep.run_ref) return;
+
+    watchingRunRef = dep.run_ref;
+    watchingDistanceKm = null;
+    watchingVehicleDesc = null;
+
+    ws.send(JSON.stringify({
+        type: 'watch_start',
+        run_ref: dep.run_ref,
+        route_type: (dep.route_type !== undefined && dep.route_type !== null) ? dep.route_type : 0,
+        route_id: dep.route_id,
+        direction_id: dep.direction_id,
+        stop_id: stopId
+    }));
+}
+
+function sendWatchStop() {
+    if (!ws || !wsConnected) return;
+    ws.send(JSON.stringify({ type: 'watch_stop' }));
+}
+
 // Favourite query - uses cached live departure data, opens station watching mode
 function runFavouriteQuery(buttonIndex) {
     // Try new entry naming first, fall back to legacy btn naming
@@ -502,6 +541,10 @@ function runFavouriteQuery(buttonIndex) {
     // Enter station watching mode
     watchingButtonIndex = buttonIndex;
     watchingDepartureOffset = 0; // Reset to next train
+    watchingStopId = stopId;
+    watchingDistanceKm = null;
+    watchingVehicleDesc = null;
+    watchingRunRef = null;
 
     // Use cached live departure data - auto-switches between departures
     var dep = getDepartureByOffset(buttonIndex, watchingDepartureOffset);
@@ -530,6 +573,7 @@ function runFavouriteQuery(buttonIndex) {
     if (dep && (dep.departure_time || dep.minutes !== null)) {
         // Update display with route info
         updateWatchingDisplay(dep, watchingRouteText);
+        sendWatchStart(dep, watchingStopId);
 
         // Calculate fresh minutes from departure_time
         var freshMinutes = null;
@@ -551,6 +595,7 @@ function runFavouriteQuery(buttonIndex) {
             countdownTimer = setInterval(function () {
                 var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
                 if (currentDep) {
+                    sendWatchStart(currentDep, watchingStopId);
                     updateWatchingDisplay(currentDep, watchingRouteText);
 
                     // Check for minute change - vibrate instantly when crossing minute boundary
@@ -686,7 +731,15 @@ function updateWatchingDisplay(dep, route) {
     timerText.font(timerFont);
     timerText.text(timerValue);
     platformText.text(dep.platform ? 'Platform ' + dep.platform : '');
-    routeText.text(route || '');
+    var bottomText = route || '';
+    if (watchingButtonIndex !== null && watchingDistanceKm !== null && watchingDistanceKm !== undefined) {
+        var nowSec = Math.floor(Date.now() / 1000);
+        var showDistance = (nowSec % 6) >= 3;
+        if (showDistance) {
+            bottomText = formatDistanceText(watchingDistanceKm, watchingVehicleDesc);
+        }
+    }
+    routeText.text(bottomText);
 
     // Update top status text
     if (watchingDepartureOffset === 0) {
@@ -701,9 +754,14 @@ function updateWatchingDisplay(dep, route) {
 // Stop station watching mode
 function stopWatching() {
     console.log('[Watch] Stopping watch mode');
+    sendWatchStop();
     watchingButtonIndex = null;
     lastVibratedMinutes = null;
     lastDepartureTime = null;
+    watchingDistanceKm = null;
+    watchingVehicleDesc = null;
+    watchingRunRef = null;
+    watchingStopId = null;
     if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
@@ -939,6 +997,7 @@ function connectWebSocket() {
                     if (watchingButtonIndex === u.button_id) {
                         var dep = getCurrentDeparture(u.button_id);
                         if (dep) {
+                            sendWatchStart(dep, watchingStopId);
                             // Calculate fresh minutes
                             var freshMinutes = null;
                             if (dep.departure_time) {
@@ -991,6 +1050,21 @@ function connectWebSocket() {
                     }
                     mainMenu.show();
                     isFirstLoad = false;
+                }
+                return;
+            }
+
+            if (msg.type === 'position_update') {
+                if (watchingButtonIndex !== null) {
+                    if (msg.distance_km !== null && msg.distance_km !== undefined) {
+                        watchingDistanceKm = msg.distance_km;
+                    } else {
+                        watchingDistanceKm = null;
+                    }
+                    watchingVehicleDesc = msg.vehicle_desc || null;
+
+                    var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
+                    updateWatchingDisplay(currentDep, watchingRouteText);
                 }
                 return;
             }

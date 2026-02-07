@@ -76,6 +76,22 @@ class PTVClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def get_run(self, route_type: int, run_ref: int, expand: list = None):
+        """
+        Get run details for a specific run_ref.
+        """
+        endpoint = f"/v3/runs/{run_ref}/route_type/{route_type}"
+        params = {}
+        if expand:
+            params["expand"] = expand
+
+        url = self._sign_request(endpoint, params)
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.json()
+
     async def search(self, term: str):
         """
         Search for stops or routes.
