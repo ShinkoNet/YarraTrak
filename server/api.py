@@ -96,6 +96,8 @@ _departure_cache: dict[tuple, dict] = {}
 FAVOURITE_CACHE_TTL = max(15.0, FAVOURITE_CACHE_TTL_SECONDS)  # seconds
 FAVOURITE_BROADCAST_INTERVAL = 15.0  # seconds
 FAVOURITE_FETCH_LIMIT = max(1, FAVOURITE_FETCH_CONCURRENCY)
+CLIENT_ACTIVITY_WINDOW_SECONDS = 3600.0
+CLIENT_LEADERBOARD_LIMIT = 8
 
 # Background task reference
 _broadcast_task: asyncio.Task | None = None
@@ -230,6 +232,17 @@ def _client_scope_label(client_ip: str, client_id: str | None) -> str:
     return f"ip-{_client_ip_fingerprint(client_ip)}"
 
 
+def _prune_client_activity_window(activity: dict[str, object], now: float | None = None) -> None:
+    current = now if now is not None else time.time()
+    cutoff = current - CLIENT_ACTIVITY_WINDOW_SECONDS
+    for key in ("connection_timestamps", "query_timestamps"):
+        bucket = activity.get(key)
+        if not isinstance(bucket, deque):
+            continue
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+
+
 def _touch_client_activity(scope_key: str, client_ip: str, client_id: str | None) -> dict[str, object]:
     activity = _client_activity.get(scope_key)
     if activity is None:
@@ -244,6 +257,8 @@ def _touch_client_activity(scope_key: str, client_ip: str, client_id: str | None
             "active_buttons": 0,
             "active_subscriber": False,
             "last_seen": _utc_isoformat(),
+            "connection_timestamps": deque(),
+            "query_timestamps": deque(),
         }
         _client_activity[scope_key] = activity
     else:
@@ -253,6 +268,24 @@ def _touch_client_activity(scope_key: str, client_ip: str, client_id: str | None
             activity["label"] = _client_scope_label(client_ip, client_id)
             activity["scope_kind"] = "client_id"
         activity["ip_fingerprint"] = _client_ip_fingerprint(client_ip)
+    _prune_client_activity_window(activity)
+    return activity
+
+
+def _record_client_activity_event(
+    scope_key: str,
+    client_ip: str,
+    client_id: str | None,
+    event_key: str,
+) -> dict[str, object]:
+    activity = _touch_client_activity(scope_key, client_ip, client_id)
+    bucket = activity.get(event_key)
+    if not isinstance(bucket, deque):
+        bucket = deque()
+        activity[event_key] = bucket
+    now = time.time()
+    bucket.append(now)
+    _prune_client_activity_window(activity, now)
     return activity
 
 
@@ -269,18 +302,23 @@ def _client_activity_rows(limit: int = 12) -> list[dict[str, object]]:
     active_client_count = 0
     rows: list[dict[str, object]] = []
     for scope_key, activity in _client_activity.items():
+        _prune_client_activity_window(activity)
         active_connections = len(_ws_connections_by_scope.get(scope_key, set()))
         if active_connections > 0:
             active_client_count += 1
         activity["active_connections"] = active_connections
         activity["active_buttons"] = active_buttons_by_scope.get(scope_key, 0)
         activity["active_subscriber"] = scope_key in active_subscribers
+        query_timestamps = activity.get("query_timestamps")
+        connection_timestamps = activity.get("connection_timestamps")
         rows.append({
             "label": activity["label"],
             "scope_kind": activity["scope_kind"],
             "ip_fingerprint": activity["ip_fingerprint"],
             "connections_opened": int(activity["connections_opened"]),
             "ws_queries": int(activity["ws_queries"]),
+            "queries_last_hour": len(query_timestamps) if isinstance(query_timestamps, deque) else 0,
+            "reconnects_last_hour": len(connection_timestamps) if isinstance(connection_timestamps, deque) else 0,
             "active_connections": active_connections,
             "active_buttons": int(activity["active_buttons"]),
             "active_subscriber": bool(activity["active_subscriber"]),
@@ -300,6 +338,24 @@ def _client_activity_rows(limit: int = 12) -> list[dict[str, object]]:
     return rows[:limit]
 
 
+def _client_leaderboard_rows(limit: int = CLIENT_LEADERBOARD_LIMIT) -> list[dict[str, object]]:
+    leaderboard = [
+        row for row in _client_activity_rows(limit=max(limit * 3, 12))
+        if row["queries_last_hour"] or row["reconnects_last_hour"] or row["active_connections"]
+    ]
+    leaderboard.sort(
+        key=lambda row: (
+            int(row["queries_last_hour"]),
+            int(row["reconnects_last_hour"]),
+            int(row["active_connections"]),
+            int(row["connections_opened"]),
+            str(row["last_seen"]),
+        ),
+        reverse=True,
+    )
+    return leaderboard[:limit]
+
+
 def _metrics_snapshot_payload() -> dict[str, object]:
     payload = dict(_latest_metrics_snapshot)
     payload["subscribers"] = int(_metrics_window.get("last_subscribers", payload["subscribers"]))
@@ -307,6 +363,7 @@ def _metrics_snapshot_payload() -> dict[str, object]:
     payload["active_clients"] = int(_metrics_window.get("last_active_clients", payload["active_clients"]))
     payload["known_clients"] = len(_client_activity)
     payload["client_activity"] = _client_activity_rows()
+    payload["client_leaderboard"] = _client_leaderboard_rows()
     payload["tuning"] = _dashboard_tuning()
     payload["history_points"] = len(_metrics_history)
     payload["history_capacity"] = max(1, METRICS_HISTORY_MAX_POINTS)
@@ -641,6 +698,43 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       color: var(--muted);
       font-size: 0.9rem;
     }}
+    .leaderboard-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .leaderboard-row {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+    }}
+    .leaderboard-rank {{
+      color: var(--amber-soft);
+      min-width: 2ch;
+      font-weight: 700;
+    }}
+    .leaderboard-main {{
+      flex: 1;
+      min-width: 0;
+    }}
+    .leaderboard-label {{
+      color: var(--ink);
+      font-weight: 700;
+    }}
+    .leaderboard-sub {{
+      color: var(--muted);
+      font-size: 0.86rem;
+    }}
+    .leaderboard-stats {{
+      text-align: right;
+      color: var(--muted);
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }}
     @media (max-width: 960px) {{
       .chart-panel,
       .info-panel {{
@@ -725,6 +819,13 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
           <div class="panel-meta">Anonymous subscriber IDs and per-client websocket query counts</div>
         </div>
         <div class="client-list" id="client-activity"></div>
+      </article>
+      <article class="panel info-panel">
+        <div class="panel-head">
+          <h2>Rolling Leaderboard</h2>
+          <div class="panel-meta">Top anonymous clients over the last hour</div>
+        </div>
+        <div class="leaderboard-list" id="client-leaderboard"></div>
       </article>
     </section>
   </main>
@@ -833,11 +934,35 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
               <span>Buttons: ${{formatNumber(client.active_buttons)}}</span>
               <span>WS queries: ${{formatNumber(client.ws_queries)}}</span>
               <span>Reconnects: ${{formatNumber(client.connections_opened)}}</span>
+              <span>Hour queries: ${{formatNumber(client.queries_last_hour)}}</span>
+              <span>Hour reconnects: ${{formatNumber(client.reconnects_last_hour)}}</span>
               <span>IP hash: ${{client.ip_fingerprint}}</span>
             </div>
           </div>
         `;
       }}).join("");
+    }}
+
+    function renderClientLeaderboard() {{
+      const target = document.getElementById("client-leaderboard");
+      const rows = (state.snapshot && state.snapshot.client_leaderboard) || [];
+      if (!rows.length) {{
+        target.innerHTML = '<div class="chart-placeholder">No client activity recorded in the last hour</div>';
+        return;
+      }}
+      target.innerHTML = rows.map((client, index) => `
+        <div class="leaderboard-row">
+          <div class="leaderboard-rank">#${{index + 1}}</div>
+          <div class="leaderboard-main">
+            <div class="leaderboard-label">${{client.label}}</div>
+            <div class="leaderboard-sub">${{client.scope_kind === "client_id" ? "client id" : "ip fallback"}} • ${{client.ip_fingerprint}}</div>
+          </div>
+          <div class="leaderboard-stats">
+            <div>${{formatNumber(client.queries_last_hour)}} queries / hr</div>
+            <div>${{formatNumber(client.reconnects_last_hour)}} reconnects / hr</div>
+          </div>
+        </div>
+      `).join("");
     }}
 
     function linePath(points, width, height, minValue, maxValue, key) {{
@@ -945,6 +1070,7 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       renderTuning();
       renderBreakdown();
       renderClientActivity();
+      renderClientLeaderboard();
       renderCharts();
     }}
 
@@ -1140,7 +1266,7 @@ def _register_websocket_connection(
     _ws_client_ips[websocket] = client_ip
     _ws_connection_scopes[websocket] = scope_key
     _ws_client_ids[websocket] = client_id
-    activity = _touch_client_activity(scope_key, client_ip, client_id)
+    activity = _record_client_activity_event(scope_key, client_ip, client_id, "connection_timestamps")
     activity["connections_opened"] = int(activity["connections_opened"]) + 1
     activity["active_connections"] = len(sockets)
     logger.info(
@@ -1951,7 +2077,12 @@ async def websocket_endpoint(
                     })
                     continue
 
-                activity = _touch_client_activity(scope_key, client_ip, normalized_client_id)
+                activity = _record_client_activity_event(
+                    scope_key,
+                    client_ip,
+                    normalized_client_id,
+                    "query_timestamps",
+                )
                 activity["ws_queries"] = int(activity["ws_queries"]) + 1
 
                 resolved_key = _resolve_llm_key(message.get("llm_api_key"))
