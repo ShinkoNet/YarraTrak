@@ -4,9 +4,8 @@ websockets
 mcp[cli]
 httpx
 python-dotenv
-groq
+anthropic
 pydantic
 python-multipart
-azure-cognitiveservices-speech
 pytest
 pytest-asyncio

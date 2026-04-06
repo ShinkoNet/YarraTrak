@@ -1,23 +1,24 @@
 """
-Agent Engine - Pure Tool-Call Architecture
+Agent Engine - Pure Tool-Call Architecture (Anthropic Claude)
 
 The worker model MUST always call a tool. No JSON parsing required.
 Terminal tools (return_result, ask_clarification, return_error) end the loop.
-Session context is maintained for multi-turn conversations (ASR corrections, clarifications).
+Session context is maintained for multi-turn conversations.
 
 Strict JSON Schema Enforcement:
-- All tool parameters use `additionalProperties: false` for strict validation
+- All tool parameters use strict validation
 - Terminal tool responses are validated with Pydantic before returning
 - Ensures type-safe, predictable responses from the agent
+
+BYOK: Accepts per-request API keys. Falls back to server ANTHROPIC_API_KEY.
 """
 
 import asyncio
 import json
 import logging
-import httpx
-from groq import AsyncGroq, APITimeoutError, APIConnectionError, BadRequestError
+import hashlib
+from anthropic import AsyncAnthropic, APITimeoutError, APIConnectionError, BadRequestError
 from pydantic import ValidationError
-from . import config
 from . import tools
 from . import session_store
 from datetime import datetime
@@ -31,14 +32,23 @@ from . import schemas
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-groq_client = AsyncGroq(api_key=config.GROQ_API_KEY)
+# No server-side key — purely BYOK (Bring Your Own Key)
 
 # Models
-GUARDRAIL_MODEL = "openai/gpt-oss-safeguard-20b"
-WORKER_MODEL = "moonshotai/kimi-k2-instruct-0905"
+WORKER_MODEL = "claude-sonnet-4-6-20250514"
 
-# --- Tool Definitions with Strict Schemas ---
-# All schemas use `additionalProperties: false` for strict JSON validation
+# --- Tool Definitions (Anthropic format) ---
+# Anthropic uses "input_schema" instead of "parameters"
+
+def _groq_to_anthropic_tool(tool_def: dict) -> dict:
+    """Convert a Groq-format tool definition to Anthropic format."""
+    fn = tool_def["function"]
+    return {
+        "name": fn["name"],
+        "description": fn["description"],
+        "input_schema": fn["parameters"],
+    }
+
 
 DATA_TOOLS = [
     {
@@ -47,7 +57,6 @@ DATA_TOOLS = [
             "name": "search_and_get_departures",
             "description": "Search for a stop by name and get upcoming departures. Use when user specifies a stop.",
             "parameters": schemas.SEARCH_AND_GET_DEPARTURES_SCHEMA,
-            "strict": True
         }
     },
     {
@@ -56,7 +65,6 @@ DATA_TOOLS = [
             "name": "search_stops",
             "description": "Search for stops by name. Returns stop IDs and types.",
             "parameters": schemas.SEARCH_STOPS_SCHEMA,
-            "strict": True
         }
     },
     {
@@ -65,7 +73,6 @@ DATA_TOOLS = [
             "name": "search_routes",
             "description": "Search for routes/lines by name (e.g., 'Pakenham', 'Sandringham').",
             "parameters": schemas.SEARCH_ROUTES_SCHEMA,
-            "strict": True
         }
     },
     {
@@ -74,7 +81,6 @@ DATA_TOOLS = [
             "name": "get_departures",
             "description": "Get departures for a known stop ID.",
             "parameters": schemas.GET_DEPARTURES_SCHEMA,
-            "strict": True
         }
     },
     {
@@ -83,7 +89,6 @@ DATA_TOOLS = [
             "name": "get_route_directions",
             "description": "Get available directions for a route ID.",
             "parameters": schemas.GET_ROUTE_DIRECTIONS_SCHEMA,
-            "strict": True
         }
     },
     {
@@ -92,7 +97,6 @@ DATA_TOOLS = [
             "name": "setup_pebble_button",
             "description": "Set up a Pebble button. Just provide station NAMES - IDs resolved automatically. Returns guidance on errors.",
             "parameters": schemas.SETUP_PEBBLE_BUTTON_SCHEMA,
-            "strict": True
         }
     },
 ]
@@ -104,7 +108,6 @@ TERMINAL_TOOLS = [
             "name": "return_result",
             "description": "Return departure information to the user. Call this when you have the data.",
             "parameters": schemas.RETURN_RESULT_SCHEMA,
-            "strict": True
         }
     },
     {
@@ -113,7 +116,6 @@ TERMINAL_TOOLS = [
             "name": "ask_clarification",
             "description": "Ask user to choose when query is ambiguous (e.g., which direction, which line).",
             "parameters": schemas.ASK_CLARIFICATION_SCHEMA,
-            "strict": True
         }
     },
     {
@@ -122,12 +124,15 @@ TERMINAL_TOOLS = [
             "name": "return_error",
             "description": "Return an error when the request cannot be fulfilled.",
             "parameters": schemas.RETURN_ERROR_SCHEMA,
-            "strict": True
         }
     },
 ]
 
-WORKER_TOOLS = DATA_TOOLS + TERMINAL_TOOLS
+# Convert to Anthropic format
+ANTHROPIC_DATA_TOOLS = [_groq_to_anthropic_tool(t) for t in DATA_TOOLS]
+ANTHROPIC_TERMINAL_TOOLS = [_groq_to_anthropic_tool(t) for t in TERMINAL_TOOLS]
+ANTHROPIC_WORKER_TOOLS = ANTHROPIC_DATA_TOOLS + ANTHROPIC_TERMINAL_TOOLS
+
 TERMINAL_TOOL_NAMES = {"return_result", "ask_clarification", "return_error"}
 
 # --- Tool Handlers ---
@@ -157,15 +162,12 @@ def validate_terminal_response(fn_name: str, payload: dict) -> tuple[dict, list[
     
     Returns:
         Tuple of (validated_payload, validation_errors)
-        - validated_payload: The normalized payload (may have coerced types)
-        - validation_errors: List of validation error messages (empty if valid)
     """
     errors = []
     
     try:
         if fn_name == "return_result":
             validated = schemas.validate_return_result(payload)
-            # Convert back to dict, now with validated/coerced types
             return validated.model_dump(), errors
         elif fn_name == "ask_clarification":
             validated = schemas.validate_ask_clarification(payload)
@@ -176,65 +178,10 @@ def validate_terminal_response(fn_name: str, payload: dict) -> tuple[dict, list[
         else:
             return payload, [f"Unknown terminal tool: {fn_name}"]
     except ValidationError as e:
-        # Collect all validation errors
         for err in e.errors():
             loc = ".".join(str(x) for x in err["loc"])
             errors.append(f"{loc}: {err['msg']}")
-        # Return original payload with errors
         return payload, errors
-
-
-
-
-# --- Guardrail ---
-
-GUARDRAIL_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "allow",
-            "description": "Allow: transport queries, greetings, time/weather questions.",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "block",
-            "description": "Block: coding, creative writing, general knowledge, harmful content.",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
-    },
-]
-
-GUARDRAIL_PROMPT = """You are a content classifier for a Melbourne public transport assistant.
-Call `allow` for transport queries, greetings, time/weather, or responses that make sense in the conversation context.
-Call `block` for coding, trivia, creative writing, or harmful content.
-
-IMPORTANT: Consider conversation history. A reply like "Yes", "The second one", or a station name may seem off-topic in isolation but is valid if it follows a transport-related question."""
-
-
-async def run_guardrail(query: str, session_id: str) -> bool:
-    """Returns True if query is allowed, False if blocked."""
-    try:
-        history = session_store.get_history(session_id)
-
-        messages = [{"role": "system", "content": GUARDRAIL_PROMPT}]
-        messages.extend(history)
-        messages.append({"role": "user", "content": query})
-
-        response = await groq_client.chat.completions.create(
-            model=GUARDRAIL_MODEL,
-            messages=messages,
-            tools=GUARDRAIL_TOOLS,
-            tool_choice="required",
-            temperature=0.0,
-        )
-        tool_call = response.choices[0].message.tool_calls[0]
-        return tool_call.function.name == "allow"
-    except Exception as e:
-        print(f"Guardrail error: {e}")
-        return True  # Fail open
 
 
 # --- Worker ---
@@ -288,22 +235,29 @@ ERROR HANDLING:
 - [API_ERROR] → return_error with "temporary service issue"
 - [MCP_ERROR] → return_error with "processing error" """
 
-# Inject known station names to help with spelling/ASR
+# Inject known station names to help with spelling
 try:
     _db_path = os.path.join(os.path.dirname(__file__), "stations_train.json")
     if os.path.exists(_db_path):
         with open(_db_path, "r") as f:
             _st_data = json.load(f)
-            # Just names, comma separated
             _st_names = [s["name"].replace(" Station", "") for s in _st_data.get("stops", [])]
-            # Limit to ~300 to be safe
             _st_list = ", ".join(_st_names[:300])
             WORKER_PROMPT += f"\n\nKNOWN STATIONS (for spelling correction):\n{_st_list}"
 except Exception as e:
     print(f"Failed to load station names for prompt: {e}")
 
 
-async def run_worker(query: str, session_id: str, prefetched_context: str = "") -> dict:
+def _get_client(llm_api_key: str) -> AsyncAnthropic:
+    """Get an Anthropic client using the user-provided key (BYOK)."""
+    return AsyncAnthropic(api_key=llm_api_key)
+
+
+def _session_label(session_id: str) -> str:
+    return hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+
+
+async def run_worker(query: str, session_id: str, prefetched_context: str = "", llm_api_key: str | None = None) -> dict:
     """
     Execute the worker loop. Always returns a structured response.
     No JSON parsing - all responses come from tool calls.
@@ -313,7 +267,9 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
         query: User's query text
         session_id: Session identifier
         prefetched_context: Optional pre-fetched departure data to inject into prompt
+        llm_api_key: Optional per-request Anthropic API key (BYOK)
     """
+    client = _get_client(llm_api_key)
     history = session_store.get_history(session_id)
 
     # Build system prompt with optional pre-fetched context
@@ -321,90 +277,77 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
     if prefetched_context:
         system_prompt = f"{WORKER_PROMPT}\n\n{prefetched_context}\n\nIf the user's query matches one of these pre-fetched stops, use the data directly and call return_result without calling search_and_get_departures."
 
-    messages = [{"role": "system", "content": system_prompt}]
+    # Build messages (Anthropic format: system is separate, not in messages)
+    messages = []
     messages.extend(history)
     messages.append({"role": "user", "content": query})
 
-    tool_use_retries = 0
-    max_tool_use_retries = 3
     learned_stop = None  # Track stop info from successful queries
     button_config = None  # Track button config from configure_pebble_button
 
     for turn in range(10):
-        # Add prefill to nudge model toward tool use (helps with some models)
-        messages_with_prefill = messages + [
-            {"role": "assistant", "content": "I'll call the appropriate tool now.\n"}
-        ]
-
         try:
-            response = await groq_client.chat.completions.create(
+            response = await client.messages.create(
                 model=WORKER_MODEL,
-                messages=messages_with_prefill,
-                tools=WORKER_TOOLS,
-                tool_choice="required",
+                max_tokens=4096,
+                system=system_prompt,
+                messages=messages,
+                tools=ANTHROPIC_WORKER_TOOLS,
+                tool_choice={"type": "any"},  # Force tool use
                 temperature=0.0,
             )
         except APITimeoutError:
-            return {"type": "ERROR", "payload": {"message": "Request timed out. Please try again.", "tts_text": "Sorry, the request timed out. Please try again.", "error_code": "GROQ_TIMEOUT"}}
+            return {"type": "ERROR", "payload": {"message": "Request timed out. Please try again.", "tts_text": "Sorry, the request timed out. Please try again.", "error_code": "ANTHROPIC_TIMEOUT"}}
         except APIConnectionError:
-            return {"type": "ERROR", "payload": {"message": "Could not connect to AI service.", "tts_text": "Sorry, I couldn't connect to the AI service.", "error_code": "GROQ_CONNECTION"}}
+            return {"type": "ERROR", "payload": {"message": "Could not connect to AI service.", "tts_text": "Sorry, I couldn't connect to the AI service.", "error_code": "ANTHROPIC_CONNECTION"}}
         except BadRequestError as e:
-            # Handle tool_use_failed - model tried to output text instead of tool call
             error_str = str(e)
-            logger.warning(f"[Turn {turn}] Groq BadRequestError: {error_str}")
-            if "tool_use_failed" in error_str:
-                tool_use_retries += 1
-                logger.info(f"[Turn {turn}] Tool use failed, retry {tool_use_retries}/{max_tool_use_retries}")
-                if tool_use_retries >= max_tool_use_retries:
-                    return {"type": "ERROR", "payload": {"message": "Could not process request.", "tts_text": "Sorry, I had trouble processing that request.", "error_code": "TOOL_USE_FAILED"}}
-                # Add nudge toward clarification
-                messages.append({
-                    "role": "user",
-                    "content": "Please use one of the available tools. If you're unsure what the user wants, use ask_clarification to ask them."
-                })
-                continue
-            # Other BadRequestErrors - return error to user
-            return {"type": "ERROR", "payload": {"message": "Request failed.", "tts_text": "Sorry, there was an issue processing your request.", "error_code": "GROQ_BAD_REQUEST"}}
+            logger.warning(f"[Turn {turn}] Anthropic BadRequestError: {error_str}")
+            return {"type": "ERROR", "payload": {"message": "Request failed.", "tts_text": "Sorry, there was an issue processing your request.", "error_code": "ANTHROPIC_BAD_REQUEST"}}
         except Exception as e:
             logger.error(f"[Turn {turn}] Unexpected error in worker: {type(e).__name__}: {e}")
-            return {"type": "ERROR", "payload": {"message": f"Error: {e}", "tts_text": "Sorry, an unexpected error occurred.", "error_code": "GROQ_ERROR"}}
+            return {"type": "ERROR", "payload": {"message": f"Error: {e}", "tts_text": "Sorry, an unexpected error occurred.", "error_code": "ANTHROPIC_ERROR"}}
 
-        msg = response.choices[0].message
-        tool_calls = msg.tool_calls
+        # Process response content blocks
+        # Anthropic returns content as a list of blocks (text and/or tool_use)
+        tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
 
-        if not tool_calls:
-            # Should not happen with tool_choice="required"
+        if not tool_use_blocks:
+            # No tool calls - shouldn't happen with tool_choice=any
             return {"type": "ERROR", "payload": {"message": "No tool called", "tts_text": "Sorry, something went wrong."}}
 
-        messages.append(msg)
+        # Add assistant response to messages
+        messages.append({"role": "assistant", "content": response.content})
 
-        for tc in tool_calls:
-            fn_name = tc.function.name
-            fn_args = json.loads(tc.function.arguments)
+        # Process each tool use block
+        tool_results = []
+        
+        for block in tool_use_blocks:
+            fn_name = block.name
+            fn_args = block.input
 
-            logger.info(f"[Turn {turn}] Tool call: {fn_name}({json.dumps(fn_args, default=str)})")
+            logger.info(
+                "[Turn %d] Tool call: %s arg_keys=%s",
+                turn,
+                fn_name,
+                sorted(fn_args.keys()),
+            )
 
             # Terminal tools - validate with Pydantic and return
             if fn_name in TERMINAL_TOOL_NAMES:
-                # Validate response against strict schema
                 validated_payload, validation_errors = validate_terminal_response(fn_name, fn_args)
                 
                 if validation_errors:
                     logger.warning(f"[Turn {turn}] Schema validation errors for {fn_name}: {validation_errors}")
-                    # Log but continue with best-effort response
                 
-                # Build a summary of the assistant's response for history
                 if fn_name == "return_result":
                     assistant_msg = validated_payload.get("tts_text", "")
                     session_store.update_history(session_id, "user", query)
                     session_store.update_history(session_id, "assistant", assistant_msg)
-                    # Include learned stop info for client to store
                     if learned_stop:
                         validated_payload["_stop_info"] = learned_stop
-                    # Include button config for client to store
                     if button_config:
                         validated_payload["_button_config"] = button_config
-                    # Include validation status for debugging
                     if validation_errors:
                         validated_payload["_validation_errors"] = validation_errors
                     return {"type": "RESULT", "payload": validated_payload}
@@ -423,12 +366,13 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
             # Data tools - execute and continue
             handler = TOOL_HANDLERS.get(fn_name)
             if handler:
-                fn_args = convert_route_type(fn_args)
+                fn_args_copy = dict(fn_args)
+                fn_args_copy = convert_route_type(fn_args_copy)
                 # Inject session_id for tools that need it
                 if fn_name == "search_and_get_departures":
-                    fn_args["session_id"] = session_id
+                    fn_args_copy["session_id"] = session_id
                 try:
-                    result = await handler(**fn_args)
+                    result = await handler(**fn_args_copy)
                     # Extract stop info for client to learn
                     if "[STOP_INFO:" in str(result):
                         import re
@@ -466,62 +410,50 @@ async def run_worker(query: str, session_id: str, prefetched_context: str = "") 
                 result = f"Unknown tool: {fn_name}"
 
             # Log the tool result for debugging
-            result_preview = str(result)[:500] + "..." if len(str(result)) > 500 else str(result)
-            logger.info(f"[Turn {turn}] Tool result from {fn_name}: {result_preview}")
+            result_length = len(str(result))
+            logger.info(
+                "[Turn %d] Tool result from %s length=%d",
+                turn,
+                fn_name,
+                result_length,
+            )
 
-            messages.append({
-                "tool_call_id": tc.id,
-                "role": "tool",
-                "name": fn_name,
-                "content": str(result)
+            # Add tool result in Anthropic format
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": str(result),
             })
+
+        # Add all tool results as a user message
+        if tool_results:
+            messages.append({"role": "user", "content": tool_results})
 
     return {"type": "ERROR", "payload": {"message": "Max turns reached", "tts_text": "Sorry, I couldn't complete your request."}}
 
 
 # --- Main Entry Point ---
 
-async def run_agent(query: str, session_id: str, prefetched_context: str = "") -> dict:
+async def run_agent(query: str, session_id: str, prefetched_context: str = "", llm_api_key: str | None = None) -> dict:
     """
-    Main entry point. Runs guardrail (if enabled) and worker.
+    Main entry point. Runs worker (guardrail disabled for contest).
     Returns structured response dict with type and payload.
 
     Args:
         query: User's query text
         session_id: Session identifier
         prefetched_context: Optional pre-fetched departure data from speculative execution
+        llm_api_key: Optional per-request Anthropic API key (BYOK)
     """
-    logger.info(f"[Query] session={session_id[:8]}... query='{query}'")
+    logger.info(
+        "[Query] session=%s query_len=%d prefetched=%s",
+        _session_label(session_id),
+        len(query),
+        bool(prefetched_context),
+    )
     
-    if config.ENABLE_GUARDRAIL:
-        # Run guardrail and worker in parallel
-        guardrail_task = asyncio.create_task(run_guardrail(query, session_id))
-        worker_task = asyncio.create_task(run_worker(query, session_id, prefetched_context))
-
-        is_allowed = await guardrail_task
-
-        if not is_allowed:
-            worker_task.cancel()
-            return {
-                "type": "ERROR",
-                "payload": {
-                    "message": "I can only help with public transport queries.",
-                    "tts_text": "I can only help with public transport queries.",
-                    "error_code": "GUARDRAIL_BLOCK"
-                }
-            }
-
-        try:
-            return await worker_task
-        except asyncio.CancelledError:
-            return {"type": "ERROR", "payload": {"message": "Cancelled", "tts_text": "Request cancelled."}}
-        except Exception as e:
-            logger.error(f"Worker error: {e}")
-            return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}
-    else:
-        # Guardrail disabled - run worker directly
-        try:
-            return await run_worker(query, session_id, prefetched_context)
-        except Exception as e:
-            logger.error(f"Worker error: {e}")
-            return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}
+    try:
+        return await run_worker(query, session_id, prefetched_context, llm_api_key=llm_api_key)
+    except Exception as e:
+        logger.error(f"Worker error: {e}")
+        return {"type": "ERROR", "payload": {"message": str(e), "tts_text": "Sorry, an error occurred."}}

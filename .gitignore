@@ -60,6 +60,9 @@ node_modules/
 # Temporary files
 *.tmp
 *.temp
+tools/
+.claude/
+.codex/
 
 # Pebble SDK
 pebble/build/

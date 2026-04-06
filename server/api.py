@@ -5,14 +5,16 @@ Open-data architecture: departure/station endpoints are unauthenticated.
 Agent (LLM) endpoints use Bring-Your-Own-Key (BYOK) via Anthropic API key.
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
-from fastapi.staticfiles import StaticFiles
+from collections import defaultdict, deque
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response
 import json
 from pydantic import BaseModel
 from datetime import datetime, timezone
+import hashlib
+import logging
 import os
 import asyncio
 import time
@@ -23,16 +25,26 @@ from . import agent_engine
 from . import tools
 from .ptv_client import PTVClient
 from . import route_geometry
+from .config import (
+    ALLOWED_ORIGINS,
+    HTTP_FAVOURITE_RATE_LIMIT,
+    HTTP_QUERY_RATE_LIMIT,
+    MAX_FAVOURITE_BUTTONS,
+    MAX_QUERY_LENGTH,
+    MAX_WS_CONNECTIONS_PER_IP,
+    WS_QUERY_RATE_LIMIT,
+)
 
 app = FastAPI(title="PTV Notify", version="1.0.0")
+logger = logging.getLogger(__name__)
 
 # GZip compression for large responses (station databases)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS or ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -63,10 +75,6 @@ class AgentRequest(BaseModel):
 
 ptv_client = PTVClient()
 
-# --- Button Configurations (for MCP/agent setup) ---
-# This allows the agent to configure favourite buttons via set_button WebSocket message
-_button_configs: dict[str, dict] = {}
-
 # --- Live Favourite Updates ---
 # Subscription registry: websocket -> list of button configs with start/destination info
 _favourite_subscriptions: dict[WebSocket, list[dict]] = {}
@@ -87,6 +95,90 @@ POSITION_BROADCAST_INTERVAL = 5.0  # seconds
 
 # Watch position tasks (per websocket)
 _watch_tasks: dict[WebSocket, asyncio.Task] = {}
+
+# Basic in-memory protections for public deployments
+RATE_LIMIT_WINDOW_SECONDS = 60.0
+_http_query_limiters: dict[str, deque[float]] = defaultdict(deque)
+_http_favourite_limiters: dict[str, deque[float]] = defaultdict(deque)
+_ws_query_limiters: dict[str, deque[float]] = defaultdict(deque)
+_ws_connections_by_ip: dict[str, int] = defaultdict(int)
+
+
+def _cleanup_rate_bucket(bucket: deque[float], now: float) -> None:
+    cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+    while bucket and bucket[0] <= cutoff:
+        bucket.popleft()
+
+
+def _check_rate_limit(store: dict[str, deque[float]], key: str, limit: int) -> bool:
+    if limit <= 0:
+        return True
+    now = time.time()
+    bucket = store[key]
+    _cleanup_rate_bucket(bucket, now)
+    if len(bucket) >= limit:
+        return False
+    bucket.append(now)
+    return True
+
+
+def _client_ip_from_request(request: Request) -> str:
+    return request.client.host if request.client and request.client.host else "unknown"
+
+
+def _client_ip_from_websocket(websocket: WebSocket) -> str:
+    return websocket.client.host if websocket.client and websocket.client.host else "unknown"
+
+
+def _key_fingerprint(llm_key: str | None) -> str:
+    if not llm_key:
+        return "anonymous"
+    return hashlib.sha256(llm_key.encode("utf-8")).hexdigest()[:16]
+
+
+def _scoped_session_id(session_id: str, client_scope: str, llm_key: str | None) -> str:
+    return f"{client_scope}:{_key_fingerprint(llm_key)}:{session_id}"
+
+
+def _origin_allowed(websocket: WebSocket) -> bool:
+    if not ALLOWED_ORIGINS:
+        return True
+    origin = websocket.headers.get("origin")
+    if not origin:
+        # Pebble/mobile clients may not send Origin.
+        return True
+    return origin in ALLOWED_ORIGINS
+
+
+def _register_websocket_connection(client_ip: str) -> bool:
+    current = _ws_connections_by_ip[client_ip]
+    if current >= MAX_WS_CONNECTIONS_PER_IP:
+        return False
+    _ws_connections_by_ip[client_ip] = current + 1
+    return True
+
+
+def _release_websocket_connection(client_ip: str) -> None:
+    current = _ws_connections_by_ip.get(client_ip, 0)
+    if current <= 1:
+        _ws_connections_by_ip.pop(client_ip, None)
+    else:
+        _ws_connections_by_ip[client_ip] = current - 1
+
+
+def _validate_query_text(query_text: str) -> str:
+    query_text = query_text.strip()
+    if not query_text:
+        raise ValueError("Empty query")
+    if len(query_text) > MAX_QUERY_LENGTH:
+        raise ValueError(f"Query too long (max {MAX_QUERY_LENGTH} characters)")
+    return query_text
+
+
+def _clamp_button_configs(buttons: list[dict]) -> list[dict]:
+    if not isinstance(buttons, list):
+        return []
+    return buttons[:MAX_FAVOURITE_BUTTONS]
 
 
 def _resolve_allowed_trip_pairs(stop_id: int, dest_id: int | None, route_type: int) -> set[tuple[int, int]] | None:
@@ -181,7 +273,7 @@ async def _get_run_position(run_ref: int, route_type: int) -> dict | None:
         _run_position_cache[cache_key] = result
         return result
     except Exception as e:
-        print(f"Run position fetch error: {e}")
+        logger.warning("Run position fetch error: %s", e)
         return None
 
 
@@ -226,7 +318,7 @@ async def _watch_position_loop(
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"Position update error: {e}")
+            logger.warning("Position update error: %s", e)
 
         await asyncio.sleep(POSITION_BROADCAST_INTERVAL)
 
@@ -309,7 +401,7 @@ async def fetch_departure_for_button(
         return result
         
     except Exception as e:
-        print(f"Favourite fetch error: {e}")
+        logger.warning("Favourite fetch error: %s", e)
         return {"departures": [], "fetched_at": now}
 
 
@@ -368,14 +460,14 @@ async def broadcast_favourite_updates():
                     "updates": updates
                 })
             except Exception as e:
-                print(f"Broadcast error: {e}")
+                logger.warning("Broadcast error: %s", e)
                 disconnected.append(ws)
         
         # Clean up disconnected clients
         for ws in disconnected:
             if ws in _favourite_subscriptions:
                 del _favourite_subscriptions[ws]
-                print("Removed disconnected client from favourite subscriptions")
+                logger.info("Removed disconnected client from favourite subscriptions")
 
 
 def start_broadcast_task():
@@ -383,7 +475,7 @@ def start_broadcast_task():
     global _broadcast_task
     if _broadcast_task is None or _broadcast_task.done():
         _broadcast_task = asyncio.create_task(broadcast_favourite_updates())
-        print("Favourite broadcast task started")
+        logger.info("Favourite broadcast task started")
 
 
 def stop_broadcast_task():
@@ -392,13 +484,16 @@ def stop_broadcast_task():
     if _broadcast_task and not _broadcast_task.done():
         _broadcast_task.cancel()
         _broadcast_task = None
-        print("Favourite broadcast task stopped")
+        logger.info("Favourite broadcast task stopped")
 
 
 # --- Helper: resolve LLM API key ---
 
 def _resolve_llm_key(provided_key: str | None) -> str | None:
     """Return the user-provided key, or None if not provided (BYOK only)."""
+    if not provided_key:
+        return None
+    provided_key = provided_key.strip()
     return provided_key if provided_key else None
 
 
@@ -407,9 +502,9 @@ def _resolve_llm_key(provided_key: str | None) -> str | None:
 
 @app.on_event("startup")
 async def startup_start_broadcast():
-    """Start the broadcast task on server startup to keep registry buttons warm."""
+    """Start the broadcast task and preload route geometry."""
     start_broadcast_task()
-    print("Broadcast task started on startup")
+    logger.info("Broadcast task started on startup")
     route_geometry.load_train_routes()
 
 
@@ -441,17 +536,21 @@ async def get_stations(type: str = "train"):
                     data = json.load(f)
                     all_stops.extend(data.get("stops", []))
             except Exception as e:
-                print(f"Error reading {filename}: {e}")
+                logger.warning("Error reading %s: %s", filename, e)
     
     return {"stations": all_stops}
 
 
 @app.post("/api/v1/favourite")
-async def favourite_departure(req: FavouriteRequest):
+async def favourite_departure(req: FavouriteRequest, request: Request):
     """
     Quick departure check for pre-configured buttons. Open access.
     Returns next departure info.
     """
+    client_ip = _client_ip_from_request(request)
+    if not _check_rate_limit(_http_favourite_limiters, client_ip, HTTP_FAVOURITE_RATE_LIMIT):
+        raise HTTPException(status_code=429, detail="Too many favourite requests. Please slow down.")
+
     if not req.stop_id:
         return {"vibration": [100, 100], "message": "Not configured"}
 
@@ -495,29 +594,39 @@ async def favourite_departure(req: FavouriteRequest):
         return {"vibration": [200, 200, 200], "message": "No future services"}
 
     except Exception as e:
-        print(f"Favourite error: {e}")
+        logger.warning("Favourite error: %s", e)
         return {"vibration": [500, 100, 500], "message": "Error"}
 
 
 @app.post("/api/v1/query")
-async def text_query(request: AgentRequest):
+async def text_query(agent_request: AgentRequest, request: Request):
     """
-    Text-only agent endpoint. Requires LLM API key (BYOK) or server fallback.
+    Text-only agent endpoint. Requires a BYOK LLM API key.
     """
-    llm_key = _resolve_llm_key(request.llm_api_key)
+    client_ip = _client_ip_from_request(request)
+    if not _check_rate_limit(_http_query_limiters, client_ip, HTTP_QUERY_RATE_LIMIT):
+        raise HTTPException(status_code=429, detail="Too many AI queries. Please slow down.")
+
+    llm_key = _resolve_llm_key(agent_request.llm_api_key)
     if not llm_key:
         raise HTTPException(status_code=401, detail="Anthropic API key required. Provide llm_api_key in request body.")
 
-    session_id = request.session_id or str(uuid.uuid4())
+    try:
+        query_text = _validate_query_text(agent_request.query)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    session_id = agent_request.session_id or str(uuid.uuid4())
+    scoped_session_id = _scoped_session_id(session_id, client_ip, llm_key)
 
     # Convert query_history from Pydantic models to dicts
-    history_list = [h.model_dump() for h in request.query_history] if request.query_history else []
+    history_list = [h.model_dump() for h in agent_request.query_history] if agent_request.query_history else []
 
     # Run speculative fetch with client-provided history
     prefetched = await tools.speculative_fetch(history_list)
     prefetched_context = tools.format_speculative_context(prefetched)
 
-    result = await agent_engine.run_agent(request.query, session_id, prefetched_context, llm_api_key=llm_key)
+    result = await agent_engine.run_agent(query_text, scoped_session_id, prefetched_context, llm_api_key=llm_key)
 
     # Extract learned stop
     payload = result.get("payload", {})
@@ -542,14 +651,12 @@ async def text_query(request: AgentRequest):
 # --- WebSocket Endpoint ---
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), llm_api_key: str = Query(None)):
+async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
     """
     WebSocket endpoint for real-time communication. Open access for departure data.
     
     Buttons: Pass as query param ?buttons=1:STOP_ID:ROUTE_TYPE:DIR_ID:DEST_ID,...
     If provided, server immediately fetches and pushes departure data on connection.
-    
-    llm_api_key: Optional Anthropic API key for agent queries (BYOK).
     
     Message Protocol:
     
@@ -559,6 +666,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
         "id": "1",                    // Correlation ID
         "text": "next train from richmond",
         "session_id": "abc123",       // Optional
+        "llm_api_key": "sk-ant-...",  // Required for agent queries
         "query_history": [...]        // Optional, for speculative fetch
     }
     
@@ -570,6 +678,27 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
         "learned_stop": { ... }       // Optional
     }
     """
+    client_ip = _client_ip_from_websocket(websocket)
+    if not _origin_allowed(websocket):
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "error",
+            "id": None,
+            "error": "Origin not allowed"
+        })
+        await websocket.close(code=1008)
+        return
+
+    if not _register_websocket_connection(client_ip):
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "error",
+            "id": None,
+            "error": "Too many active connections from this client"
+        })
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
     
     # Parse buttons from query param and immediately push departure data
@@ -594,11 +723,12 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
                     })
             
             if parsed_buttons:
+                parsed_buttons = _clamp_button_configs(parsed_buttons)
                 # Register subscription for connected client
                 _favourite_subscriptions[websocket] = parsed_buttons
                 
                 start_broadcast_task()
-                print(f"Client connected with {len(parsed_buttons)} buttons in URL")
+                logger.info("Client connected with %d buttons in URL", len(parsed_buttons))
                 
                 # Fetch and push initial data in background (non-blocking)
                 # Fetch all buttons in PARALLEL for speed
@@ -626,11 +756,11 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
                             "updates": initial_updates
                         })
                     except Exception as e:
-                        print(f"Error pushing initial favourite data: {e}")
+                        logger.warning("Error pushing initial favourite data: %s", e)
                 
                 asyncio.create_task(push_initial_data())
         except Exception as e:
-            print(f"Error parsing buttons: {e}")
+            logger.warning("Error parsing buttons: %s", e)
     
     try:
         while True:
@@ -652,13 +782,33 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
             
             if msg_type == "query":
                 # Handle text query — requires LLM key
-                query_text = message.get("text", "").strip()
+                try:
+                    query_text = _validate_query_text(message.get("text", ""))
+                except ValueError as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "id": msg_id,
+                        "error": str(e)
+                    })
+                    continue
+
                 session_id = message.get("session_id") or str(uuid.uuid4())
-                query_history = message.get("query_history", [])
+                raw_query_history = message.get("query_history", [])
+                query_history = raw_query_history[:5] if isinstance(raw_query_history, list) else []
                 
-                # Resolve LLM key: message field > WS query param > server fallback
-                msg_llm_key = message.get("llm_api_key") or llm_api_key
-                resolved_key = _resolve_llm_key(msg_llm_key)
+                if not _check_rate_limit(
+                    _ws_query_limiters,
+                    f"{client_ip}:{id(websocket)}",
+                    WS_QUERY_RATE_LIMIT,
+                ):
+                    await websocket.send_json({
+                        "type": "error",
+                        "id": msg_id,
+                        "error": "Too many AI queries on this connection. Please wait a moment."
+                    })
+                    continue
+
+                resolved_key = _resolve_llm_key(message.get("llm_api_key"))
                 
                 if not resolved_key:
                     await websocket.send_json({
@@ -680,9 +830,11 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
                     # Run speculative fetch with client-provided history
                     prefetched = await tools.speculative_fetch(query_history)
                     prefetched_context = tools.format_speculative_context(prefetched)
+
+                    scoped_session_id = _scoped_session_id(session_id, client_ip, resolved_key)
                     
                     # Run agent with resolved key
-                    result = await agent_engine.run_agent(query_text, session_id, prefetched_context, llm_api_key=resolved_key)
+                    result = await agent_engine.run_agent(query_text, scoped_session_id, prefetched_context, llm_api_key=resolved_key)
                     
                     # Extract learned stop if present
                     learned_stop = None
@@ -718,10 +870,10 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
                     if websocket.client_state.value == 1:  # CONNECTED
                         await websocket.send_json(response)
                     else:
-                        print(f"WebSocket closed before response could be sent (state: {websocket.client_state})")
+                        logger.info("WebSocket closed before response could be sent (state: %s)", websocket.client_state)
                     
                 except Exception as e:
-                    print(f"WebSocket query error: {e}")
+                    logger.warning("WebSocket query error: %s", e)
                     try:
                         if websocket.client_state.value == 1:
                             await websocket.send_json({
@@ -885,46 +1037,9 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
             elif msg_type == "watch_stop":
                 _cancel_watch_task(websocket)
             
-            elif msg_type == "get_buttons":
-                # Return button configurations stored on server
-                await websocket.send_json({
-                    "type": "buttons",
-                    "id": msg_id,
-                    "buttons": _button_configs
-                })
-            
-            elif msg_type == "set_button":
-                # Agent can set button config (for MCP use)
-                button_id = message.get("button_id")
-                if button_id is None or button_id < 1 or button_id > 10:
-                    await websocket.send_json({
-                        "type": "error",
-                        "id": msg_id,
-                        "error": "button_id must be 1-10"
-                    })
-                    continue
-                
-                _button_configs[str(button_id)] = {
-                    "name": message.get("name", f"Button {button_id}"),
-                    "stop_id": message.get("stop_id"),
-                    "stop_name": message.get("stop_name"),
-                    "dest_id": message.get("dest_id"),
-                    "dest_name": message.get("dest_name"),
-                    "route_type": message.get("route_type", RouteType.TRAIN),
-                    "direction_id": message.get("direction_id"),
-                    "direction_name": message.get("direction_name")
-                }
-                
-                await websocket.send_json({
-                    "type": "button_set",
-                    "id": msg_id,
-                    "button_id": button_id,
-                    "config": _button_configs[str(button_id)]
-                })
-            
             elif msg_type == "subscribe_favourites":
                 # Subscribe to live favourite updates
-                buttons = message.get("buttons", [])
+                buttons = _clamp_button_configs(message.get("buttons", []))
                 valid_buttons = []
                 
                 for btn in buttons:
@@ -940,7 +1055,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
                 if valid_buttons:
                     _favourite_subscriptions[websocket] = valid_buttons
                     start_broadcast_task()
-                    print(f"Client subscribed to {len(valid_buttons)} favourite buttons")
+                    logger.info("Client subscribed to %d favourite buttons", len(valid_buttons))
                     
                     # Fetch and push initial data in background (non-blocking, parallel)
                     async def push_subscribe_data():
@@ -967,7 +1082,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
                                 "updates": initial_updates
                             })
                         except Exception as e:
-                            print(f"Error pushing subscribe favourite data: {e}")
+                            logger.warning("Error pushing subscribe favourite data: %s", e)
                     
                     asyncio.create_task(push_subscribe_data())
                 
@@ -989,13 +1104,15 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), l
         if websocket in _favourite_subscriptions:
             del _favourite_subscriptions[websocket]
         _cancel_watch_task(websocket)
-        print("WebSocket client disconnected")
+        logger.info("WebSocket client disconnected")
     except Exception as e:
         # Clean up subscription on error
         if websocket in _favourite_subscriptions:
             del _favourite_subscriptions[websocket]
         _cancel_watch_task(websocket)
-        print(f"WebSocket error: {e}")
+        logger.warning("WebSocket error: %s", e)
+    finally:
+        _release_websocket_connection(client_ip)
 
 
 # Serve Pebble config from pebble/config/settings.html (single source of truth)

@@ -226,37 +226,30 @@ Agent handles:
 
 **Connection URL:**
 ```
-wss://server/ws?api_key=KEY&buttons=1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:...
+wss://server/ws?buttons=1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:...
 ```
 The `buttons` param enables instant departure data push on connection (no waiting for subscribe_favourites message).
 
 **Client -> Server:**
-- `query`: Standard agent query
+- `query`: Standard agent query `{type: "query", text, session_id, llm_api_key}`
 - `favourite`: Direct departure check `{type: "favourite", stop_id: 123, ...}` - returns vibration + platform
 - `subscribe_favourites`: Subscribe to live updates `{type: "subscribe_favourites", buttons: [{button_id, stop_id, route_type, direction_id}, ...]}`
-- `set_button`: Configure a button `{type: "set_button", button_id: 1, stop_id: 123, ...}`
-- `get_buttons`: Request all button configs
 
 **Server -> Client:**
 - `result`: Agent response
 - `favourite_result`: Vibration pattern + message + platform `{type: "favourite_result", minutes: 5, platform: "2", ...}`
 - `favourite_update`: Live broadcast (every 15s) `{type: "favourite_update", updates: [{button_id, minutes, platform, message}, ...]}`
 - `favourites_subscribed`: Confirmation of subscription `{type: "favourites_subscribed", buttons: 3}`
-- `button_set`: Confirmation of button update `{type: "button_set", button_id: 1, config: ...}`
-- `buttons`: All button configs
 
-### Dynamic Button Registry & Cache Pre-Warming
+### Favourite Cache & Broadcasts
 
-The server maintains an **API key → button registry** (`_api_key_buttons`) that enables instant departure data on reconnection:
+The server keeps an in-memory cache of departure lookups and a per-connection favourite subscription list:
 
-1. **First connect** (cold): Pebble sends buttons in URL → server fetches PTV API (~1-2s per button) → registry learns buttons
-2. **Background loop** (every 15s): Pre-warms cache for ALL registered buttons (connected + disconnected)
-3. **Subsequent connects**: Cache hit → instant response
+1. **First connect** (cold): Pebble sends buttons in URL → server fetches PTV API (~1-2s per button)
+2. **Background loop** (every 15s): Refreshes connected clients' favourite subscriptions
+3. **Subsequent connects**: Cache hit → faster initial response for the same stop/direction combo
 
-**How registry is populated:**
-- WebSocket connect with `?buttons=...` → registry updated
-- LLM `set_button` call → registry updated
-- Both trigger background loop to warm the new button
+There is no longer a global shared button registry between clients.
 
 ## Key Behaviors
 
@@ -339,7 +332,7 @@ Edit `WORKER_PROMPT` in `agent_engine.py`. Key sections:
 - ERROR HANDLING: How to report API/MCP errors
 
 ### Debugging Tool Calls
-Each tool call is logged: `[Turn N] Tool: name({args})`
+Each tool call is logged with its name and argument keys, without dumping the full user prompt or tool payloads.
 
 Check for:
 - Repeated searches (model struggling)

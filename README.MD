@@ -1,179 +1,108 @@
 # PTV Notify
 
-A voice-enabled public transport assistant for Melbourne, Australia. Get real-time train, tram, and bus departure information through natural conversation.
+<p align="center">
+  <img src="pebble/resources/images/ptvnotify-transparent-full.png" alt="PTV Notify" width="240">
+</p>
+
+**Real-time Melbourne public transport departures on your Pebble smartwatch.**
+
+PTV Notify shows live train, tram, and V/Line departure times directly on your wrist. Configure your favourite stations and get instant, glanceable info — with vibration patterns that encode the wait time, so you know when to leave without looking at the screen.
 
 ## Features
 
-- **Voice Interface** - Speech-to-text (Groq Whisper) and text-to-speech (Azure Speech)
-- **Real-time Departures** - Live data from PTV (Public Transport Victoria) API
-- **Smart Search** - Fuzzy matching handles typos and ASR errors ("Sandringam" → "Sandringham")
-- **Multi-turn Conversations** - Context-aware follow-ups and clarifications
-- **Speculative Execution** - Pre-fetches departures for frequently queried stops, reducing latency by ~55%
-- **Disruption Alerts** - Bus replacements, delays, and service changes
-- **Favourites** - Quick-access buttons for instant departure checks with big countdown timer
-- **Station Watching** - Press a button to watch countdown with progress bar; vibrates each minute
-- **Agent Configuration** - Ask the agent to "set button 1 to my stop" to configure Favourites
-- **Haptic Feedback** - Vibration patterns encode departure times (hours/tens/ones pulses)
-- **MCP Integration** - Use with Claude Desktop via Model Context Protocol
-
-## Note about this environment
-
-We are developing this app in a VM designed for pebble development, which specifically requires python2. So, the default `python` is for python2 and not python3. To use python3, and pip, you need to specity `python3` and `pip3`. The server cannot be run in this environment, so ask the user to run it on their server.
+- **Live departures** — real-time data from the PTV API with second-by-second countdown
+- **Station watching** — tap a favourite to open a full-screen countdown timer with platform info
+- **Smart vibrations** — haptic patterns encode minutes until departure (hours/tens/ones)
+- **Vehicle tracking** — see how far your train is from the station (metro trains)
+- **Multiple transport types** — metro trains, V/Line, and trams
+- **Up to 10 favourites** — configure your daily commute stations
+- **AI assistant** (optional) — ask natural language questions via Claude ("next train from Richmond to the city")
 
 ## Quick Start
 
-### 1. Install Dependencies
+### For Users (Rebble Appstore)
+
+1. Install PTV Notify from the Rebble Appstore
+2. The app comes pre-loaded with 4 demo entries — open it and you'll see live departures immediately
+3. Open Settings on your phone to customise your favourite stations
+4. (Optional) Add an Anthropic API key in Settings to enable the voice/text AI assistant
+
+### For Self-Hosters
+
+#### Server Setup
 
 ```bash
-pip install -r server/requirements.txt
+cd server
+cp ../.env.example ../.env
+# Edit .env with your PTV API credentials
+pip install -r requirements.txt
+uvicorn server.api:app --host 0.0.0.0 --port 8000
 ```
 
-### 2. Configure Environment
+#### Environment Variables
 
-Create a `.env` file:
+| Variable | Required | Description |
+|---|---|---|
+| `PTV_DEV_ID` | Yes | PTV Timetable API developer ID |
+| `PTV_API_KEY` | Yes | PTV Timetable API key |
 
-```env
-PTV_DEV_ID=your_ptv_dev_id
-PTV_API_KEY=your_ptv_api_key
-GROQ_API_KEY=your_groq_api_key
-AZURE_SPEECH_KEY=your_azure_key        # Optional - for TTS
-AZURE_SPEECH_REGION=australiaeast      # Optional - for TTS
-```
+Register for PTV API credentials at [ptv.vic.gov.au](https://www.ptv.vic.gov.au/footer/data-and-reporting/datasets/ptv-timetable-api/).
 
-Get PTV API credentials at: https://www.ptv.vic.gov.au/footer/data-and-reporting/datasets/ptv-timetable-api/
-
-### 3. Run the Server
+#### Building the Pebble App
 
 ```bash
-python -m uvicorn server.api:app --host 0.0.0.0 --port 8000 --reload
+cd pebble
+pebble build
+pebble install --phone YOUR_PHONE_IP
 ```
-
-Open http://localhost:8000 in your browser.
-
-### 4. Run the Pebble App (Emulator)
-
-```bash
-./run_pebble.sh
-```
-This script builds the app, installs it to the `aplite` emulator, and opens the configuration page.
-
-### 5. Run Tests
-
-```bash
-pytest tests/ -v
-```
-
-## Usage Examples
-
-**Simple queries:**
-- "Next train from Flinders Street"
-- "When's the next 96 tram?"
-- "Trains to the city from Richmond"
-
-**Specific queries:**
-- "Next Pakenham train from Caulfield"
-- "Frankston line from South Yarra"
-
-**Follow-ups:**
-- User: "Next train from Richmond"
-- Assistant: "Which line - Pakenham, Frankston, or Glen Waverley?"
-- User: "Pakenham"
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Frontend                              │
-│  web/app.js - Web Simulator / Testing Interface (Voice & Favourites)
-│ pebble/src/js/app.js - The Pebble App (Production Client)    |
-│  localStorage: session_id, query_history, button configs     │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     FastAPI Server                           │
-│  server/api.py - /voice, /query, /favourite endpoints         │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Agent Engine                              │
-│  server/agent_engine.py                                      │
-│  ┌─────────────┐    ┌──────────────────────────────────┐    │
-│  │  Guardrail  │    │            Worker                 │    │
-│  │  (optional) │    │  Tool loop with prefill nudging   │    │
-│  │             │    │  Max 10 turns, tool_choice=required│   │
-│  └─────────────┘    └──────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Tools Layer                             │
-│  server/tools.py                                             │
-│  - search_and_get_departures (smart ranking, repeat detect) │
-│  - search_stops / search_routes                              │
-│  - get_departures (with disruption info)                    │
-│  - get_route_directions                                      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     PTV Client                               │
-│  server/ptv_client.py - HMAC-SHA1 signed requests           │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    [ PTV Timetable API ]
+pebble/          Pebble.js smartwatch app
+  src/js/app.js  Main app logic (WebSocket client, vibrations, UI)
+  config/        Settings page (served by server)
+server/          FastAPI Python server
+  api.py         REST + WebSocket endpoints
+  agent_engine.py  AI agent (Anthropic Claude)
+  tools.py       Agent tool implementations
+  ptv_client.py  PTV Timetable API client
+  *.json         Pre-built station databases
 ```
 
-## Tool-Call Agent Design
+### API Endpoints
 
-The agent uses a **pure tool-call architecture** - no JSON parsing required. The LLM must always call a tool:
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /api/v1/stations` | Open | Station database (train/tram/vline) |
+| `POST /api/v1/favourite` | Open | Quick departure check |
+| `POST /api/v1/query` | BYOK | AI agent text query |
+| `WS /ws` | Open | Real-time departures + agent queries |
 
-**Data Tools** (loop continues):
-| Tool | Purpose |
-|------|---------|
-| `search_and_get_departures` | Smart search + fetch departures |
-| `search_stops` | Find stops by name |
-| `search_routes` | Find routes/lines by name |
-| `get_departures` | Get departures for a stop ID |
-| `get_route_directions` | Get directions for a route |
+**BYOK** = Bring Your Own Key. Pass `llm_api_key` in the `POST /api/v1/query` body or in each WebSocket `query` message.
 
-**Terminal Tools** (loop ends):
-| Tool | Purpose |
-|------|---------|
-| `return_result` | Structured departure data + TTS text |
-| `ask_clarification` | Request user input (direction, line, etc.) |
-| `return_error` | Error message to user |
+## How Vibrations Work
 
-## Configuration
+PTV Notify's vibration patterns encode the wait time haptically:
 
-Edit `server/config.py`:
+| Component | Duration | Example |
+|---|---|---|
+| Hours | 800ms buzz | 1 hour = one long buzz |
+| Tens of minutes | 300ms buzz | 20 min = two medium buzzes |
+| Ones | 80ms buzz | 3 min = three short buzzes |
 
-```python
-ENABLE_GUARDRAIL = False  # Set True to block off-topic queries
-```
+So "1 hour 23 minutes" feels like: `BUZZZZZ ... BUZ BUZ ... bz bz bz`
 
-## MCP Server
+When a train is arriving **NOW**, you get the "shave and a haircut" pattern.
 
-For Claude Desktop integration:
+## Demo Entries
 
-```bash
-python -m server.mcp_server
-```
+The app ships with 4 pre-configured entries to demonstrate different transport types:
 
-Add to Claude Desktop config:
-```json
-{
-  "mcpServers": {
-    "ptv-notify": {
-      "command": "python",
-      "args": ["-m", "server.mcp_server"],
-      "cwd": "/path/to/ptv-notify"
-    }
-  }
-}
-```
+1. **Flinders St → Belgrave** (Metro Train)
+2. **Caulfield → Town Hall** (Metro Train)  
+3. **Barkly Sq/Sydney Rd → QVM/Elizabeth St** (Tram #19)
+4. **Southern Cross → Bendigo** (V/Line)
 
 ## License
 
