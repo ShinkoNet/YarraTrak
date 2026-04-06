@@ -70,6 +70,7 @@ class FavouriteRequest(BaseModel):
     direction_id: int | None = None
     direction_name: str | None = None
     route_type: int = RouteType.TRAIN
+    client_id: str | None = None
 
 class StopHistory(BaseModel):
     stop_id: int
@@ -81,6 +82,7 @@ class AgentRequest(BaseModel):
     session_id: str | None = None
     query_history: list[StopHistory] | None = None
     llm_api_key: str | None = None
+    client_id: str | None = None
 
 # --- Initialization ---
 
@@ -218,6 +220,13 @@ def _normalize_client_id(client_id: str | None) -> str | None:
         if ch.isalnum() or ch in {"-", "_"}
     )
     return normalized[:64] or None
+
+
+def _require_client_id(client_id: str | None) -> str:
+    normalized = _normalize_client_id(client_id)
+    if not normalized:
+        raise HTTPException(status_code=400, detail="client_id is required")
+    return normalized
 
 
 def _client_scope_key(client_ip: str, client_id: str | None) -> str:
@@ -1812,6 +1821,8 @@ async def favourite_departure(req: FavouriteRequest, request: Request):
     Returns next departure info.
     """
     client_ip = _client_ip_from_request(request)
+    normalized_client_id = _require_client_id(req.client_id)
+    _touch_client_activity(_client_scope_key(client_ip, normalized_client_id), client_ip, normalized_client_id)
     if not _check_rate_limit(_http_favourite_limiters, client_ip, HTTP_FAVOURITE_RATE_LIMIT):
         raise HTTPException(status_code=429, detail="Too many favourite requests. Please slow down.")
 
@@ -1868,6 +1879,10 @@ async def text_query(agent_request: AgentRequest, request: Request):
     Text-only agent endpoint. Requires a BYOK LLM API key.
     """
     client_ip = _client_ip_from_request(request)
+    normalized_client_id = _require_client_id(agent_request.client_id)
+    scope_key = _client_scope_key(client_ip, normalized_client_id)
+    activity = _record_client_activity_event(scope_key, client_ip, normalized_client_id, "query_timestamps")
+    activity["ws_queries"] = int(activity["ws_queries"]) + 1
     if not _check_rate_limit(_http_query_limiters, client_ip, HTTP_QUERY_RATE_LIMIT):
         raise HTTPException(status_code=429, detail="Too many AI queries. Please slow down.")
 
@@ -1881,7 +1896,7 @@ async def text_query(agent_request: AgentRequest, request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
     session_id = agent_request.session_id or str(uuid.uuid4())
-    scoped_session_id = _scoped_session_id(session_id, client_ip, llm_key)
+    scoped_session_id = _scoped_session_id(session_id, scope_key, llm_key)
 
     # Convert query_history from Pydantic models to dicts
     history_list = [h.model_dump() for h in agent_request.query_history] if agent_request.query_history else []
@@ -1948,6 +1963,15 @@ async def websocket_endpoint(
     """
     client_ip = _client_ip_from_websocket(websocket)
     normalized_client_id = _normalize_client_id(client_id)
+    if not normalized_client_id:
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "error",
+            "id": None,
+            "error": "client_id is required"
+        })
+        await websocket.close(code=1008)
+        return
     scope_key = _client_scope_key(client_ip, normalized_client_id)
     await _evict_existing_websocket_connections(scope_key)
 
