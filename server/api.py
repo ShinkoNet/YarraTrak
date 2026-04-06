@@ -98,6 +98,7 @@ FAVOURITE_BROADCAST_INTERVAL = 15.0  # seconds
 FAVOURITE_FETCH_LIMIT = max(1, FAVOURITE_FETCH_CONCURRENCY)
 CLIENT_ACTIVITY_WINDOW_SECONDS = 3600.0
 CLIENT_LEADERBOARD_LIMIT = 8
+WS_IDLE_TIMEOUT_SECONDS = 90.0
 
 # Background task reference
 _broadcast_task: asyncio.Task | None = None
@@ -1250,6 +1251,18 @@ async def _send_favourite_updates(websocket: WebSocket, updates: list[dict], chu
         })
 
 
+async def _send_favourite_updates_if_active(websocket: WebSocket, updates: list[dict]) -> bool:
+    if not _is_websocket_active(websocket):
+        return False
+    try:
+        await _send_favourite_updates(websocket, updates)
+        return True
+    except Exception:
+        if not _is_websocket_active(websocket):
+            return False
+        raise
+
+
 def _validate_query_text(query_text: str) -> str:
     query_text = query_text.strip()
     if not query_text:
@@ -1972,7 +1985,9 @@ async def websocket_endpoint(
                                 "departures": result.get("departures", [])
                             })
                         
-                        await _send_favourite_updates(websocket, initial_updates)
+                        sent = await _send_favourite_updates_if_active(websocket, initial_updates)
+                        if not sent:
+                            logger.info("Skipped initial favourite push for inactive websocket")
                     except Exception as e:
                         logger.warning("Error pushing initial favourite data: %s", e)
                         _cleanup_websocket_state(
@@ -1989,7 +2004,18 @@ async def websocket_endpoint(
     try:
         while True:
             # Receive message
-            raw_message = await websocket.receive_text()
+            try:
+                raw_message = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=WS_IDLE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.info("WebSocket idle timeout for %s", _client_scope_label(client_ip, normalized_client_id))
+                try:
+                    await websocket.close(code=1001)
+                except Exception:
+                    pass
+                break
             
             try:
                 message = json.loads(raw_message)
@@ -2309,7 +2335,9 @@ async def websocket_endpoint(
                                     "departures": result.get("departures", [])
                                 })
                             
-                            await _send_favourite_updates(websocket, initial_updates)
+                            sent = await _send_favourite_updates_if_active(websocket, initial_updates)
+                            if not sent:
+                                logger.info("Skipped subscribed favourite push for inactive websocket")
                         except Exception as e:
                             logger.warning("Error pushing subscribe favourite data: %s", e)
                             _cleanup_websocket_state(
