@@ -89,6 +89,8 @@ server/          FastAPI Python server
 
 **BYOK** = Bring Your Own Key. Pass `llm_api_key` in the `POST /api/v1/query` body or in each WebSocket `query` message.
 
+The server collects anonymous metrics about query and request volumes so performance and scalability can be monitored over time.
+
 ### Internal Dashboard Split
 
 - `ptv.waifu.trash` should proxy to the same FastAPI service and serve the internal dashboard at `/`.
