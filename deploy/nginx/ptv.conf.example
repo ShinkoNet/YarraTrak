@@ -1,0 +1,88 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ""      close;
+}
+
+upstream ptv_fastapi {
+    server 127.0.0.1:8000;
+    keepalive 16;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ptv.waifu.trash;
+
+    ssl_certificate     /etc/nginx/ssl/waifu.trash.crt;
+    ssl_certificate_key /etc/nginx/ssl/waifu.trash.key;
+
+    # Replace these with the exact internal and VPN CIDRs you trust.
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    allow 192.168.0.0/16;
+    allow 100.64.0.0/10;
+    allow fd00::/8;
+    deny all;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    location /ws {
+        proxy_pass http://ptv_fastapi;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 300s;
+    }
+
+    location / {
+        proxy_pass http://ptv_fastapi;
+        proxy_read_timeout 90s;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ptv.netcavy.net;
+
+    ssl_certificate     /etc/nginx/ssl/server.crt;
+    ssl_certificate_key /etc/nginx/ssl/server.key;
+
+    set $public_appstore_url https://apps.repebble.com/;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    location = / {
+        return 302 $public_appstore_url;
+    }
+
+    location = /index.html {
+        return 302 $public_appstore_url;
+    }
+
+    location ^~ /internal/ {
+        return 404;
+    }
+
+    location /ws {
+        proxy_pass http://ptv_fastapi;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 300s;
+    }
+
+    location ^~ /api/ {
+        proxy_pass http://ptv_fastapi;
+        proxy_read_timeout 90s;
+    }
+
+    location = /pebble-config.html {
+        proxy_pass http://ptv_fastapi;
+        proxy_read_timeout 90s;
+    }
+}

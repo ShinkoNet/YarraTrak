@@ -45,6 +45,12 @@ uvicorn server.api:app --host 0.0.0.0 --port 8000
 |---|---|---|
 | `PTV_DEV_ID` | Yes | PTV Timetable API developer ID |
 | `PTV_API_KEY` | Yes | PTV Timetable API key |
+| `PUBLIC_BASE_HOST` | No | Public Pebble/browser hostname. Default: `ptv.netcavy.net` |
+| `INTERNAL_DASHBOARD_HOST` | No | Internal-only dashboard hostname. Default: `ptv.waifu.trash` |
+| `PUBLIC_APPSTORE_URL` | No | Redirect target for `GET /` on the public host. Default: `https://apps.repebble.com/` |
+| `METRICS_LOG_INTERVAL_SECONDS` | No | Metrics normalization/logging interval. Default: `60` |
+| `METRICS_HISTORY_INTERVAL_SECONDS` | No | Dashboard history sampling interval. Default: `60` |
+| `METRICS_HISTORY_MAX_POINTS` | No | Retained in-memory history points. Default: `360` |
 
 Register for PTV API credentials at [ptv.vic.gov.au](https://www.ptv.vic.gov.au/footer/data-and-reporting/datasets/ptv-timetable-api/).
 
@@ -78,8 +84,17 @@ server/          FastAPI Python server
 | `POST /api/v1/favourite` | Open | Quick departure check |
 | `POST /api/v1/query` | BYOK | AI agent text query |
 | `WS /ws` | Open | Real-time departures + agent queries |
+| `GET /internal/metrics` | Internal host only | Latest normalized dashboard snapshot |
+| `GET /internal/metrics/history` | Internal host only | Rolling in-memory time series |
 
 **BYOK** = Bring Your Own Key. Pass `llm_api_key` in the `POST /api/v1/query` body or in each WebSocket `query` message.
+
+### Internal Dashboard Split
+
+- `ptv.waifu.trash` should proxy to the same FastAPI service and serve the internal dashboard at `/`.
+- `ptv.netcavy.net` should keep `/ws`, `/api/*`, and `/pebble-config.html` unchanged, but redirect exact `GET /` and `GET /index.html` to `PUBLIC_APPSTORE_URL`.
+- Deny `/internal/*` on the public nginx host and restrict `ptv.waifu.trash` to your internal or VPN CIDRs.
+- An example nginx config lives at `deploy/nginx/ptv.conf.example`.
 
 ## How Vibrations Work
 
