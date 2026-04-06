@@ -330,22 +330,60 @@
             return count;
         }
 
-        // Smart station name abbreviation
-        // Handles tram stops, train stations, and common Melbourne patterns
-        // routeType: 0=Train, 1=Tram, 3=V/Line
+        function findStationById(stopId, routeType) {
+            var stations = stationsByType[routeType] || [];
+            for (var i = 0; i < stations.length; i++) {
+                if (String(stations[i].stop_id) === String(stopId)) {
+                    return stations[i];
+                }
+            }
+            return null;
+        }
+
+        function canonicalizeEntryLabels(entryNum) {
+            var typeEl = document.getElementById('entry' + entryNum + '_type');
+            var startIdEl = document.getElementById('entry' + entryNum + '_start_id');
+            var startInput = document.getElementById('entry' + entryNum + '_start_search');
+            var destIdEl = document.getElementById('entry' + entryNum + '_dest_id');
+            var destInput = document.getElementById('entry' + entryNum + '_dest_search');
+            if (!typeEl || !startIdEl || !startInput || !destIdEl || !destInput) return;
+
+            var routeType = parseInt(typeEl.value, 10);
+            if (!loadedTypes[routeType]) return;
+
+            var startStop = findStationById(startIdEl.value, routeType);
+            if (startStop) {
+                startInput.value = startStop.name;
+            }
+
+            var destStop = findStationById(destIdEl.value, routeType);
+            if (destStop) {
+                destInput.value = destStop.name;
+            }
+        }
+
+        function canonicalizeLabelsForType(routeType) {
+            for (var i = 1; i <= entryCount; i++) {
+                var typeEl = document.getElementById('entry' + i + '_type');
+                if (typeEl && parseInt(typeEl.value, 10) === routeType) {
+                    canonicalizeEntryLabels(i);
+                }
+            }
+        }
+
+        // Smart station name abbreviation for the watch app menu.
+        // Full canonical names are stored separately for editing in settings.
         function truncateName(name, maxLen, routeType) {
             maxLen = maxLen || 32;
             if (!name) return '';
-            routeType = routeType || 0;  // Default to train
+            routeType = routeType || 0;
             var isTrain = (routeType === 0 || routeType === 3);
 
-            // Remove verbose station/stop identifiers (anywhere in string, not just end)
             name = name.replace(/ Railway Station/gi, '');
             name = name.replace(/ Station/gi, '');
             name = name.replace(/ Tram Stop/gi, '');
             name = name.replace(/ Stop/gi, '');
 
-            // Abbreviate common street suffixes
             name = name.replace(/Street/gi, 'St');
             name = name.replace(/Road/gi, 'Rd');
             name = name.replace(/Avenue/gi, 'Ave');
@@ -355,10 +393,9 @@
             name = name.replace(/Crescent/gi, 'Cres');
             name = name.replace(/Highway/gi, 'Hwy');
 
-            // Train-only specific abbreviations (applied first)
             if (isTrain) {
                 var trainAbbrevs = {
-                    'Flinders St': 'City',
+                    'Flinders Street': 'Flinders St',
                     'Southern Cross': 'Sth Cross',
                     'Melbourne Central': 'M Cntral',
                     'Flagstaff': 'Flgstf',
@@ -371,29 +408,28 @@
                 }
             }
 
-            // Tram stop abbreviations (street names, applied to all)
             var tramAbbrevs = {
                 'Victoria St': 'Vic St',
                 'Elizabeth St': 'Eliz St',
                 'Collins St': 'Coll St',
                 'Bourke St': 'Brk St',
                 'Swanston St': 'Swnst St',
-                'Sydney Rd': 'Syd Rd'
+                'Sydney Rd': 'Syd Rd',
+                'Queen Victoria Market': 'QVM',
+                'Barkly Square': 'Barkly Sq'
             };
-            for (var full in tramAbbrevs) {
-                if (name.indexOf(full) !== -1) {
-                    name = name.replace(full, tramAbbrevs[full]);
+            for (var fullTram in tramAbbrevs) {
+                if (name.indexOf(fullTram) !== -1) {
+                    name = name.replace(fullTram, tramAbbrevs[fullTram]);
                 }
             }
 
-            // Generic directional abbreviations (word boundaries - won't match "Southern", "Northcote", etc)
             name = name.replace(/\bSouth\b/gi, 'S');
             name = name.replace(/\bNorth\b/gi, 'N');
             name = name.replace(/\bEast\b/gi, 'E');
             name = name.replace(/\bWest\b/gi, 'W');
             name = name.replace(/\bMount\b/gi, 'Mt');
 
-            // If still too long, truncate with ellipsis
             if (name.length <= maxLen) return name;
             return name.substring(0, maxLen - 3) + '...';
         }
@@ -456,11 +492,13 @@
             }
             if (options['entry' + i + '_stop_id']) {
                 document.getElementById('entry' + i + '_start_id').value = options['entry' + i + '_stop_id'];
-                document.getElementById('entry' + i + '_start_search').value = options['entry' + i + '_name'] || '';
+                document.getElementById('entry' + i + '_start_search').value =
+                    options['entry' + i + '_full_name'] || options['entry' + i + '_name'] || '';
             }
             if (options['entry' + i + '_dest_id']) {
                 document.getElementById('entry' + i + '_dest_id').value = options['entry' + i + '_dest_id'];
-                document.getElementById('entry' + i + '_dest_search').value = options['entry' + i + '_dest_name'] || '';
+                document.getElementById('entry' + i + '_dest_search').value =
+                    options['entry' + i + '_full_dest_name'] || options['entry' + i + '_dest_name'] || '';
                 document.getElementById('entry' + i + '_dest_search').disabled = false;
             }
             if (options['entry' + i + '_direction_id']) {
@@ -510,9 +548,11 @@
             // Clear from options cache
             delete options['entry' + entryCount + '_stop_id'];
             delete options['entry' + entryCount + '_name'];
+            delete options['entry' + entryCount + '_full_name'];
             delete options['entry' + entryCount + '_route_type'];
             delete options['entry' + entryCount + '_dest_id'];
             delete options['entry' + entryCount + '_dest_name'];
+            delete options['entry' + entryCount + '_full_dest_name'];
             delete options['entry' + entryCount + '_direction_id'];
             entryCount--;
             updateEntryCountDisplay();
@@ -557,12 +597,16 @@
                         return;
                     }
                     var routeType = parseInt(document.getElementById('entry' + i + '_type').value);
+                    var startName = document.getElementById('entry' + i + '_start_search').value.trim();
+                    var destName = document.getElementById('entry' + i + '_dest_search').value.trim();
                     newOptions['entry' + i + '_stop_id'] = parseInt(startId);
-                    newOptions['entry' + i + '_name'] = truncateName(document.getElementById('entry' + i + '_start_search').value, 32, routeType);
+                    newOptions['entry' + i + '_name'] = truncateName(startName, 32, routeType);
+                    newOptions['entry' + i + '_full_name'] = startName;
                     newOptions['entry' + i + '_route_type'] = routeType;
 
                     newOptions['entry' + i + '_dest_id'] = parseInt(destId);
-                    newOptions['entry' + i + '_dest_name'] = truncateName(document.getElementById('entry' + i + '_dest_search').value, 32, routeType);
+                    newOptions['entry' + i + '_dest_name'] = truncateName(destName, 32, routeType);
+                    newOptions['entry' + i + '_full_dest_name'] = destName;
 
                     // Include resolved direction_id!
                     if (directionId) {
@@ -894,6 +938,7 @@
                     stationsByType[routeType] = data.stations;
                     loadedTypes[routeType] = true;
                     console.log("Loaded " + data.stations.length + " " + typeParam + " stations");
+                    canonicalizeLabelsForType(routeType);
                 }
             } catch (e) {
                 console.error("Failed to load " + typeParam + " stations:", e);
@@ -902,6 +947,12 @@
 
         // Auto-load train stations on page load (no API key needed)
         loadStationData(0);
+        for (var i = 1; i <= entryCount; i++) {
+            var routeType = options['entry' + i + '_route_type'];
+            if (routeType !== undefined && routeType !== null && !loadedTypes[routeType]) {
+                loadStationData(parseInt(routeType, 10));
+            }
+        }
 
         // Load Demo Entries
         document.getElementById('load_demo').addEventListener('click', async function () {

@@ -162,10 +162,50 @@ var DEFAULT_SERVER_URL = 'https://ptv.netcavy.net';
 
 // Demo entries for first launch (Rebble App Contest)
 var DEMO_ENTRIES = [
-    { name: 'Flinders St', stop_id: 1071, dest_name: 'Belgrave', dest_id: 1018, route_type: 0, direction_id: 2, direction_name: 'Belgrave' },
-    { name: 'Caulfield', stop_id: 1036, dest_name: 'Town Hall', dest_id: 1235, route_type: 0, direction_id: 1, direction_name: 'City' },
-    { name: 'Barkly Sq/Syd Rd', stop_id: 2811, dest_name: 'QVM/Eliz St', dest_id: 2258, route_type: 1, direction_id: 11, direction_name: 'Flinders St' },
-    { name: 'Sth Cross', stop_id: 1181, dest_name: 'Bendigo', dest_id: 1509, route_type: 3, direction_id: 6, direction_name: 'Bendigo' }
+    {
+        name: 'Flinders St',
+        full_name: 'Flinders Street Station',
+        stop_id: 1071,
+        dest_name: 'Belgrave',
+        full_dest_name: 'Belgrave Station',
+        dest_id: 1018,
+        route_type: 0,
+        direction_id: 2,
+        direction_name: 'Belgrave'
+    },
+    {
+        name: 'Caulfield',
+        full_name: 'Caulfield Station',
+        stop_id: 1036,
+        dest_name: 'Town Hall',
+        full_dest_name: 'Town Hall Station',
+        dest_id: 1235,
+        route_type: 0,
+        direction_id: 1,
+        direction_name: 'City'
+    },
+    {
+        name: 'Barkly Sq/Syd Rd',
+        full_name: 'Barkly Square/Sydney Rd #20',
+        stop_id: 2811,
+        dest_name: 'QVM/Eliz St',
+        full_dest_name: 'Queen Victoria Market/Elizabeth St #7',
+        dest_id: 2258,
+        route_type: 1,
+        direction_id: 11,
+        direction_name: 'Flinders St'
+    },
+    {
+        name: 'Sth Cross',
+        full_name: 'Southern Cross Railway Station',
+        stop_id: 1181,
+        dest_name: 'Bendigo',
+        full_dest_name: 'Bendigo Railway Station',
+        dest_id: 1509,
+        route_type: 3,
+        direction_id: 6,
+        direction_name: 'Bendigo'
+    }
 ];
 
 function populateDemoEntries() {
@@ -175,8 +215,10 @@ function populateDemoEntries() {
         var d = DEMO_ENTRIES[i];
         var n = i + 1;
         Settings.option('entry' + n + '_name', d.name);
+        Settings.option('entry' + n + '_full_name', d.full_name || d.name);
         Settings.option('entry' + n + '_stop_id', d.stop_id);
         Settings.option('entry' + n + '_dest_name', d.dest_name);
+        Settings.option('entry' + n + '_full_dest_name', d.full_dest_name || d.dest_name);
         Settings.option('entry' + n + '_dest_id', d.dest_id);
         Settings.option('entry' + n + '_route_type', d.route_type);
         Settings.option('entry' + n + '_direction_id', d.direction_id);
