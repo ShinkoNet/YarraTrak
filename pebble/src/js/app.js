@@ -186,6 +186,9 @@ function setLoadingHeadline() {
 }
 
 function setLoadingDetail(text) {
+    var hasDetail = !!text;
+    loadingDetailBacking.backgroundColor(hasDetail ? 'black' : 'clear');
+    loadingDetailBacking.borderColor(hasDetail ? 'white' : 'clear');
     loadingDetailText.text(text || '');
 }
 
@@ -195,7 +198,7 @@ function runLoadingDiagnostics(serverUrl, token) {
     }
 
     loadingDiagnosticsInFlight = true;
-    setLoadingDetail('Checking phone connection\nand internet...');
+    setLoadingDetail('Checking connectivity...');
 
     ajax({
         url: 'https://connectivitycheck.gstatic.com/generate_204',
@@ -216,20 +219,20 @@ function runLoadingDiagnostics(serverUrl, token) {
             if (token !== loadingDiagnosticToken || hasShownMainMenu) {
                 return;
             }
-            setLoadingDetail('PTV is slow to respond.\nPlease wait a moment longer.');
+            setLoadingDetail('');
         }, function () {
             loadingDiagnosticsInFlight = false;
             if (token !== loadingDiagnosticToken || hasShownMainMenu) {
                 return;
             }
-            setLoadingDetail('PTV endpoint is currently down.\nSorry - we will keep retrying.');
+            setLoadingDetail('PTV endpoint is currently down.\nSorry!!');
         });
     }, function () {
         loadingDiagnosticsInFlight = false;
         if (token !== loadingDiagnosticToken || hasShownMainMenu) {
             return;
         }
-        setLoadingDetail('Please fix your phone internet\nor disable airplane mode.');
+        setLoadingDetail('Please connect to the internet.');
     });
 }
 
@@ -406,20 +409,46 @@ Settings.config({
 
 var screenWidth = Feature.resolution().x;  // 144 for Aplite
 var screenHeight = Feature.resolution().y; // 168 for Aplite
+var useTextOnlySplash = Feature.platform({ aplite: true }, true, false);
+var appBackgroundColor = Feature.color('#291381', 'black');
 
 var loadingCard = new Window({
-    backgroundColor: 'black'
+    backgroundColor: appBackgroundColor
 });
 
-var splashImage = new Image({
-    position: new Vector2((screenWidth - 120) / 2, (screenHeight - 120) / 2 - 15),
-    size: new Vector2(120, 120),
-    image: 'IMAGE_LOGO_SPLASH'
+if (useTextOnlySplash) {
+    var splashWordmark = new Text({
+        position: new Vector2(8, 54),
+        size: new Vector2(screenWidth - 16, 34),
+        font: 'gothic-24-bold',
+        color: 'white',
+        textAlign: 'center',
+        text: 'PTV Notify'
+    });
+    loadingCard.add(splashWordmark);
+} else {
+    var splashImage = new Image({
+        position: new Vector2((screenWidth - 120) / 2, (screenHeight - 120) / 2 - 15),
+        size: new Vector2(120, 120),
+        image: 'IMAGE_LOGO_SPLASH'
+    });
+    loadingCard.add(splashImage);
+}
+
+var loadingDetailPanelY = screenHeight - 98;
+var loadingDetailPanelHeight = 44;
+
+var loadingDetailBacking = new Rect({
+    position: new Vector2(4, loadingDetailPanelY),
+    size: new Vector2(screenWidth - 8, loadingDetailPanelHeight),
+    backgroundColor: 'clear',
+    borderColor: 'clear',
+    borderWidth: 1
 });
-loadingCard.add(splashImage);
+loadingCard.add(loadingDetailBacking);
 
 var splashStatusText = new Text({
-    position: new Vector2(0, screenHeight - 40),
+    position: new Vector2(0, screenHeight - 34),
     size: new Vector2(screenWidth, 24),
     font: 'gothic-18-bold',
     color: 'white',
@@ -429,10 +458,10 @@ var splashStatusText = new Text({
 loadingCard.add(splashStatusText);
 
 var loadingDetailText = new Text({
-    position: new Vector2(8, screenHeight - 72),
-    size: new Vector2(screenWidth - 16, 30),
-    font: 'gothic-14',
-    color: 'lightGray',
+    position: new Vector2(10, loadingDetailPanelY + 6),
+    size: new Vector2(screenWidth - 20, 30),
+    font: 'gothic-14-bold',
+    color: 'white',
     textAlign: 'center',
     text: ''
 });
@@ -464,7 +493,9 @@ function showLoadingScreen(statusText, serverUrl) {
 function showMainMenu() {
     clearLoadingTimers();
     hasShownMainMenu = true;
-    mainMenu.items(0, buildMenuItems());
+    var items = buildMenuItems();
+    mainMenu.items(0, items);
+    mainMenu.selection(0, getDefaultMainMenuIndex(items));
     loadingCard.hide();
     mainMenu.show();
 }
@@ -472,7 +503,7 @@ function showMainMenu() {
 // Custom watching window with big timer
 // Screen layout (144x168 Aplite): timer big at top, platform medium, route small at bottom
 var watchingWindow = new Window({
-    backgroundColor: 'black'
+    backgroundColor: appBackgroundColor
 });
 
 // Status text - small (top)
@@ -588,19 +619,12 @@ watchingWindow.on('click', 'down', function () {
     }
 });
 var mainMenu = new UI.Menu({
-    status: {
-        status: true,
-        color: 'white',
-        backgroundColor: 'black',
-        separator: 'none'
-    },
-    backgroundColor: Feature.color('black', 'black'),
+    status: false,
+    backgroundColor: appBackgroundColor,
     textColor: Feature.color('white', 'white'),
     highlightBackgroundColor: Feature.color('vivid-cerulean', 'white'),
     highlightTextColor: Feature.color('black', 'black'),
-    sections: [{
-        title: 'PTV Notify'
-    }]
+    sections: [{}]
 });
 
 // Build menu items
@@ -708,6 +732,15 @@ function buildMenuItems() {
     }
 
     return items;
+}
+
+function getDefaultMainMenuIndex(items) {
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].data && items[i].data.favourite) {
+            return i;
+        }
+    }
+    return 0;
 }
 
 // Menu handlers

@@ -34,9 +34,13 @@ pip install -r server/requirements.txt
 ssh root@web01.waifu.trash "cd /srv/http/ptv-notify && git pull && systemctl restart netcavy-ptv"
 ```
 
-### Deploy app to watch and read code
+### Test Pebble changes after each feature
+After each Pebble-facing feature, switch into the `pebble/` directory, build the app, install it to the phone, and keep the live logs open so crashes show up immediately.
+
 ```bash
-pebble build && pebble install --phone=10.1.0.244 --logs
+cd pebble
+pebble build
+pebble install --phone=10.1.0.54 --logs
 ```
 
 ## Architecture

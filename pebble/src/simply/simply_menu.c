@@ -24,7 +24,17 @@
 
 #define EMPTY_TITLE ""
 
+#define MENU_HEADER_HEIGHT 16
+
 #define SPINNER_MS 66
+
+static GColor8 prv_menu_background_color(void) {
+#if defined(PBL_COLOR)
+  return GColorFromRGB(41, 19, 129);
+#else
+  return GColor8Black;
+#endif
+}
 
 typedef Packet MenuClearPacket;
 
@@ -106,6 +116,7 @@ static MenuIndex simply_menu_get_selection(SimplyMenu *self);
 static void simply_menu_set_selection(SimplyMenu *self, MenuIndex menu_index, MenuRowAlign align, bool animated);
 
 static void refresh_spinner_timer(SimplyMenu *self);
+static void refresh_header_timer(SimplyMenu *self);
 
 
 static int64_t prv_get_milliseconds(void) {
@@ -113,6 +124,31 @@ static int64_t prv_get_milliseconds(void) {
   uint16_t now_ms_part;
   time_ms(&now_s, &now_ms_part);
   return ((int64_t) now_s) * 1000 + now_ms_part;
+}
+
+static void prv_menu_header_update_callback(Layer *layer, GContext *ctx) {
+  GRect frame = layer_get_bounds(layer);
+  char time_text[16];
+
+  clock_copy_time_string(time_text, sizeof(time_text));
+
+  graphics_context_set_fill_color(ctx, gcolor8_get(prv_menu_background_color()));
+  graphics_fill_rect(ctx, frame, 0, GCornerNone);
+  graphics_context_set_text_color(ctx, GColorWhite);
+
+  graphics_draw_text(ctx, "PTV Notify",
+                     fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                     GRect(4, -1, frame.size.w / 2, frame.size.h),
+                     GTextOverflowModeTrailingEllipsis,
+                     GTextAlignmentLeft,
+                     NULL);
+
+  graphics_draw_text(ctx, time_text,
+                     fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+                     GRect(frame.size.w / 2, -1, frame.size.w / 2 - 4, frame.size.h),
+                     GTextOverflowModeTrailingEllipsis,
+                     GTextAlignmentRight,
+                     NULL);
 }
 
 static bool prv_send_menu_item(Command type, uint16_t section, uint16_t item) {
@@ -306,6 +342,15 @@ static void spinner_timer_callback(void *data) {
   refresh_spinner_timer(self);
 }
 
+static void header_timer_callback(void *data) {
+  SimplyMenu *self = data;
+  self->header_timer = NULL;
+  if (self->header_layer) {
+    layer_mark_dirty(self->header_layer);
+    refresh_header_timer(self);
+  }
+}
+
 static SimplyMenuItem *get_first_request_item(SimplyMenu *self) {
   return (SimplyMenuItem *)list1_find(self->menu_layer.items, prv_request_item_filter, NULL);
 }
@@ -318,6 +363,21 @@ static void refresh_spinner_timer(SimplyMenu *self) {
   if (!self->spinner_timer && get_first_request_item(self)) {
     self->spinner_timer = app_timer_register(SPINNER_MS, spinner_timer_callback, self);
   }
+}
+
+static void refresh_header_timer(SimplyMenu *self) {
+  int32_t delay_ms;
+
+  if (self->header_timer || !self->header_layer) {
+    return;
+  }
+
+  delay_ms = 60000 - (int32_t)(prv_get_milliseconds() % 60000);
+  if (delay_ms < 250) {
+    delay_ms += 60000;
+  }
+
+  self->header_timer = app_timer_register(delay_ms, header_timer_callback, self);
 }
 
 static uint16_t prv_menu_get_num_sections_callback(MenuLayer *menu_layer, void *data) {
@@ -487,16 +547,16 @@ static void prv_menu_window_load(Window *window) {
   GRect frame = layer_get_frame(window_layer);
   frame.origin = GPointZero;
 
-  self->title_layer = text_layer_create((GRect) {
-    .origin = GPoint(4, 0),
-    .size = GSize(frame.size.w / 2, STATUS_BAR_LAYER_HEIGHT)
+  self->header_layer = layer_create((GRect) {
+    .origin = GPointZero,
+    .size = GSize(frame.size.w, MENU_HEADER_HEIGHT)
   });
-  text_layer_set_background_color(self->title_layer, GColorClear);
-  text_layer_set_text_color(self->title_layer, GColorWhite);
-  text_layer_set_font(self->title_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
-  text_layer_set_text_alignment(self->title_layer, GTextAlignmentLeft);
-  text_layer_set_text(self->title_layer, "PTV Notify");
-  layer_add_child(window_layer, text_layer_get_layer(self->title_layer));
+  layer_set_update_proc(self->header_layer, prv_menu_header_update_callback);
+  layer_add_child(window_layer, self->header_layer);
+  refresh_header_timer(self);
+
+  frame.origin.y += MENU_HEADER_HEIGHT;
+  frame.size.h -= MENU_HEADER_HEIGHT;
 
   MenuLayer *menu_layer = self->menu_layer.menu_layer = menu_layer_create(frame);
   Layer *menu_base_layer = menu_layer_get_layer(menu_layer);
@@ -521,11 +581,19 @@ static void prv_menu_window_load(Window *window) {
 
 static void prv_menu_window_appear(Window *window) {
   SimplyMenu *self = window_get_user_data(window);
+  if (self->header_layer) {
+    layer_mark_dirty(self->header_layer);
+    refresh_header_timer(self);
+  }
   simply_window_appear(&self->window);
 }
 
 static void prv_menu_window_disappear(Window *window) {
   SimplyMenu *self = window_get_user_data(window);
+  if (self->header_timer) {
+    app_timer_cancel(self->header_timer);
+    self->header_timer = NULL;
+  }
   if (simply_window_disappear(&self->window)) {
     simply_res_clear(self->window.simply->res);
     simply_menu_clear(self);
@@ -537,8 +605,8 @@ static void prv_menu_window_unload(Window *window) {
 
   menu_layer_destroy(self->menu_layer.menu_layer);
   self->menu_layer.menu_layer = NULL;
-  text_layer_destroy(self->title_layer);
-  self->title_layer = NULL;
+  layer_destroy(self->header_layer);
+  self->header_layer = NULL;
 
   simply_window_unload(&self->window);
 }
@@ -685,7 +753,7 @@ SimplyMenu *simply_menu_create(Simply *simply) {
   self->window.window_handlers = &s_window_handlers;
 
   simply_window_init(&self->window, simply);
-  simply_window_set_background_color(&self->window, GColor8Black);
+  simply_window_set_background_color(&self->window, prv_menu_background_color());
 
   return self;
 }
