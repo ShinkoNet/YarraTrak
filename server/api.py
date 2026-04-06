@@ -200,11 +200,9 @@ def _metrics_snapshot_payload() -> dict[str, object]:
     payload = dict(_latest_metrics_snapshot)
     payload["subscribers"] = int(_metrics_window.get("last_subscribers", payload["subscribers"]))
     payload["unique_keys"] = int(_metrics_window.get("last_unique_keys", payload["unique_keys"]))
-    payload["last_updated"] = payload["timestamp"]
     payload["tuning"] = _dashboard_tuning()
     payload["history_points"] = len(_metrics_history)
     payload["history_capacity"] = max(1, METRICS_HISTORY_MAX_POINTS)
-    payload["public_appstore_url"] = PUBLIC_APPSTORE_URL
     payload["internal_dashboard_host"] = INTERNAL_DASHBOARD_HOST
     return payload
 
@@ -214,7 +212,6 @@ def _metrics_history_payload() -> dict[str, object]:
         "points": list(_metrics_history),
         "count": len(_metrics_history),
         "max_points": max(1, METRICS_HISTORY_MAX_POINTS),
-        "last_updated": _latest_metrics_snapshot["timestamp"],
     }
 
 
@@ -314,10 +311,6 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       padding: 28px 0 40px;
     }}
     .hero {{
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 20px;
       margin-bottom: 20px;
       padding: 24px 28px;
       border: 1px solid var(--panel-border);
@@ -357,32 +350,18 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       font-size: 1rem;
       line-height: 1.6;
     }}
-    .status {{
-      min-width: 260px;
-      display: grid;
-      gap: 12px;
-      align-content: start;
+    .hero-note {{
+      margin-top: 14px;
+      color: var(--teal-soft);
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
     }}
-    .status-card, .panel, .stat-card {{
+    .panel, .stat-card {{
       border: 1px solid var(--panel-border);
       border-radius: 22px;
       background: var(--panel);
       box-shadow: var(--shadow);
-    }}
-    .status-card {{
-      padding: 16px 18px;
-    }}
-    .status-label {{
-      color: var(--muted);
-      font-size: 0.78rem;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }}
-    .status-value {{
-      margin-top: 8px;
-      font-size: 1.05rem;
-      font-weight: 700;
     }}
     .stats {{
       display: grid;
@@ -543,21 +522,10 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
 <body>
   <main class="shell">
     <section class="hero">
-      <div>
-        <div class="eyebrow">PTV Notify Internal Ops</div>
-        <h1>Realtime service health for favourites, cache, and upstream load.</h1>
-        <p>The dashboard polls the in-process metrics snapshot directly from FastAPI and keeps a rolling six-hour view in memory. Restarting the service clears history, but the page stays live.</p>
-      </div>
-      <div class="status">
-        <div class="status-card">
-          <div class="status-label">Last Updated</div>
-          <div class="status-value" id="last-updated">Awaiting first sample</div>
-        </div>
-        <div class="status-card">
-          <div class="status-label">Public Root Redirect</div>
-          <div class="status-value" id="public-redirect">Configured</div>
-        </div>
-      </div>
+      <div class="eyebrow">PTV Notify Internal Ops</div>
+      <h1>PTV Notify Realtime Metrics</h1>
+      <p>The dashboard polls the in-process metrics snapshot directly from FastAPI, refreshes automatically every 15 seconds, and keeps a rolling in-memory history buffer that caps at one week.</p>
+      <div class="hero-note">Auto-refresh is always on. History resets when the service restarts.</div>
     </section>
 
     <section class="stats">
@@ -635,13 +603,6 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       return `${{formatNumber(value, value >= 100 ? 0 : 1)}} ms`;
     }}
 
-    function formatTime(value) {{
-      if (!value) return "Awaiting first sample";
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return value;
-      return date.toLocaleString();
-    }}
-
     function formatChartStamp(points) {{
       if (!points.length) return "No retained samples yet";
       const first = new Date(points[0].timestamp);
@@ -656,8 +617,6 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
 
     function renderStats() {{
       const snap = state.snapshot || {{}};
-      setText("last-updated", formatTime(snap.last_updated || snap.timestamp));
-      setText("public-redirect", snap.public_appstore_url || "Configured");
       setText("stat-subscribers", formatNumber(snap.subscribers));
       setText("stat-unique-keys", formatNumber(snap.unique_keys));
       setText("stat-cache-hit-rate", formatPercent(snap.cache_hit_rate));
@@ -1066,8 +1025,8 @@ async def _watch_position_loop(
 
 # --- Live Favourite Broadcast ---
 
-async def log_metrics_loop():
-    """Emit compact operational metrics for favourite refresh load."""
+async def capture_metrics_loop():
+    """Capture normalized operational metrics for the internal dashboard."""
     interval = max(10.0, METRICS_LOG_INTERVAL_SECONDS)
     history_interval = max(10.0, METRICS_HISTORY_INTERVAL_SECONDS)
     if abs(history_interval - interval) > 0.001:
@@ -1079,25 +1038,7 @@ async def log_metrics_loop():
         )
     while True:
         await asyncio.sleep(interval)
-        snapshot = _capture_metrics_snapshot(interval)
-        logger.info(
-            "Metrics: subscribers=%d unique_keys=%d loops=%d avg_loop_ms=%.1f max_loop_ms=%.1f "
-            "cache_hit_rate=%.1f%% cache_hits=%d cache_misses=%d upstream_rps=%.2f "
-            "ptv_departures=%d ptv_runs=%d ptv_directions=%d ptv_search=%d",
-            snapshot["subscribers"],
-            snapshot["unique_keys"],
-            snapshot["broadcast_loops"],
-            snapshot["avg_loop_ms"],
-            snapshot["max_loop_ms"],
-            snapshot["cache_hit_rate"],
-            snapshot["cache_hits"],
-            snapshot["cache_misses"],
-            snapshot["upstream_rps"],
-            snapshot["ptv_departures"],
-            snapshot["ptv_runs"],
-            snapshot["ptv_directions"],
-            snapshot["ptv_search"],
-        )
+        _capture_metrics_snapshot(interval)
 
 
 async def fetch_departure_for_button(
@@ -1289,10 +1230,10 @@ def stop_broadcast_task():
 
 
 def start_metrics_task():
-    """Start periodic metrics logging if not already running."""
+    """Start periodic metrics capture if not already running."""
     global _metrics_task
     if _metrics_task is None or _metrics_task.done():
-        _metrics_task = asyncio.create_task(log_metrics_loop())
+        _metrics_task = asyncio.create_task(capture_metrics_loop())
         logger.info("Metrics task started")
 
 

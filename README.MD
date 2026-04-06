@@ -48,9 +48,9 @@ uvicorn server.api:app --host 0.0.0.0 --port 8000
 | `PUBLIC_BASE_HOST` | No | Public Pebble/browser hostname. Default: `ptv.netcavy.net` |
 | `INTERNAL_DASHBOARD_HOST` | No | Internal-only dashboard hostname. Default: `ptv.waifu.trash` |
 | `PUBLIC_APPSTORE_URL` | No | Redirect target for `GET /` on the public host. Default: `https://apps.repebble.com/` |
-| `METRICS_LOG_INTERVAL_SECONDS` | No | Metrics normalization/logging interval. Default: `60` |
+| `METRICS_LOG_INTERVAL_SECONDS` | No | Metrics normalization/capture interval. Default: `60` |
 | `METRICS_HISTORY_INTERVAL_SECONDS` | No | Dashboard history sampling interval. Default: `60` |
-| `METRICS_HISTORY_MAX_POINTS` | No | Retained in-memory history points. Default: `360` |
+| `METRICS_HISTORY_MAX_POINTS` | No | Retained in-memory history points. Default: `10080` (7 days at 60s sampling) |
 
 Register for PTV API credentials at [ptv.vic.gov.au](https://www.ptv.vic.gov.au/footer/data-and-reporting/datasets/ptv-timetable-api/).
 
