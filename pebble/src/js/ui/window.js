@@ -23,6 +23,7 @@ var configProps = [
   'scrollable',
   'paging',
   'backgroundColor',
+  'rippleBackground',
 ];
 
 var statusProps = [
@@ -50,6 +51,7 @@ var nestedProps = [
 var defaults = {
   status: false,
   backgroundColor: 'black',
+  rippleBackground: false,
   scrollable: false,
   paging: Feature.round(true, false),
 };

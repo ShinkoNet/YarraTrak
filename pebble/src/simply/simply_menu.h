@@ -40,8 +40,6 @@ struct SimplyMenu {
   SimplyWindow window;
   SimplyMenuLayer menu_layer;
   AppTimer *spinner_timer;
-  AppTimer *header_timer;
-  Layer *header_layer;
 };
 
 typedef struct SimplyMenuCommon SimplyMenuCommon;

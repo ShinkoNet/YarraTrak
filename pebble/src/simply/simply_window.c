@@ -3,6 +3,7 @@
 #include "simply_msg.h"
 #include "simply_res.h"
 #include "simply_menu.h"
+#include "simply_stage.h"
 #include "simply_window_stack.h"
 #include "simply_voice.h"
 
@@ -23,6 +24,7 @@ struct __attribute__((__packed__)) WindowPropsPacket {
   GColor8 background_color;
   bool scrollable;
   bool paging;
+  bool ripple_background;
 };
 
 typedef struct WindowButtonConfigPacket WindowButtonConfigPacket;
@@ -175,6 +177,10 @@ void simply_window_set_status_bar(SimplyWindow *self, bool use_status_bar) {
 void simply_window_set_background_color(SimplyWindow *self, GColor8 background_color) {
   self->background_color = background_color;
   window_set_background_color(self->window, gcolor8_get_or(background_color, GColorBlack));
+}
+
+void simply_window_set_ripple_background(SimplyWindow *self, bool use_ripple_background) {
+  self->use_ripple_background = use_ripple_background;
 }
 
 void simply_window_set_status_bar_colors(SimplyWindow *self, GColor8 background_color,
@@ -381,9 +387,13 @@ static void prv_handle_window_props_packet(Simply *simply, Packet *data) {
 
   WindowPropsPacket *packet = (WindowPropsPacket *)data;
   simply_window_set_background_color(window, packet->background_color);
+  simply_window_set_ripple_background(window, packet->ripple_background);
   const bool is_same_window = (window->id == packet->id);
   simply_window_set_scrollable(window, packet->scrollable, packet->paging, is_same_window,
                                !is_same_window);
+  if (window == &simply->stage->window) {
+    simply_stage_update_ripple_timer(simply->stage);
+  }
   window->id = packet->id;
 }
 
@@ -438,6 +448,7 @@ bool simply_window_handle_packet(Simply *simply, Packet *packet) {
 SimplyWindow *simply_window_init(SimplyWindow *self, Simply *simply) {
   self->simply = simply;
   self->use_status_bar = false;
+  self->use_ripple_background = false;
 
   for (int i = 0; i < NUM_BUTTONS; ++i) {
     if (i != BUTTON_ID_BACK) {

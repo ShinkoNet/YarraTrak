@@ -23,7 +23,7 @@ void layer_update_callback(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, prv_splash_background_color());
   graphics_fill_rect(ctx, frame, 0, GCornerNone);
 
-#if defined(PBL_PLATFORM_APLITE)
+#if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_FLINT)
   graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, "PTV Notify",
                      fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
@@ -39,7 +39,7 @@ void layer_update_callback(Layer *layer, GContext *ctx) {
 
 
 static void window_load(Window *window) {
-#if !defined(PBL_PLATFORM_APLITE)
+#if !defined(PBL_PLATFORM_APLITE) && !defined(PBL_PLATFORM_FLINT)
   SimplySplash *self = window_get_user_data(window);
   self->image = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_LOGO_SPLASH);
 #endif

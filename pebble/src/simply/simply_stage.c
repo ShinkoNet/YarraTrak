@@ -11,6 +11,7 @@
 #include "util/compat.h"
 #include "util/graphics.h"
 #include "util/inverter_layer.h"
+#include "util/math.h"
 #include "util/memory.h"
 #include "util/string.h"
 #include "util/window.h"
@@ -115,6 +116,16 @@ static void simply_stage_clear(SimplyStage *self);
 
 static void simply_stage_update(SimplyStage *self);
 static void simply_stage_update_ticker(SimplyStage *self);
+#if defined(PBL_COLOR)
+static int64_t prv_get_milliseconds(void);
+static void ripple_timer_callback(void *data);
+#endif
+void simply_stage_update_ripple_timer(SimplyStage *self);
+
+#define RIPPLE_INTERVAL_MS 125
+#define RIPPLE_COUNT 3
+#define RIPPLE_CYCLE_MS 2400
+#define RIPPLE_COLOR_STEPS 16
 
 static SimplyElementCommon* simply_stage_auto_element(SimplyStage *self, uint32_t id, SimplyElementType type);
 static SimplyElementCommon* simply_stage_insert_element(SimplyStage *self, int index, SimplyElementCommon *element);
@@ -144,6 +155,78 @@ static bool animation_filter(List1Node *node, void *data) {
 
 static bool animation_element_filter(List1Node *node, void *data) {
   return (((SimplyAnimation*) node)->element == (SimplyElementCommon*) data);
+}
+
+#if defined(PBL_COLOR)
+static bool s_ripple_palette_initialized;
+static GColor8 s_ripple_palette[RIPPLE_COLOR_STEPS];
+
+static uint8_t prv_mix_u8(uint8_t a, uint8_t b, uint8_t t, uint8_t max_t) {
+  return a + (((int16_t)(b - a) * t) / max_t);
+}
+
+static void prv_init_ripple_palette(void) {
+  if (s_ripple_palette_initialized) {
+    return;
+  }
+
+  for (uint8_t i = 0; i < RIPPLE_COLOR_STEPS; ++i) {
+    const uint8_t intensity = (uint8_t)((i * 255) / (RIPPLE_COLOR_STEPS - 1));
+    s_ripple_palette[i] = GColorFromRGB(
+        prv_mix_u8(24, 35, intensity, 255),
+        prv_mix_u8(11, 17, intensity, 255),
+        prv_mix_u8(78, 118, intensity, 255));
+  }
+
+  s_ripple_palette_initialized = true;
+}
+
+static GColor prv_ripple_color(uint8_t intensity) {
+  prv_init_ripple_palette();
+  const uint8_t index = (uint8_t)((intensity * (RIPPLE_COLOR_STEPS - 1)) / 255);
+  return gcolor8_get(s_ripple_palette[index]);
+}
+
+static int64_t prv_get_milliseconds(void) {
+  time_t now_s;
+  uint16_t now_ms_part;
+  time_ms(&now_s, &now_ms_part);
+  return ((int64_t) now_s) * 1000 + now_ms_part;
+}
+#endif
+
+static void simply_stage_draw_ripple_background(GContext *ctx, SimplyStage *self, const GRect *frame) {
+#if !defined(PBL_COLOR)
+  (void)ctx;
+  (void)self;
+  (void)frame;
+  return;
+#else
+  if (!self->window.use_ripple_background || !self->ripple_started_ms) {
+    return;
+  }
+
+  const int64_t elapsed_ms = prv_get_milliseconds() - self->ripple_started_ms;
+  const uint16_t max_radius = (uint16_t)((MAX(frame->size.w, frame->size.h) * 72) / 100);
+  const uint16_t min_radius = 10;
+  const GPoint center = GPoint(frame->origin.x + frame->size.w / 2, frame->origin.y + frame->size.h / 2 - 2);
+
+  for (int i = 0; i < RIPPLE_COUNT; ++i) {
+    const int32_t offset_ms = (RIPPLE_CYCLE_MS * i) / RIPPLE_COUNT;
+    const int32_t phase_ms = (elapsed_ms + offset_ms) % RIPPLE_CYCLE_MS;
+    const int32_t phase_angle = (phase_ms * TRIG_MAX_ANGLE) / RIPPLE_CYCLE_MS;
+    const int32_t wave = sin_lookup(phase_angle);
+    const uint32_t wave_sq = (uint32_t)((wave * (int64_t)wave) / TRIG_MAX_RATIO);
+    const uint8_t intensity = 46 + (uint8_t)((wave_sq * 209) / TRIG_MAX_RATIO);
+    const uint16_t radius = min_radius + (uint16_t)((phase_ms * max_radius) / RIPPLE_CYCLE_MS);
+
+    graphics_context_set_stroke_color(ctx, prv_ripple_color(intensity));
+    graphics_context_set_stroke_width(ctx, intensity > 180 ? 14 : 10);
+    graphics_draw_circle(ctx, center, radius);
+  }
+
+  graphics_context_set_stroke_width(ctx, 1);
+#endif
 }
 
 static void destroy_element(SimplyStage *self, SimplyElementCommon *element) {
@@ -301,6 +384,7 @@ static void layer_update_callback(Layer *layer, GContext *ctx) {
 
   graphics_context_set_fill_color(ctx, gcolor8_get(self->window.background_color));
   graphics_fill_rect(ctx, frame, 0, GCornerNone);
+  simply_stage_draw_ripple_background(ctx, self, &frame);
 
   SimplyElementCommon *element = (SimplyElementCommon *)self->stage_layer.elements;
   while (element) {
@@ -528,10 +612,12 @@ static void window_appear(Window *window) {
   simply_window_appear(&self->window);
 
   simply_stage_update_ticker(self);
+  simply_stage_update_ripple_timer(self);
 }
 
 static void window_disappear(Window *window) {
   SimplyStage *self = window_get_user_data(window);
+  simply_stage_update_ripple_timer(self);
   if (simply_window_disappear(&self->window)) {
     simply_res_clear(self->window.simply->res);
     simply_stage_clear(self);
@@ -540,6 +626,12 @@ static void window_disappear(Window *window) {
 
 static void window_unload(Window *window) {
   SimplyStage *self = window_get_user_data(window);
+
+  if (self->ripple_timer) {
+    app_timer_cancel(self->ripple_timer);
+    self->ripple_timer = NULL;
+  }
+  self->ripple_started_ms = 0;
 
   layer_destroy(self->stage_layer.layer);
   self->window.layer = self->stage_layer.layer = NULL;
@@ -557,6 +649,15 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   window_stack_schedule_top_window_render();
 }
 
+#if defined(PBL_COLOR)
+static void ripple_timer_callback(void *data) {
+  SimplyStage *self = data;
+  self->ripple_timer = NULL;
+  simply_stage_update(self);
+  simply_stage_update_ripple_timer(self);
+}
+#endif
+
 void simply_stage_update_ticker(SimplyStage *self) {
   TimeUnits units = 0;
 
@@ -573,6 +674,37 @@ void simply_stage_update_ticker(SimplyStage *self) {
   } else {
     tick_timer_service_unsubscribe();
   }
+}
+
+void simply_stage_update_ripple_timer(SimplyStage *self) {
+#if !defined(PBL_COLOR)
+  return;
+#else
+  const bool should_run =
+      self &&
+      self->window.use_ripple_background &&
+      self->window.window &&
+      window_stack_get_top_window() == self->window.window;
+
+  if (!should_run) {
+    if (self && self->ripple_timer) {
+      app_timer_cancel(self->ripple_timer);
+      self->ripple_timer = NULL;
+    }
+    if (self) {
+      self->ripple_started_ms = 0;
+    }
+    return;
+  }
+
+  if (!self->ripple_started_ms) {
+    self->ripple_started_ms = prv_get_milliseconds();
+  }
+
+  if (!self->ripple_timer) {
+    self->ripple_timer = app_timer_register(RIPPLE_INTERVAL_MS, ripple_timer_callback, self);
+  }
+#endif
 }
 
 static void handle_stage_clear_packet(Simply *simply, Packet *data) {
@@ -763,6 +895,11 @@ SimplyStage *simply_stage_create(Simply *simply) {
 void simply_stage_destroy(SimplyStage *self) {
   if (!self) {
     return;
+  }
+
+  if (self->ripple_timer) {
+    app_timer_cancel(self->ripple_timer);
+    self->ripple_timer = NULL;
   }
 
   simply_window_deinit(&self->window);
