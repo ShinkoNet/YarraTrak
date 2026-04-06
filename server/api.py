@@ -27,7 +27,10 @@ from .ptv_client import PTVClient
 from . import route_geometry
 from .config import (
     ALLOWED_ORIGINS,
+    FAVOURITE_CACHE_TTL_SECONDS,
+    FAVOURITE_FETCH_CONCURRENCY,
     HTTP_FAVOURITE_RATE_LIMIT,
+    METRICS_LOG_INTERVAL_SECONDS,
     HTTP_QUERY_RATE_LIMIT,
     MAX_FAVOURITE_BUTTONS,
     MAX_QUERY_LENGTH,
@@ -37,6 +40,8 @@ from .config import (
 
 app = FastAPI(title="PTV Notify", version="1.0.0")
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # GZip compression for large responses (station databases)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -82,11 +87,13 @@ _favourite_subscriptions: dict[WebSocket, list[dict]] = {}
 # Shared departure cache: (stop_id, route_type, direction_id, dest_id) -> {departures: [...], fetched_at}
 # With multi-departure caching, we can use longer TTL - client switches between cached departures
 _departure_cache: dict[tuple, dict] = {}
-FAVOURITE_CACHE_TTL = 30.0  # seconds
+FAVOURITE_CACHE_TTL = max(15.0, FAVOURITE_CACHE_TTL_SECONDS)  # seconds
 FAVOURITE_BROADCAST_INTERVAL = 15.0  # seconds
+FAVOURITE_FETCH_LIMIT = max(1, FAVOURITE_FETCH_CONCURRENCY)
 
 # Background task reference
 _broadcast_task: asyncio.Task | None = None
+_metrics_task: asyncio.Task | None = None
 
 # Run position cache
 _run_position_cache: dict[tuple, dict] = {}
@@ -102,6 +109,16 @@ _http_query_limiters: dict[str, deque[float]] = defaultdict(deque)
 _http_favourite_limiters: dict[str, deque[float]] = defaultdict(deque)
 _ws_query_limiters: dict[str, deque[float]] = defaultdict(deque)
 _ws_connections_by_ip: dict[str, int] = defaultdict(int)
+_favourite_fetch_semaphore = asyncio.Semaphore(FAVOURITE_FETCH_LIMIT)
+_metrics_window = {
+    "departure_cache_hits": 0,
+    "departure_cache_misses": 0,
+    "broadcast_iterations": 0,
+    "broadcast_duration_sum": 0.0,
+    "broadcast_duration_max": 0.0,
+    "last_unique_keys": 0,
+    "last_subscribers": 0,
+}
 
 
 def _cleanup_rate_bucket(bucket: deque[float], now: float) -> None:
@@ -120,6 +137,30 @@ def _check_rate_limit(store: dict[str, deque[float]], key: str, limit: int) -> b
         return False
     bucket.append(now)
     return True
+
+
+def _record_metric(name: str, amount: int = 1) -> None:
+    _metrics_window[name] += amount
+
+
+def _record_broadcast_metrics(duration_seconds: float, unique_keys: int, subscribers: int) -> None:
+    _metrics_window["broadcast_iterations"] += 1
+    _metrics_window["broadcast_duration_sum"] += duration_seconds
+    _metrics_window["broadcast_duration_max"] = max(
+        _metrics_window["broadcast_duration_max"], duration_seconds
+    )
+    _metrics_window["last_unique_keys"] = unique_keys
+    _metrics_window["last_subscribers"] = subscribers
+
+
+def _snapshot_and_reset_metrics() -> dict[str, float]:
+    snapshot = dict(_metrics_window)
+    _metrics_window["departure_cache_hits"] = 0
+    _metrics_window["departure_cache_misses"] = 0
+    _metrics_window["broadcast_iterations"] = 0
+    _metrics_window["broadcast_duration_sum"] = 0.0
+    _metrics_window["broadcast_duration_max"] = 0.0
+    return snapshot
 
 
 def _client_ip_from_request(request: Request) -> str:
@@ -331,6 +372,45 @@ async def _watch_position_loop(
 
 # --- Live Favourite Broadcast ---
 
+async def log_metrics_loop():
+    """Emit compact operational metrics for favourite refresh load."""
+    interval = max(10.0, METRICS_LOG_INTERVAL_SECONDS)
+    while True:
+        await asyncio.sleep(interval)
+        api_metrics = _snapshot_and_reset_metrics()
+        ptv_metrics = ptv_client.snapshot_and_reset_metrics()
+        cache_lookups = api_metrics["departure_cache_hits"] + api_metrics["departure_cache_misses"]
+        cache_hit_rate = (
+            (api_metrics["departure_cache_hits"] / cache_lookups) * 100.0
+            if cache_lookups
+            else 0.0
+        )
+        upstream_total = sum(ptv_metrics.values())
+        avg_loop_ms = (
+            (api_metrics["broadcast_duration_sum"] / api_metrics["broadcast_iterations"]) * 1000.0
+            if api_metrics["broadcast_iterations"]
+            else 0.0
+        )
+        logger.info(
+            "Metrics: subscribers=%d unique_keys=%d loops=%d avg_loop_ms=%.1f max_loop_ms=%.1f "
+            "cache_hit_rate=%.1f%% cache_hits=%d cache_misses=%d upstream_rps=%.2f "
+            "ptv_departures=%d ptv_runs=%d ptv_directions=%d ptv_search=%d",
+            api_metrics["last_subscribers"],
+            api_metrics["last_unique_keys"],
+            api_metrics["broadcast_iterations"],
+            avg_loop_ms,
+            api_metrics["broadcast_duration_max"] * 1000.0,
+            cache_hit_rate,
+            api_metrics["departure_cache_hits"],
+            api_metrics["departure_cache_misses"],
+            upstream_total / interval,
+            ptv_metrics.get("departures", 0),
+            ptv_metrics.get("runs", 0),
+            ptv_metrics.get("directions", 0),
+            ptv_metrics.get("search", 0),
+        )
+
+
 async def fetch_departure_for_button(
     stop_id: int,
     route_type: int,
@@ -349,11 +429,19 @@ async def fetch_departure_for_button(
     # Check cache
     cached = _departure_cache.get(cache_key)
     if cached and (now - cached["fetched_at"]) < FAVOURITE_CACHE_TTL:
+        _record_metric("departure_cache_hits")
         return cached
+    _record_metric("departure_cache_misses")
     
     # Fetch from PTV API
     try:
-        data = await ptv_client.get_departures(route_type, stop_id, max_results=10, expand=["Direction", "Run"])
+        async with _favourite_fetch_semaphore:
+            data = await ptv_client.get_departures(
+                route_type,
+                stop_id,
+                max_results=10,
+                expand=["Direction", "Run"],
+            )
         departures = data.get("departures", [])
         
         if not departures:
@@ -417,6 +505,7 @@ async def broadcast_favourite_updates():
     """
     while True:
         await asyncio.sleep(FAVOURITE_BROADCAST_INTERVAL)
+        loop_started = time.perf_counter()
         
         # Collect all unique stop/direction combos from connected clients
         all_buttons: dict[tuple, list[tuple[WebSocket, int]]] = {}  # cache_key -> [(ws, button_id), ...]
@@ -436,18 +525,32 @@ async def broadcast_favourite_updates():
         
         # Skip if nothing to do
         if not all_buttons:
+            _record_broadcast_metrics(0.0, 0, len(_favourite_subscriptions))
             continue
         
-        # Fetch all unique stops
-        fetch_results: dict[tuple, dict] = {}
-        for cache_key in all_buttons.keys():
+        # Fetch all unique stops concurrently, with a shared semaphore.
+        async def fetch_one(cache_key: tuple) -> tuple[tuple, dict]:
             stop_id, route_type, direction_id, dest_id = cache_key
-            fetch_results[cache_key] = await fetch_departure_for_button(stop_id, route_type, direction_id, dest_id)
+            return cache_key, await fetch_departure_for_button(
+                stop_id, route_type, direction_id, dest_id
+            )
+
+        fetch_results: dict[tuple, dict] = {}
+        fetch_batches = await asyncio.gather(
+            *(fetch_one(cache_key) for cache_key in all_buttons.keys()),
+            return_exceptions=True,
+        )
+        for item in fetch_batches:
+            if isinstance(item, Exception):
+                logger.warning("Broadcast fetch batch error: %s", item)
+                continue
+            cache_key, result = item
+            fetch_results[cache_key] = result
         
         # Build per-client update messages
         client_updates: dict[WebSocket, list[dict]] = {}
         for cache_key, clients in all_buttons.items():
-            result = fetch_results[cache_key]
+            result = fetch_results.get(cache_key, {"departures": []})
             departures = result.get("departures", [])
             for ws, button_id in clients:
                 if ws not in client_updates:
@@ -472,6 +575,12 @@ async def broadcast_favourite_updates():
                 del _favourite_subscriptions[ws]
                 logger.info("Removed disconnected client from favourite subscriptions")
 
+        _record_broadcast_metrics(
+            time.perf_counter() - loop_started,
+            len(all_buttons),
+            len(_favourite_subscriptions),
+        )
+
 
 def start_broadcast_task():
     """Start the background broadcast task if not already running."""
@@ -490,6 +599,23 @@ def stop_broadcast_task():
         logger.info("Favourite broadcast task stopped")
 
 
+def start_metrics_task():
+    """Start periodic metrics logging if not already running."""
+    global _metrics_task
+    if _metrics_task is None or _metrics_task.done():
+        _metrics_task = asyncio.create_task(log_metrics_loop())
+        logger.info("Metrics task started")
+
+
+def stop_metrics_task():
+    """Stop periodic metrics logging."""
+    global _metrics_task
+    if _metrics_task and not _metrics_task.done():
+        _metrics_task.cancel()
+        _metrics_task = None
+        logger.info("Metrics task stopped")
+
+
 # --- Helper: resolve LLM API key ---
 
 def _resolve_llm_key(provided_key: str | None) -> str | None:
@@ -506,9 +632,19 @@ def _resolve_llm_key(provided_key: str | None) -> str | None:
 @app.on_event("startup")
 async def startup_start_broadcast():
     """Start the broadcast task and preload route geometry."""
+    await ptv_client.startup()
     start_broadcast_task()
+    start_metrics_task()
     logger.info("Broadcast task started on startup")
     route_geometry.load_train_routes()
+
+
+@app.on_event("shutdown")
+async def shutdown_background_tasks():
+    """Stop background tasks and close shared clients."""
+    stop_metrics_task()
+    stop_broadcast_task()
+    await ptv_client.shutdown()
 
 
 @app.get("/api/v1/stations")

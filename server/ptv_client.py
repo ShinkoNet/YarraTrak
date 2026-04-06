@@ -1,11 +1,25 @@
+import asyncio
+from collections import defaultdict
 import hashlib
 import hmac
 import httpx
 from urllib.parse import urlencode
 try:
-    from .config import PTV_DEV_ID, PTV_API_KEY
+    from .config import (
+        HTTP_CLIENT_MAX_CONNECTIONS,
+        HTTP_CLIENT_MAX_KEEPALIVE_CONNECTIONS,
+        HTTP_CLIENT_TIMEOUT_SECONDS,
+        PTV_DEV_ID,
+        PTV_API_KEY,
+    )
 except ImportError:
-    from config import PTV_DEV_ID, PTV_API_KEY
+    from config import (
+        HTTP_CLIENT_MAX_CONNECTIONS,
+        HTTP_CLIENT_MAX_KEEPALIVE_CONNECTIONS,
+        HTTP_CLIENT_TIMEOUT_SECONDS,
+        PTV_DEV_ID,
+        PTV_API_KEY,
+    )
 
 
 class PTVClient:
@@ -14,8 +28,50 @@ class PTVClient:
     def __init__(self):
         self.dev_id = PTV_DEV_ID
         self.api_key = PTV_API_KEY
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock = asyncio.Lock()
+        self._request_counts: dict[str, int] = defaultdict(int)
         if not self.dev_id or not self.api_key:
             raise ValueError("PTV_DEV_ID and PTV_API_KEY must be set")
+
+    async def startup(self):
+        if self._client is not None:
+            return
+        async with self._client_lock:
+            if self._client is not None:
+                return
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(HTTP_CLIENT_TIMEOUT_SECONDS),
+                limits=httpx.Limits(
+                    max_connections=HTTP_CLIENT_MAX_CONNECTIONS,
+                    max_keepalive_connections=HTTP_CLIENT_MAX_KEEPALIVE_CONNECTIONS,
+                ),
+            )
+
+    async def shutdown(self):
+        async with self._client_lock:
+            if self._client is None:
+                return
+            await self._client.aclose()
+            self._client = None
+
+    def snapshot_and_reset_metrics(self) -> dict[str, int]:
+        snapshot = dict(self._request_counts)
+        self._request_counts = defaultdict(int)
+        return snapshot
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            await self.startup()
+        assert self._client is not None
+        return self._client
+
+    async def _request_json(self, url: str, metric_name: str) -> dict:
+        client = await self._get_client()
+        self._request_counts[metric_name] += 1
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.json()
 
     def _sign_request(self, endpoint: str, params: dict = None) -> str:
         if params is None:
@@ -58,11 +114,8 @@ class PTVClient:
             params["expand"] = expand
             
         url = self._sign_request(endpoint, params)
-        
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.json()
+
+        return await self._request_json(url, "departures")
 
     async def get_directions(self, route_id: int):
         """
@@ -70,11 +123,8 @@ class PTVClient:
         """
         endpoint = f"/v3/directions/route/{route_id}"
         url = self._sign_request(endpoint)
-        
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.json()
+
+        return await self._request_json(url, "directions")
 
     async def get_run(self, route_type: int, run_ref: int, expand: list = None):
         """
@@ -87,10 +137,7 @@ class PTVClient:
 
         url = self._sign_request(endpoint, params)
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.json()
+        return await self._request_json(url, "runs")
 
     async def search(self, term: str):
         """
@@ -101,8 +148,5 @@ class PTVClient:
         term = quote(term)
         endpoint = f"/v3/search/{term}"
         url = self._sign_request(endpoint)
-        
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.json()
+
+        return await self._request_json(url, "search")
