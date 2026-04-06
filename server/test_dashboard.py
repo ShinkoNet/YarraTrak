@@ -78,6 +78,7 @@ class FakeWebSocket:
         self.client_state = SimpleNamespace(value=1)
         self.application_state = SimpleNamespace(value=1)
         self.sent = []
+        self.close_calls = []
 
     async def accept(self):
         return None
@@ -86,6 +87,7 @@ class FakeWebSocket:
         self.sent.append(payload)
 
     async def close(self, code=1000):
+        self.close_calls.append(code)
         self.client_state.value = 2
         self.application_state.value = 2
         return None
@@ -180,3 +182,23 @@ async def test_stale_websocket_is_pruned_before_connection_limit_check(reset_sta
     assert fresh_websocket.sent[0]["type"] == "connected"
     assert stale_websocket not in api._favourite_subscriptions
     assert client_ip not in api._ws_connections_by_ip
+
+
+@pytest.mark.asyncio
+async def test_new_websocket_evicts_existing_same_ip_connections(reset_state):
+    client_ip = "10.0.0.5"
+    existing_websocket = FakeWebSocket(host=client_ip)
+
+    api._ws_connections_by_ip[client_ip].add(existing_websocket)
+    api._ws_client_ips[existing_websocket] = client_ip
+    api._favourite_subscriptions[existing_websocket] = [
+        {"button_id": 1, "stop_id": 123, "route_type": 0, "direction_id": None, "dest_id": None}
+    ]
+
+    fresh_websocket = FakeWebSocket(host=client_ip)
+    await api.websocket_endpoint(fresh_websocket)
+
+    assert existing_websocket.close_calls == [1012]
+    assert existing_websocket not in api._favourite_subscriptions
+    assert fresh_websocket.sent
+    assert fresh_websocket.sent[0]["type"] == "connected"
