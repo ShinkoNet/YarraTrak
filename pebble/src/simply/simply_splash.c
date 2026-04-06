@@ -43,7 +43,7 @@ SimplySplash *simply_splash_create(Simply *simply) {
   self->window = window_create();
   window_set_user_data(self->window, self);
   window_set_fullscreen(self->window, false);
-  window_set_background_color(self->window, GColorWhite);
+  window_set_background_color(self->window, GColorBlack);
   window_set_window_handlers(self->window, (WindowHandlers) {
     .load = window_load,
     .disappear = window_disappear,
