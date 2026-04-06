@@ -1,3 +1,4 @@
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -133,6 +134,7 @@ async def test_public_host_cannot_reach_internal_metrics(reset_state):
 
 @pytest.mark.asyncio
 async def test_internal_metrics_snapshot_and_history_are_capped_and_ordered(reset_state):
+    now = api.time.time()
     for index in range(api.METRICS_HISTORY_MAX_POINTS + 25):
         api._metrics_history.append(_metric_point(index))
     api._latest_metrics_snapshot = dict(api._metrics_history[-1])
@@ -150,6 +152,8 @@ async def test_internal_metrics_snapshot_and_history_are_capped_and_ordered(rese
         "active_buttons": 2,
         "active_subscriber": True,
         "last_seen": "2026-01-01T00:00:00Z",
+        "connection_timestamps": deque([now - 20.0, now - 10.0]),
+        "query_timestamps": deque([now - 30.0, now - 15.0, now - 5.0]),
     }
 
     snapshot_response = await _request("/internal/metrics", api.INTERNAL_DASHBOARD_HOST)
@@ -165,6 +169,9 @@ async def test_internal_metrics_snapshot_and_history_are_capped_and_ordered(rese
     assert snapshot["active_clients"] == 77
     assert snapshot["known_clients"] == 1
     assert snapshot["client_activity"][0]["label"] == "test-client"
+    assert snapshot["client_activity"][0]["queries_last_hour"] == 3
+    assert snapshot["client_activity"][0]["reconnects_last_hour"] == 2
+    assert snapshot["client_leaderboard"][0]["label"] == "test-client"
     assert history_response.status_code == 200
     assert len(history) == api.METRICS_HISTORY_MAX_POINTS
     assert REQUIRED_METRIC_FIELDS.issubset(history[0].keys())
