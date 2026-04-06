@@ -5,10 +5,10 @@
  */
 
 var UI = require('ui');
-var Voice = require('ui/voice');
 var Settings = require('settings');
 var Vibe = require('ui/vibe');
 var Feature = require('platform/feature');
+var ajax = require('ajax');
 var Window = require('ui/window');
 var Text = require('ui/text');
 var Rect = require('ui/rect');
@@ -77,11 +77,23 @@ var CONFIG_URL = 'https://ptv.netcavy.net/pebble-config.html';
 
 var ws = null;
 var wsConnected = false;
+var wsConnecting = false;
 var reconnectTimer = null;
+var wsConnectGeneration = 0;
+var heartbeatTimer = null;
+var lastPongAt = 0;
 var sessionId = generateUUID();
 var queryHistory = [];
 var messageId = 0;
 var pendingRequests = {};
+var voiceModule = null;
+var hasShownMainMenu = false;
+var loadingAnimationTimer = null;
+var loadingDiagnosticTimer = null;
+var loadingDiagnosticToken = 0;
+var loadingDiagnosticsInFlight = false;
+var loadingBaseText = 'Connecting to PTV';
+var loadingDotCount = 0;
 
 // Cancel all pending queries (on disconnect or new query)
 function cancelPendingQueries() {
@@ -91,6 +103,134 @@ function cancelPendingQueries() {
         }
     }
     pendingRequests = {};
+}
+
+function getVoice() {
+    if (!voiceModule) {
+        voiceModule = require('ui/voice');
+    }
+    return voiceModule;
+}
+
+function getConfiguredEntryCount() {
+    var entryCount = Settings.option('entry_count');
+    if (entryCount === undefined || entryCount === null) {
+        entryCount = 0;
+        for (var i = 1; i <= 10; i++) {
+            if (Settings.option('entry' + i + '_stop_id') || Settings.option('btn' + i + '_stop_id')) {
+                entryCount = i;
+            }
+        }
+    }
+    return entryCount;
+}
+
+function clearLoadingTimers() {
+    if (loadingAnimationTimer) {
+        clearInterval(loadingAnimationTimer);
+        loadingAnimationTimer = null;
+    }
+    if (loadingDiagnosticTimer) {
+        clearTimeout(loadingDiagnosticTimer);
+        loadingDiagnosticTimer = null;
+    }
+    loadingDiagnosticsInFlight = false;
+}
+
+function stopHeartbeat() {
+    if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+    }
+    lastPongAt = 0;
+}
+
+function startHeartbeat(socket, connectGeneration) {
+    stopHeartbeat();
+    lastPongAt = Date.now();
+    heartbeatTimer = setInterval(function () {
+        if (ws !== socket || connectGeneration !== wsConnectGeneration || !wsConnected) {
+            stopHeartbeat();
+            return;
+        }
+
+        var now = Date.now();
+        if (lastPongAt && (now - lastPongAt) > 70000) {
+            console.log('WebSocket heartbeat timed out');
+            reconnect();
+            return;
+        }
+
+        try {
+            socket.send(JSON.stringify({
+                type: 'ping',
+                id: null
+            }));
+        } catch (err) {
+            console.log('WebSocket heartbeat send failed: ' + err);
+            reconnect();
+        }
+    }, 25000);
+}
+
+function getServerHealthUrl(serverUrl) {
+    return serverUrl.replace(/\/+$/, '') + '/pebble-config.html';
+}
+
+function setLoadingHeadline() {
+    var dots = '';
+    for (var i = 0; i < loadingDotCount; i++) {
+        dots += '.';
+    }
+    splashStatusText.text(loadingBaseText + dots);
+}
+
+function setLoadingDetail(text) {
+    loadingDetailText.text(text || '');
+}
+
+function runLoadingDiagnostics(serverUrl, token) {
+    if (token !== loadingDiagnosticToken || hasShownMainMenu || loadingDiagnosticsInFlight) {
+        return;
+    }
+
+    loadingDiagnosticsInFlight = true;
+    setLoadingDetail('Checking phone connection\nand internet...');
+
+    ajax({
+        url: 'https://connectivitycheck.gstatic.com/generate_204',
+        method: 'GET',
+        cache: false
+    }, function () {
+        if (token !== loadingDiagnosticToken || hasShownMainMenu) {
+            loadingDiagnosticsInFlight = false;
+            return;
+        }
+
+        ajax({
+            url: getServerHealthUrl(serverUrl),
+            method: 'GET',
+            cache: false
+        }, function () {
+            loadingDiagnosticsInFlight = false;
+            if (token !== loadingDiagnosticToken || hasShownMainMenu) {
+                return;
+            }
+            setLoadingDetail('PTV is slow to respond.\nPlease wait a moment longer.');
+        }, function () {
+            loadingDiagnosticsInFlight = false;
+            if (token !== loadingDiagnosticToken || hasShownMainMenu) {
+                return;
+            }
+            setLoadingDetail('PTV endpoint is currently down.\nSorry - we will keep retrying.');
+        });
+    }, function () {
+        loadingDiagnosticsInFlight = false;
+        if (token !== loadingDiagnosticToken || hasShownMainMenu) {
+            return;
+        }
+        setLoadingDetail('Please fix your phone internet\nor disable airplane mode.');
+    });
 }
 
 // Calculate total duration of a vibration pattern
@@ -155,6 +295,16 @@ function generateUUID() {
         if (i === 7 || i === 11 || i === 15 || i === 19) id += '-';
     }
     return id;
+}
+
+function getOrCreateClientId() {
+    var clientId = Settings.option('client_id');
+    if (!clientId) {
+        clientId = generateUUID();
+        Settings.option('client_id', clientId);
+        console.log('Generated client_id: ' + clientId);
+    }
+    return clientId;
 }
 
 // Initialize settings with defaults
@@ -230,6 +380,8 @@ if (!Settings.option('entry_count') && !Settings.option('entry1_stop_id') && !Se
     populateDemoEntries();
 }
 
+getOrCreateClientId();
+
 // Hardcoded server URL - always use DEFAULT_SERVER_URL
 
 Settings.config({
@@ -252,7 +404,6 @@ Settings.config({
     }
 );
 
-// Loading screen (used during WebSocket connection)
 var screenWidth = Feature.resolution().x;  // 144 for Aplite
 var screenHeight = Feature.resolution().y; // 168 for Aplite
 
@@ -273,24 +424,56 @@ var splashStatusText = new Text({
     font: 'gothic-18-bold',
     color: 'white',
     textAlign: 'center',
-    text: 'Starting...'
+    text: 'Loading...'
 });
 loadingCard.add(splashStatusText);
 
-// Stub out title/subtitle/body methods so that reconnect() doesn't break
-loadingCard.title = function(t){};
-loadingCard.subtitle = function(t){ splashStatusText.text(t); };
-loadingCard.body = function(t){};
+var loadingDetailText = new Text({
+    position: new Vector2(8, screenHeight - 72),
+    size: new Vector2(screenWidth - 16, 30),
+    font: 'gothic-14',
+    color: 'lightGray',
+    textAlign: 'center',
+    text: ''
+});
+loadingCard.add(loadingDetailText);
+
+function showLoadingScreen(statusText, serverUrl) {
+    loadingBaseText = statusText || 'Connecting to PTV';
+    if (!loadingAnimationTimer) {
+        clearLoadingTimers();
+        loadingDotCount = 0;
+        loadingDiagnosticToken += 1;
+        setLoadingDetail('');
+        loadingAnimationTimer = setInterval(function () {
+            loadingDotCount = (loadingDotCount + 1) % 4;
+            setLoadingHeadline();
+        }, 500);
+        if (serverUrl) {
+            var token = loadingDiagnosticToken;
+            loadingDiagnosticTimer = setTimeout(function () {
+                loadingDiagnosticTimer = null;
+                runLoadingDiagnostics(serverUrl, token);
+            }, 5000);
+        }
+    }
+    setLoadingHeadline();
+    loadingCard.show();
+}
+
+function showMainMenu() {
+    clearLoadingTimers();
+    hasShownMainMenu = true;
+    mainMenu.items(0, buildMenuItems());
+    loadingCard.hide();
+    mainMenu.show();
+}
 
 // Custom watching window with big timer
 // Screen layout (144x168 Aplite): timer big at top, platform medium, route small at bottom
 var watchingWindow = new Window({
     backgroundColor: 'black'
 });
-
-// Get screen dimensions
-var screenWidth = Feature.resolution().x;  // 144 for Aplite
-var screenHeight = Feature.resolution().y; // 168 for Aplite
 
 // Status text - small (top)
 var watchingStatusText = new Text({
@@ -405,6 +588,12 @@ watchingWindow.on('click', 'down', function () {
     }
 });
 var mainMenu = new UI.Menu({
+    status: {
+        status: true,
+        color: 'white',
+        backgroundColor: 'black',
+        separator: 'none'
+    },
     backgroundColor: Feature.color('black', 'black'),
     textColor: Feature.color('white', 'white'),
     highlightBackgroundColor: Feature.color('vivid-cerulean', 'white'),
@@ -450,16 +639,7 @@ function buildMenuItems() {
 
     // Favourite entries from settings - show as "Start→Dest" with live departure time
     // Get entry count (or migrate from legacy 3-button setup)
-    var entryCount = Settings.option('entry_count');
-    if (entryCount === undefined || entryCount === null) {
-        // Legacy migration: count entries with stop_id set (check legacy btn or new entry)
-        entryCount = 0;
-        for (var j = 1; j <= 10; j++) {
-            if (Settings.option('entry' + j + '_stop_id') || Settings.option('btn' + j + '_stop_id')) {
-                entryCount = j;
-            }
-        }
-    }
+    var entryCount = getConfiguredEntryCount();
 
     for (var i = 1; i <= entryCount; i++) {
         // Try new entry naming first, fall back to legacy btn naming
@@ -575,7 +755,7 @@ function startVoiceQuery() {
     // Don't show card yet - let dictation happen on top of current view
     // This avoids window stack conflicts and memory pressure
 
-    Voice.dictate('start', true, function (e) {
+    getVoice().dictate('start', true, function (e) {
         if (e.err) {
             if (e.err === 'systemAborted') {
                 return;
@@ -1126,6 +1306,21 @@ function showClarificationMenu(options, parentCard) {
 
 // WebSocket connection
 function connectWebSocket() {
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) {
+        console.log('WebSocket connect skipped: already active');
+        return;
+    }
+
+    if (wsConnecting) {
+        console.log('WebSocket connect skipped: already connecting');
+        return;
+    }
+
     var serverUrl = Settings.option('server_url') || DEFAULT_SERVER_URL;
 
     console.log('Using server URL: ' + serverUrl);
@@ -1137,19 +1332,15 @@ function connectWebSocket() {
         .replace(/\/+$/, '') + '/ws';
 
     var separator = '?';
+    var clientId = getOrCreateClientId();
+    if (clientId) {
+        wsUrl += separator + 'client_id=' + encodeURIComponent(clientId);
+        separator = '&';
+    }
 
     // Build buttons query param for instant data on connect
     // Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID"
-    var entryCount = Settings.option('entry_count');
-    if (entryCount === undefined || entryCount === null) {
-        // Legacy migration: scan for configured entries
-        entryCount = 0;
-        for (var j = 1; j <= 10; j++) {
-            if (Settings.option('entry' + j + '_stop_id') || Settings.option('btn' + j + '_stop_id')) {
-                entryCount = j;
-            }
-        }
-    }
+    var entryCount = getConfiguredEntryCount();
 
     var buttonParts = [];
     for (var i = 1; i <= entryCount; i++) {
@@ -1175,10 +1366,9 @@ function connectWebSocket() {
 
     console.log('Connecting WebSocket');
 
-    loadingCard.title('PTV Notify');
-    loadingCard.subtitle('Connecting...');
-    loadingCard.body('');
-    loadingCard.show();
+    if (!hasShownMainMenu) {
+        showLoadingScreen('Connecting to PTV', serverUrl);
+    }
 
     // Defensive cleanup
     if (ws) {
@@ -1187,70 +1377,70 @@ function connectWebSocket() {
         ws = null;
     }
 
-    ws = new WebSocket(wsUrl);
+    wsConnecting = true;
+    var socket = new WebSocket(wsUrl);
+    var connectGeneration = ++wsConnectGeneration;
+    ws = socket;
 
-    var isFirstLoad = true;
-    var hasReceivedData = false;
-    var menuShowTimer = null;
-
-    ws.onopen = function () {
-        wsConnected = true;
-        console.log('WebSocket connected');
-
-        // If no buttons configured, show menu immediately (no data to wait for)
-        if (buttonParts.length === 0) {
-            console.log('No buttons configured, showing menu immediately');
-            mainMenu.items(0, buildMenuItems());
-            loadingCard.hide();
-            mainMenu.show();
-            isFirstLoad = false;
+    socket.onopen = function () {
+        if (ws !== socket || connectGeneration !== wsConnectGeneration) {
+            console.log('Ignoring stale WebSocket open event');
+            try {
+                socket.close();
+            } catch (err) { }
             return;
         }
-
-        loadingCard.subtitle('Loading...');
-
-        // Set fallback timer - show menu after 2s even if no favourite_update received
-        menuShowTimer = setTimeout(function () {
-            if (isFirstLoad) {
-                console.log('Fallback: showing menu without favourite data');
-                mainMenu.items(0, buildMenuItems());
-                loadingCard.hide();
-                mainMenu.show();
-                isFirstLoad = false;
-            }
-        }, 2000);
+        wsConnecting = false;
+        wsConnected = true;
+        console.log('WebSocket connected');
+        startHeartbeat(socket, connectGeneration);
+        showMainMenu();
     };
 
-    ws.onclose = function (e) {
+    socket.onclose = function (e) {
+        if (ws === socket) {
+            ws = null;
+        }
+        stopHeartbeat();
+        wsConnecting = false;
         wsConnected = false;
         console.log('WebSocket closed, code: ' + e.code);
 
         // Clear stale pending requests - they won't complete anyway
         cancelPendingQueries();
 
-        if (menuShowTimer) {
-            clearTimeout(menuShowTimer);
-            menuShowTimer = null;
+        if (!hasShownMainMenu) {
+            runLoadingDiagnostics(serverUrl, loadingDiagnosticToken);
         }
 
         // Code 4001 was previously used for invalid API key — no longer applicable
         // Server is now open access for departure data
 
         // Auto-reconnect for other disconnects
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(connectWebSocket, 3000);
+        if (ws === null || ws === socket) {
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            reconnectTimer = setTimeout(connectWebSocket, 3000);
+        }
     };
 
-    ws.onerror = function (e) {
+    socket.onerror = function (e) {
         console.log('WebSocket error');
-        loadingCard.title('Connection Failed');
-        loadingCard.subtitle('');
-        loadingCard.body('Check your\ninternet connection');
+        if (!hasShownMainMenu) {
+            runLoadingDiagnostics(serverUrl, loadingDiagnosticToken);
+        }
     };
 
-    ws.onmessage = function (event) {
+    socket.onmessage = function (event) {
+        if (ws !== socket || connectGeneration !== wsConnectGeneration) {
+            return;
+        }
         try {
             var msg = JSON.parse(event.data);
+
+            if (msg.type === 'pong') {
+                lastPongAt = Date.now();
+                return;
+            }
 
             // Handle live favourite updates (broadcast, no pending request)
             if (msg.type === 'favourite_update') {
@@ -1307,21 +1497,6 @@ function connectWebSocket() {
                 }
                 // Refresh menu to show updated times
                 mainMenu.items(0, buildMenuItems());
-
-                // On first favourite_update, show menu immediately (data is ready!)
-                if (isFirstLoad && !hasReceivedData) {
-                    hasReceivedData = true;
-                    if (menuShowTimer) {
-                        clearTimeout(menuShowTimer);
-                        menuShowTimer = null;
-                    }
-                    // Don't hide loadingCard if we're in watching mode
-                    if (watchingButtonIndex === null) {
-                        loadingCard.hide();
-                    }
-                    mainMenu.show();
-                    isFirstLoad = false;
-                }
                 return;
             }
 
@@ -1376,6 +1551,8 @@ function reconnect() {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
     }
+    stopHeartbeat();
+    wsConnecting = false;
     if (ws) {
         ws.onclose = function () { };
         ws.close();
@@ -1488,4 +1665,5 @@ function saveButtonConfig(config) {
 
 // Start the app
 console.log('PTV Notify starting...');
+showLoadingScreen('Connecting to PTV', Settings.option('server_url') || DEFAULT_SERVER_URL);
 connectWebSocket();

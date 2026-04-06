@@ -7,6 +7,7 @@
 #include "simply.h"
 
 #include "util/color.h"
+#include "util/compat.h"
 #include "util/display.h"
 #include "util/graphics.h"
 #include "util/graphics_text.h"
@@ -486,6 +487,17 @@ static void prv_menu_window_load(Window *window) {
   GRect frame = layer_get_frame(window_layer);
   frame.origin = GPointZero;
 
+  self->title_layer = text_layer_create((GRect) {
+    .origin = GPoint(4, 0),
+    .size = GSize(frame.size.w / 2, STATUS_BAR_LAYER_HEIGHT)
+  });
+  text_layer_set_background_color(self->title_layer, GColorClear);
+  text_layer_set_text_color(self->title_layer, GColorWhite);
+  text_layer_set_font(self->title_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
+  text_layer_set_text_alignment(self->title_layer, GTextAlignmentLeft);
+  text_layer_set_text(self->title_layer, "PTV Notify");
+  layer_add_child(window_layer, text_layer_get_layer(self->title_layer));
+
   MenuLayer *menu_layer = self->menu_layer.menu_layer = menu_layer_create(frame);
   Layer *menu_base_layer = menu_layer_get_layer(menu_layer);
   self->window.layer = menu_base_layer;
@@ -525,6 +537,8 @@ static void prv_menu_window_unload(Window *window) {
 
   menu_layer_destroy(self->menu_layer.menu_layer);
   self->menu_layer.menu_layer = NULL;
+  text_layer_destroy(self->title_layer);
+  self->title_layer = NULL;
 
   simply_window_unload(&self->window);
 }
@@ -568,7 +582,7 @@ static void prv_handle_menu_props_packet(Simply *simply, Packet *data) {
   if (!self->window.window) { return; }
 
   window_set_background_color(self->window.window, gcolor8_get_or(packet->background_color,
-                                                                  GColorWhite));
+                                                                  GColorBlack));
 
   SimplyMenuLayer *menu_layer = &self->menu_layer;
   if (!menu_layer->menu_layer) { return; }
@@ -579,7 +593,7 @@ static void prv_handle_menu_props_packet(Simply *simply, Packet *data) {
   menu_layer->highlight_foreground = packet->highlight_text_color;
 
   menu_layer_set_normal_colors(menu_layer->menu_layer,
-                               gcolor8_get_or(menu_layer->normal_background, GColorWhite),
+                               gcolor8_get_or(menu_layer->normal_background, GColorBlack),
                                gcolor8_get_or(menu_layer->normal_foreground, GColorBlack));
   menu_layer_set_highlight_colors(menu_layer->menu_layer,
                                   gcolor8_get_or(menu_layer->highlight_background, GColorBlack),
@@ -671,7 +685,7 @@ SimplyMenu *simply_menu_create(Simply *simply) {
   self->window.window_handlers = &s_window_handlers;
 
   simply_window_init(&self->window, simply);
-  simply_window_set_background_color(&self->window, GColor8White);
+  simply_window_set_background_color(&self->window, GColor8Black);
 
   return self;
 }

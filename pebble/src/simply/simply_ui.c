@@ -315,7 +315,7 @@ static void layer_update_callback(Layer *layer, GContext *ctx) {
     graphics_fill_rect(ctx, frame, 0, GCornerNone);
   }), NONE);
 
-  graphics_context_set_fill_color(ctx, gcolor8_get_or(self->window.background_color, GColorWhite));
+  graphics_context_set_fill_color(ctx, gcolor8_get_or(self->window.background_color, GColorBlack));
   const int radius = IF_SDK_2_ELSE(4, 0);
   graphics_fill_rect(ctx, frame, radius, GCornersAll);
 
@@ -479,7 +479,7 @@ SimplyUi *simply_ui_create(Simply *simply) {
   self->window.window_handlers = &s_window_handlers;
 
   simply_window_init(&self->window, simply);
-  simply_window_set_background_color(&self->window, GColor8White);
+  simply_window_set_background_color(&self->window, GColor8Black);
 
   app_timer_register(10000, (AppTimerCallback) show_welcome_text, self);
 

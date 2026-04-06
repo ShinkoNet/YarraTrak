@@ -1000,7 +1000,7 @@ SimplyPebble.windowHide = function (id) {
 SimplyPebble.windowProps = function (def) {
   WindowPropsPacket
     .prop(def)
-    .backgroundColor(def.backgroundColor || 'white');
+    .backgroundColor(def.backgroundColor || 'black');
   SimplyPebble.sendPacket(WindowPropsPacket);
 };
 
@@ -1021,7 +1021,7 @@ SimplyPebble.windowStatusBar = function (def) {
     .separator(statusDef.separator || 'dotted')
     .status(typeof def === 'boolean' ? def : def.status !== false)
     .color(statusDef.color || 'black')
-    .backgroundColor(statusDef.backgroundColor || 'white');
+    .backgroundColor(statusDef.backgroundColor || 'black');
   SimplyPebble.sendPacket(WindowStatusBarPacket);
 };
 
@@ -1517,4 +1517,3 @@ SimplyPebble.onAppMessage = function (e) {
 };
 
 module.exports = SimplyPebble;
-
