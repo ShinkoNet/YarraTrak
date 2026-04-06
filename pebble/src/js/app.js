@@ -113,6 +113,8 @@ var watchingRouteText = null;    // Current route text for display (stored globa
 var watchingDistanceKm = null;   // Latest distance to stop (km)
 var watchingVehicleDesc = null;  // Latest vehicle descriptor
 var watchingRunRef = null;       // Current watched run_ref
+var watchingSelectedRunRef = null; // Selected departure identity for watch page
+var watchingSelectedDepartureTime = null; // Selected departure time for watch page
 var watchingStopId = null;       // Current watched stop_id
 var watchingDistanceRunRef = null; // Run_ref associated with distance
 
@@ -343,6 +345,7 @@ watchingWindow.on('click', 'up', function () {
         watchingDepartureOffset = 0;
         // Update display immediately
         var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
+        setWatchedSelection(currentDep);
         updateWatchingDisplay(currentDep, watchingRouteText);
         sendWatchStart(currentDep, watchingStopId);
     }
@@ -354,6 +357,7 @@ watchingWindow.on('click', 'down', function () {
         watchingDepartureOffset = 1;
         // Update display immediately
         var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
+        setWatchedSelection(currentDep);
         updateWatchingDisplay(currentDep, watchingRouteText);
         sendWatchStart(currentDep, watchingStopId);
     }
@@ -561,6 +565,29 @@ function startVoiceQuery() {
 var countdownTimer = null;
 var watchingDepartureOffset = 0;
 
+function getCurrentBaseIndex(buttonIndex) {
+    var cache = buttonDepartures[buttonIndex];
+    if (!cache || !cache.departures || cache.departures.length === 0) {
+        return -1;
+    }
+
+    var now = new Date();
+    for (var i = 0; i < cache.departures.length; i++) {
+        var dep = cache.departures[i];
+        if (dep.departure_time) {
+            var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
+            var depTime = new Date(timeStr);
+            if (depTime.getTime() > now.getTime() - 60000) {
+                return i;
+            }
+        } else if (dep.minutes !== null && dep.minutes !== undefined) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 // Get departure by offset (0 = next/current, 1 = service after)
 function getDepartureByOffset(buttonIndex, offset) {
     var cache = buttonDepartures[buttonIndex];
@@ -568,24 +595,7 @@ function getDepartureByOffset(buttonIndex, offset) {
         return null;
     }
 
-    var now = new Date();
-    // Find the current base index
-    var baseIndex = -1;
-    for (var i = 0; i < cache.departures.length; i++) {
-        var dep = cache.departures[i];
-        if (dep.departure_time) {
-            var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
-            var depTime = new Date(timeStr);
-            if (depTime.getTime() > now.getTime() - 60000) {
-                baseIndex = i;
-                break;
-            }
-        } else if (dep.minutes !== null && dep.minutes !== undefined) {
-            baseIndex = i;
-            break;
-        }
-    }
-
+    var baseIndex = getCurrentBaseIndex(buttonIndex);
     if (baseIndex === -1) return null;
 
     var targetIndex = baseIndex + offset;
@@ -593,6 +603,64 @@ function getDepartureByOffset(buttonIndex, offset) {
         return cache.departures[targetIndex];
     }
     return null;
+}
+
+function setWatchedSelection(dep) {
+    if (!dep) {
+        watchingSelectedRunRef = null;
+        watchingSelectedDepartureTime = null;
+        return;
+    }
+
+    watchingSelectedRunRef = dep.run_ref || null;
+    watchingSelectedDepartureTime = dep.departure_time || null;
+}
+
+function getWatchedDeparture(buttonIndex) {
+    var cache = buttonDepartures[buttonIndex];
+    if (!cache || !cache.departures || cache.departures.length === 0) {
+        return null;
+    }
+
+    var baseIndex = getCurrentBaseIndex(buttonIndex);
+    if (baseIndex === -1) {
+        return null;
+    }
+
+    var trackedIndex = -1;
+    if (watchingSelectedRunRef || watchingSelectedDepartureTime) {
+        for (var i = baseIndex; i < cache.departures.length; i++) {
+            var dep = cache.departures[i];
+            var matchesRunRef = watchingSelectedRunRef && dep.run_ref && dep.run_ref === watchingSelectedRunRef;
+            var matchesDepartureTime = watchingSelectedDepartureTime && dep.departure_time && dep.departure_time === watchingSelectedDepartureTime;
+            if (matchesRunRef || matchesDepartureTime) {
+                trackedIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (trackedIndex !== -1) {
+        var normalizedOffset = trackedIndex - baseIndex;
+        if (normalizedOffset !== watchingDepartureOffset) {
+            console.log('[Watch] Normalizing offset ' + watchingDepartureOffset + ' -> ' + normalizedOffset);
+            watchingDepartureOffset = normalizedOffset;
+        }
+        return cache.departures[trackedIndex];
+    }
+
+    var dep = getDepartureByOffset(buttonIndex, watchingDepartureOffset);
+    if (!dep && watchingDepartureOffset > 0) {
+        dep = getDepartureByOffset(buttonIndex, 0);
+        if (dep) {
+            console.log('[Watch] Service after became next service');
+            watchingDepartureOffset = 0;
+        }
+    }
+    if (dep) {
+        setWatchedSelection(dep);
+    }
+    return dep;
 }
 
 function formatDistanceText(distanceKm) {
@@ -675,9 +743,12 @@ function runFavouriteQuery(buttonIndex) {
     watchingDistanceKm = null;
     watchingVehicleDesc = null;
     watchingRunRef = null;
+    watchingSelectedRunRef = null;
+    watchingSelectedDepartureTime = null;
 
     // Use cached live departure data - auto-switches between departures
     var dep = getDepartureByOffset(buttonIndex, watchingDepartureOffset);
+    setWatchedSelection(dep);
 
     // Clean station names for watching window (must fit ~2 lines)
     // Names are pre-cleaned by settings.html, we just ensure they're short enough
@@ -723,7 +794,7 @@ function runFavouriteQuery(buttonIndex) {
         // Start live countdown timer (update every second, vibrate on minute change)
         if (dep.departure_time) {
             countdownTimer = setInterval(function () {
-                var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
+                var currentDep = getWatchedDeparture(watchingButtonIndex);
                 if (currentDep) {
                     sendWatchStart(currentDep, watchingStopId);
                     updateWatchingDisplay(currentDep, watchingRouteText);
@@ -755,6 +826,8 @@ function runFavouriteQuery(buttonIndex) {
                             playVibrationPattern(calculateVibration(currentMinutes + extra));
                         }
                     }
+                } else {
+                    updateWatchingDisplay(null, watchingRouteText);
                 }
             }, 1000);
         }
@@ -773,6 +846,7 @@ function runFavouriteQuery(buttonIndex) {
         } else {
             lastVibratedMinutes = null;
             lastDepartureTime = null;
+            setWatchedSelection(null);
             Vibe.vibrate('short');
         }
     } else {
@@ -781,6 +855,7 @@ function runFavouriteQuery(buttonIndex) {
         routeText.text(watchingRouteText);
         lastVibratedMinutes = null;
         lastDepartureTime = null;
+        setWatchedSelection(null);
         Vibe.vibrate('short');
     }
 
@@ -923,6 +998,8 @@ function stopWatching() {
     watchingDistanceKm = null;
     watchingVehicleDesc = null;
     watchingRunRef = null;
+    watchingSelectedRunRef = null;
+    watchingSelectedDepartureTime = null;
     watchingStopId = null;
     watchingDistanceRunRef = null;
     if (countdownTimer) {
@@ -1151,7 +1228,7 @@ function connectWebSocket() {
 
                     // Station watching mode: vibrate when minutes change
                     if (watchingButtonIndex === u.button_id) {
-                        var dep = getDepartureByOffset(u.button_id, watchingDepartureOffset);
+                        var dep = getWatchedDeparture(u.button_id);
                         if (dep) {
                             sendWatchStart(dep, watchingStopId);
                             // Calculate fresh minutes
@@ -1187,6 +1264,8 @@ function connectWebSocket() {
                             }
                             // Update display
                             updateWatchingDisplay(dep, watchingRouteText);
+                        } else {
+                            updateWatchingDisplay(null, watchingRouteText);
                         }
                     }
                 }
