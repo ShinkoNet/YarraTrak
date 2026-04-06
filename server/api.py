@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 import json
 from pydantic import BaseModel
 from datetime import datetime, timezone
@@ -31,10 +31,15 @@ from .config import (
     FAVOURITE_FETCH_CONCURRENCY,
     HTTP_FAVOURITE_RATE_LIMIT,
     METRICS_LOG_INTERVAL_SECONDS,
+    METRICS_HISTORY_INTERVAL_SECONDS,
+    METRICS_HISTORY_MAX_POINTS,
     HTTP_QUERY_RATE_LIMIT,
+    INTERNAL_DASHBOARD_HOST,
     MAX_FAVOURITE_BUTTONS,
     MAX_QUERY_LENGTH,
     MAX_WS_CONNECTIONS_PER_IP,
+    PUBLIC_APPSTORE_URL,
+    PUBLIC_BASE_HOST,
     WS_QUERY_RATE_LIMIT,
 )
 
@@ -117,6 +122,672 @@ _metrics_window = {
     "last_unique_keys": 0,
     "last_subscribers": 0,
 }
+_metrics_history: deque[dict[str, int | float | str]] = deque(
+    maxlen=max(1, METRICS_HISTORY_MAX_POINTS)
+)
+_dashboard_local_hosts = {"localhost", "127.0.0.1", "[::1]", "::1"}
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _utc_isoformat(value: datetime | None = None) -> str:
+    current = value or _utc_now()
+    return current.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_host(raw_host: str | None) -> str:
+    if not raw_host:
+        return ""
+    host = raw_host.split(",", 1)[0].strip().lower()
+    if host.startswith("[") and "]" in host:
+        return host.split("]", 1)[0] + "]"
+    return host.split(":", 1)[0]
+
+
+def _request_host(request: Request) -> str:
+    return _normalize_host(request.headers.get("host"))
+
+
+def _is_internal_dashboard_host(host: str) -> bool:
+    return host == INTERNAL_DASHBOARD_HOST or host in _dashboard_local_hosts
+
+
+def _require_internal_dashboard_request(request: Request) -> None:
+    if not _is_internal_dashboard_host(_request_host(request)):
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+def _empty_metrics_snapshot(timestamp: datetime | None = None) -> dict[str, int | float | str]:
+    return {
+        "timestamp": _utc_isoformat(timestamp),
+        "subscribers": 0,
+        "unique_keys": 0,
+        "broadcast_loops": 0,
+        "avg_loop_ms": 0.0,
+        "max_loop_ms": 0.0,
+        "cache_hits": 0,
+        "cache_misses": 0,
+        "cache_hit_rate": 0.0,
+        "upstream_rps": 0.0,
+        "ptv_departures": 0,
+        "ptv_runs": 0,
+        "ptv_directions": 0,
+        "ptv_search": 0,
+    }
+
+
+_latest_metrics_snapshot: dict[str, int | float | str] = _empty_metrics_snapshot()
+
+
+def _dashboard_tuning() -> dict[str, int | float]:
+    history_interval = max(10.0, METRICS_HISTORY_INTERVAL_SECONDS)
+    return {
+        "favourite_cache_ttl_seconds": round(FAVOURITE_CACHE_TTL, 1),
+        "favourite_fetch_concurrency": FAVOURITE_FETCH_LIMIT,
+        "broadcast_interval_seconds": round(FAVOURITE_BROADCAST_INTERVAL, 1),
+        "metrics_interval_seconds": round(max(10.0, METRICS_LOG_INTERVAL_SECONDS), 1),
+        "history_interval_seconds": round(history_interval, 1),
+        "history_points": max(1, METRICS_HISTORY_MAX_POINTS),
+        "history_retention_hours": round((history_interval * max(1, METRICS_HISTORY_MAX_POINTS)) / 3600.0, 1),
+    }
+
+
+def _metrics_snapshot_payload() -> dict[str, object]:
+    payload = dict(_latest_metrics_snapshot)
+    payload["subscribers"] = int(_metrics_window.get("last_subscribers", payload["subscribers"]))
+    payload["unique_keys"] = int(_metrics_window.get("last_unique_keys", payload["unique_keys"]))
+    payload["last_updated"] = payload["timestamp"]
+    payload["tuning"] = _dashboard_tuning()
+    payload["history_points"] = len(_metrics_history)
+    payload["history_capacity"] = max(1, METRICS_HISTORY_MAX_POINTS)
+    payload["public_appstore_url"] = PUBLIC_APPSTORE_URL
+    payload["internal_dashboard_host"] = INTERNAL_DASHBOARD_HOST
+    return payload
+
+
+def _metrics_history_payload() -> dict[str, object]:
+    return {
+        "points": list(_metrics_history),
+        "count": len(_metrics_history),
+        "max_points": max(1, METRICS_HISTORY_MAX_POINTS),
+        "last_updated": _latest_metrics_snapshot["timestamp"],
+    }
+
+
+def _normalize_metrics_snapshot(
+    api_metrics: dict[str, float], ptv_metrics: dict[str, int], interval_seconds: float
+) -> dict[str, int | float | str]:
+    safe_interval = max(1.0, interval_seconds)
+    cache_hits = int(api_metrics.get("departure_cache_hits", 0))
+    cache_misses = int(api_metrics.get("departure_cache_misses", 0))
+    cache_lookups = cache_hits + cache_misses
+    broadcast_loops = int(api_metrics.get("broadcast_iterations", 0))
+    avg_loop_ms = (
+        (float(api_metrics.get("broadcast_duration_sum", 0.0)) / broadcast_loops) * 1000.0
+        if broadcast_loops
+        else 0.0
+    )
+    upstream_total = sum(int(value) for value in ptv_metrics.values())
+    return {
+        "timestamp": _utc_isoformat(),
+        "subscribers": int(api_metrics.get("last_subscribers", 0)),
+        "unique_keys": int(api_metrics.get("last_unique_keys", 0)),
+        "broadcast_loops": broadcast_loops,
+        "avg_loop_ms": round(avg_loop_ms, 2),
+        "max_loop_ms": round(float(api_metrics.get("broadcast_duration_max", 0.0)) * 1000.0, 2),
+        "cache_hits": cache_hits,
+        "cache_misses": cache_misses,
+        "cache_hit_rate": round(((cache_hits / cache_lookups) * 100.0) if cache_lookups else 0.0, 2),
+        "upstream_rps": round(upstream_total / safe_interval, 3),
+        "ptv_departures": int(ptv_metrics.get("departures", 0)),
+        "ptv_runs": int(ptv_metrics.get("runs", 0)),
+        "ptv_directions": int(ptv_metrics.get("directions", 0)),
+        "ptv_search": int(ptv_metrics.get("search", 0)),
+    }
+
+
+def _capture_metrics_snapshot(interval_seconds: float) -> dict[str, int | float | str]:
+    global _latest_metrics_snapshot
+    snapshot = _normalize_metrics_snapshot(
+        _snapshot_and_reset_metrics(),
+        ptv_client.snapshot_and_reset_metrics(),
+        interval_seconds,
+    )
+    _latest_metrics_snapshot = snapshot
+    _metrics_history.append(dict(snapshot))
+    return snapshot
+
+
+def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[str, object]) -> str:
+    bootstrap = json.dumps({"snapshot": snapshot, "history": history_payload}).replace("</", "<\\/")
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PTV Internal Dashboard</title>
+  <style>
+    :root {{
+      --bg: #0f1115;
+      --panel: #161a20;
+      --panel-alt: #12161b;
+      --border: #303842;
+      --text: #d7dde5;
+      --muted: #8b96a3;
+      --blue: #6aa8ff;
+      --green: #6fcf97;
+      --yellow: #d7b45f;
+      --red: #e06c5f;
+      --grid: #2a313a;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background: var(--bg);
+      font-size: 14px;
+    }}
+    .shell {{
+      width: min(1220px, calc(100vw - 24px));
+      margin: 0 auto;
+      padding: 16px 0 32px;
+    }}
+    .page-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+    }}
+    h1 {{
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 650;
+      letter-spacing: 0;
+    }}
+    .page-meta {{
+      color: var(--muted);
+      font-size: 0.9rem;
+    }}
+    .panel, .stat-card {{
+      border: 1px solid var(--border);
+      background: var(--panel);
+    }}
+    .stats {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }}
+    .stat-card {{
+      padding: 12px;
+    }}
+    .stat-label {{
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 650;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }}
+    .stat-value {{
+      margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 1.65rem;
+      font-weight: 600;
+      letter-spacing: 0;
+    }}
+    .stat-subvalue {{
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .panel {{
+      padding: 12px;
+    }}
+    .panel h2 {{
+      margin: 0;
+      font-size: 0.88rem;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }}
+    .panel-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 10px;
+    }}
+    .panel-meta {{
+      color: var(--muted);
+      font-size: 0.8rem;
+    }}
+    .chart-panel {{
+      grid-column: span 4;
+      min-width: 0;
+    }}
+    .info-panel {{
+      grid-column: span 6;
+    }}
+    .chart-wrap {{
+      min-height: 210px;
+    }}
+    .chart-placeholder {{
+      height: 190px;
+      display: grid;
+      place-items: center;
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      font-size: 0.9rem;
+    }}
+    .chart-frame {{
+      width: 100%;
+      height: 190px;
+      display: block;
+    }}
+    .legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }}
+    .legend-item {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }}
+    .legend-swatch {{
+      width: 12px;
+      height: 12px;
+    }}
+    .chips {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .chip {{
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      background: var(--panel-alt);
+      color: var(--text);
+      font-size: 0.86rem;
+    }}
+    .kv-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .kv-row {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+    }}
+    .kv-row strong {{
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 500;
+    }}
+    .client-list {{
+      display: grid;
+      gap: 12px;
+    }}
+    .client-row {{
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel-alt);
+    }}
+    .client-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }}
+    .client-label {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 500;
+      color: var(--text);
+    }}
+    .client-kind {{
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }}
+    .client-meta {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }}
+    .leaderboard-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .leaderboard-row {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel-alt);
+    }}
+    .leaderboard-rank {{
+      color: var(--yellow);
+      min-width: 2ch;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 500;
+    }}
+    .leaderboard-main {{
+      flex: 1;
+      min-width: 0;
+    }}
+    .leaderboard-label {{
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 500;
+    }}
+    .leaderboard-sub {{
+      color: var(--muted);
+      font-size: 0.86rem;
+    }}
+    .leaderboard-stats {{
+      text-align: right;
+      color: var(--muted);
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }}
+    @media (max-width: 960px) {{
+      .chart-panel,
+      .info-panel {{
+        grid-column: 1 / -1;
+      }}
+    }}
+    @media (max-width: 640px) {{
+      .shell {{
+        width: min(100vw - 16px, 1220px);
+        padding-top: 10px;
+      }}
+      .page-head {{
+        display: block;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="page-head">
+      <h1>YarraTrak metrics</h1>
+      <div class="page-meta">refresh 15s; history resets on process restart</div>
+    </header>
+
+    <section class="stats">
+      <article class="stat-card"><div class="stat-label">Subscribers</div><div class="stat-value" id="stat-subscribers">0</div></article>
+      <article class="stat-card"><div class="stat-label">Unique Keys</div><div class="stat-value" id="stat-unique-keys">0</div></article>
+      <article class="stat-card"><div class="stat-label">Cache Hit Rate</div><div class="stat-value" id="stat-cache-hit-rate">0%</div><div class="stat-subvalue" id="stat-cache-breakdown">0 hits / 0 misses</div></article>
+      <article class="stat-card"><div class="stat-label">Upstream RPS</div><div class="stat-value" id="stat-upstream-rps">0.00</div><div class="stat-subvalue" id="stat-upstream-total">0 requests / sample</div></article>
+      <article class="stat-card"><div class="stat-label">Avg Loop</div><div class="stat-value" id="stat-avg-loop">0 ms</div><div class="stat-subvalue" id="stat-broadcast-loops">0 loops / sample</div></article>
+      <article class="stat-card"><div class="stat-label">Max Loop</div><div class="stat-value" id="stat-max-loop">0 ms</div><div class="stat-subvalue" id="stat-ptv-split">departures 0, runs 0</div></article>
+    </section>
+
+    <section class="grid">
+      <article class="panel chart-panel">
+        <div class="panel-head">
+          <h2>Cache Hit Rate</h2>
+          <div class="panel-meta" id="cache-hit-meta">Rolling history</div>
+        </div>
+        <div class="chart-wrap" id="chart-cache-hit-rate"></div>
+      </article>
+      <article class="panel chart-panel">
+        <div class="panel-head">
+          <h2>Upstream Request Rate</h2>
+          <div class="panel-meta" id="upstream-rps-meta">Rolling history</div>
+        </div>
+        <div class="chart-wrap" id="chart-upstream-rps"></div>
+      </article>
+      <article class="panel chart-panel">
+        <div class="panel-head">
+          <h2>Keys vs Subscribers</h2>
+          <div class="panel-meta" id="keys-subs-meta">Rolling history</div>
+        </div>
+        <div class="chart-wrap" id="chart-keys-subs"></div>
+      </article>
+
+      <article class="panel info-panel">
+        <div class="panel-head">
+          <h2>Current Tuning</h2>
+          <div class="panel-meta">Runtime values from process config</div>
+        </div>
+        <div class="chips" id="tuning-values"></div>
+      </article>
+      <article class="panel info-panel">
+        <div class="panel-head">
+          <h2>Sample Breakdown</h2>
+          <div class="panel-meta">Latest normalized counters</div>
+        </div>
+        <div class="kv-list" id="snapshot-breakdown"></div>
+      </article>
+    </section>
+  </main>
+
+  <script id="dashboard-bootstrap" type="application/json">{bootstrap}</script>
+  <script>
+    const bootstrap = JSON.parse(document.getElementById("dashboard-bootstrap").textContent);
+    const state = {{
+      snapshot: bootstrap.snapshot || {{}},
+      history: (bootstrap.history && bootstrap.history.points) || [],
+    }};
+
+    const POLL_MS = 15000;
+    const HISTORY_MS = 60000;
+
+    function formatNumber(value, digits = 0) {{
+      return Number(value || 0).toLocaleString(undefined, {{
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      }});
+    }}
+
+    function formatPercent(value) {{
+      return `${{formatNumber(value, 1)}}%`;
+    }}
+
+    function formatMs(value) {{
+      return `${{formatNumber(value, value >= 100 ? 0 : 1)}} ms`;
+    }}
+
+    function formatTime(value) {{
+      if (!value) return "Awaiting first sample";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString();
+    }}
+
+    function formatChartStamp(points) {{
+      if (!points.length) return "No retained samples yet";
+      const first = new Date(points[0].timestamp);
+      const last = new Date(points[points.length - 1].timestamp);
+      return `${{points.length}} samples from ${{first.toLocaleTimeString([], {{ hour: "2-digit", minute: "2-digit" }})}} to ${{last.toLocaleTimeString([], {{ hour: "2-digit", minute: "2-digit" }})}}`;
+    }}
+
+    function setText(id, value) {{
+      const node = document.getElementById(id);
+      if (node) node.textContent = value;
+    }}
+
+    function renderStats() {{
+      const snap = state.snapshot || {{}};
+      setText("last-updated", formatTime(snap.last_updated || snap.timestamp));
+      setText("public-redirect", snap.public_appstore_url || "Configured");
+      setText("stat-subscribers", formatNumber(snap.subscribers));
+      setText("stat-unique-keys", formatNumber(snap.unique_keys));
+      setText("stat-cache-hit-rate", formatPercent(snap.cache_hit_rate));
+      setText("stat-cache-breakdown", `${{formatNumber(snap.cache_hits)}} hits / ${{formatNumber(snap.cache_misses)}} misses`);
+      setText("stat-upstream-rps", formatNumber(snap.upstream_rps, 2));
+      setText("stat-upstream-total", `${{formatNumber((snap.ptv_departures || 0) + (snap.ptv_runs || 0) + (snap.ptv_directions || 0) + (snap.ptv_search || 0))}} requests / sample`);
+      setText("stat-avg-loop", formatMs(snap.avg_loop_ms));
+      setText("stat-broadcast-loops", `${{formatNumber(snap.broadcast_loops)}} loops / sample`);
+      setText("stat-max-loop", formatMs(snap.max_loop_ms));
+      setText("stat-ptv-split", `departures ${{formatNumber(snap.ptv_departures)}}, runs ${{formatNumber(snap.ptv_runs)}}`);
+    }}
+
+    function renderTuning() {{
+      const target = document.getElementById("tuning-values");
+      const tuning = (state.snapshot && state.snapshot.tuning) || {{}};
+      const entries = [
+        ["Cache TTL", `${{formatNumber(tuning.favourite_cache_ttl_seconds, 1)}}s`],
+        ["Fetch Concurrency", formatNumber(tuning.favourite_fetch_concurrency)],
+        ["Broadcast Interval", `${{formatNumber(tuning.broadcast_interval_seconds, 1)}}s`],
+        ["Metrics Interval", `${{formatNumber(tuning.metrics_interval_seconds, 1)}}s`],
+        ["History Interval", `${{formatNumber(tuning.history_interval_seconds, 1)}}s`],
+        ["Retention", `${{formatNumber(tuning.history_points)}} points / ${{formatNumber(tuning.history_retention_hours, 1)}}h`],
+      ];
+      target.innerHTML = entries.map(([label, value]) => `<span class="chip"><strong>${{label}}:</strong> ${{value}}</span>`).join("");
+    }}
+
+    function renderBreakdown() {{
+      const target = document.getElementById("snapshot-breakdown");
+      const snap = state.snapshot || {{}};
+      const rows = [
+        ["PTV departures", formatNumber(snap.ptv_departures)],
+        ["PTV runs", formatNumber(snap.ptv_runs)],
+        ["PTV directions", formatNumber(snap.ptv_directions)],
+        ["PTV search", formatNumber(snap.ptv_search)],
+        ["History samples", `${{formatNumber(snap.history_points || 0)}} / ${{formatNumber(snap.history_capacity || 0)}}`],
+        ["Dashboard host", snap.internal_dashboard_host || "internal"],
+      ];
+      target.innerHTML = rows.map(([label, value]) => `<div class="kv-row"><span>${{label}}</span><strong>${{value}}</strong></div>`).join("");
+    }}
+
+    function linePath(points, width, height, minValue, maxValue, key) {{
+      if (!points.length) return "";
+      const range = maxValue - minValue || 1;
+      return points.map((point, index) => {{
+        const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
+        const raw = Number(point[key] || 0);
+        const y = height - ((raw - minValue) / range) * height;
+        return `${{index === 0 ? "M" : "L"}}${{x.toFixed(2)}},${{y.toFixed(2)}}`;
+      }}).join(" ");
+    }}
+
+    function renderChart(containerId, options) {{
+      const target = document.getElementById(containerId);
+      const points = state.history || [];
+      if (!points.length) {{
+        target.innerHTML = '<div class="chart-placeholder">Awaiting first retained sample</div>';
+        return;
+      }}
+
+      const width = 520;
+      const height = 170;
+      const paddingTop = 10;
+      const allValues = options.series.flatMap((series) => points.map((point) => Number(point[series.key] || 0)));
+      const maxValue = Math.max(...allValues, options.maxFloor || 0);
+      const minValue = options.forceZero ? 0 : Math.min(...allValues, 0);
+      const rangeTop = maxValue === minValue ? maxValue + 1 : maxValue;
+      const grid = [0.25, 0.5, 0.75].map((ratio) => {{
+        const y = paddingTop + ratio * height;
+        return `<line x1="0" y1="${{y}}" x2="${{width}}" y2="${{y}}" stroke="var(--grid)" stroke-width="1" />`;
+      }}).join("");
+
+      const paths = options.series.map((series) => {{
+        const d = linePath(points, width, height, minValue, rangeTop, series.key);
+        const last = Number(points[points.length - 1][series.key] || 0);
+        const lastX = points.length === 1 ? width / 2 : width;
+        const safeRange = rangeTop - minValue || 1;
+        const lastY = paddingTop + height - ((last - minValue) / safeRange) * height;
+        return `
+          <path d="${{d}}" fill="none" stroke="${{series.color}}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>
+          <circle cx="${{lastX}}" cy="${{lastY.toFixed(2)}}" r="4.5" fill="${{series.color}}"></circle>
+        `;
+      }}).join("");
+
+      target.innerHTML = `
+        <svg class="chart-frame" viewBox="0 0 ${{width}} ${{height + paddingTop + 8}}" preserveAspectRatio="none" aria-hidden="true">
+          <g transform="translate(0, ${{paddingTop}})">
+            ${{grid}}
+            ${{paths}}
+          </g>
+        </svg>
+        <div class="legend">
+          ${{options.series.map((series) => `<span class="legend-item"><span class="legend-swatch" style="background:${{series.color}}"></span>${{series.label}}</span>`).join("")}}
+        </div>
+      `;
+    }}
+
+    function renderCharts() {{
+      const stamp = formatChartStamp(state.history || []);
+      setText("cache-hit-meta", stamp);
+      setText("upstream-rps-meta", stamp);
+      setText("keys-subs-meta", stamp);
+      renderChart("chart-cache-hit-rate", {{
+        forceZero: true,
+        maxFloor: 100,
+        series: [
+          {{ key: "cache_hit_rate", label: "Cache hit %", color: "var(--yellow)" }},
+        ],
+      }});
+      renderChart("chart-upstream-rps", {{
+        forceZero: true,
+        maxFloor: 1,
+        series: [
+          {{ key: "upstream_rps", label: "Upstream RPS", color: "var(--blue)" }},
+        ],
+      }});
+      renderChart("chart-keys-subs", {{
+        forceZero: true,
+        maxFloor: 1,
+        series: [
+          {{ key: "unique_keys", label: "Unique keys", color: "var(--green)" }},
+          {{ key: "subscribers", label: "Subscribers", color: "var(--red)" }},
+        ],
+      }});
+    }}
+
+    async function refreshSnapshot() {{
+      const response = await fetch("/internal/metrics", {{ cache: "no-store" }});
+      if (!response.ok) throw new Error(`snapshot ${{response.status}}`);
+      state.snapshot = await response.json();
+      render();
+    }}
+
+    async function refreshHistory() {{
+      const response = await fetch("/internal/metrics/history", {{ cache: "no-store" }});
+      if (!response.ok) throw new Error(`history ${{response.status}}`);
+      const payload = await response.json();
+      state.history = payload.points || [];
+      render();
+    }}
+
+    function render() {{
+      renderStats();
+      renderTuning();
+      renderBreakdown();
+      renderCharts();
+    }}
+
+    render();
+    window.setInterval(() => refreshSnapshot().catch((error) => console.error("dashboard snapshot refresh failed", error)), POLL_MS);
+    window.setInterval(() => refreshHistory().catch((error) => console.error("dashboard history refresh failed", error)), HISTORY_MS);
+  </script>
+</body>
+</html>"""
 
 
 def _cleanup_rate_bucket(bucket: deque[float], now: float) -> None:
@@ -149,6 +820,8 @@ def _record_broadcast_metrics(duration_seconds: float, unique_keys: int, subscri
     )
     _metrics_window["last_unique_keys"] = unique_keys
     _metrics_window["last_subscribers"] = subscribers
+    _latest_metrics_snapshot["unique_keys"] = unique_keys
+    _latest_metrics_snapshot["subscribers"] = subscribers
 
 
 def _snapshot_and_reset_metrics() -> dict[str, float]:
@@ -373,39 +1046,34 @@ async def _watch_position_loop(
 async def log_metrics_loop():
     """Emit compact operational metrics for favourite refresh load."""
     interval = max(10.0, METRICS_LOG_INTERVAL_SECONDS)
+    history_interval = max(10.0, METRICS_HISTORY_INTERVAL_SECONDS)
+    if abs(history_interval - interval) > 0.001:
+        logger.warning(
+            "METRICS_HISTORY_INTERVAL_SECONDS=%.1f does not match METRICS_LOG_INTERVAL_SECONDS=%.1f; using %.1f second samples",
+            history_interval,
+            interval,
+            interval,
+        )
     while True:
         await asyncio.sleep(interval)
-        api_metrics = _snapshot_and_reset_metrics()
-        ptv_metrics = ptv_client.snapshot_and_reset_metrics()
-        cache_lookups = api_metrics["departure_cache_hits"] + api_metrics["departure_cache_misses"]
-        cache_hit_rate = (
-            (api_metrics["departure_cache_hits"] / cache_lookups) * 100.0
-            if cache_lookups
-            else 0.0
-        )
-        upstream_total = sum(ptv_metrics.values())
-        avg_loop_ms = (
-            (api_metrics["broadcast_duration_sum"] / api_metrics["broadcast_iterations"]) * 1000.0
-            if api_metrics["broadcast_iterations"]
-            else 0.0
-        )
+        snapshot = _capture_metrics_snapshot(interval)
         logger.info(
             "Metrics: subscribers=%d unique_keys=%d loops=%d avg_loop_ms=%.1f max_loop_ms=%.1f "
             "cache_hit_rate=%.1f%% cache_hits=%d cache_misses=%d upstream_rps=%.2f "
             "ptv_departures=%d ptv_runs=%d ptv_directions=%d ptv_search=%d",
-            api_metrics["last_subscribers"],
-            api_metrics["last_unique_keys"],
-            api_metrics["broadcast_iterations"],
-            avg_loop_ms,
-            api_metrics["broadcast_duration_max"] * 1000.0,
-            cache_hit_rate,
-            api_metrics["departure_cache_hits"],
-            api_metrics["departure_cache_misses"],
-            upstream_total / interval,
-            ptv_metrics.get("departures", 0),
-            ptv_metrics.get("runs", 0),
-            ptv_metrics.get("directions", 0),
-            ptv_metrics.get("search", 0),
+            snapshot["subscribers"],
+            snapshot["unique_keys"],
+            snapshot["broadcast_loops"],
+            snapshot["avg_loop_ms"],
+            snapshot["max_loop_ms"],
+            snapshot["cache_hit_rate"],
+            snapshot["cache_hits"],
+            snapshot["cache_misses"],
+            snapshot["upstream_rps"],
+            snapshot["ptv_departures"],
+            snapshot["ptv_runs"],
+            snapshot["ptv_directions"],
+            snapshot["ptv_search"],
         )
 
 
@@ -630,6 +1298,9 @@ def _resolve_llm_key(provided_key: str | None) -> str | None:
 @app.on_event("startup")
 async def startup_start_broadcast():
     """Start the broadcast task and preload route geometry."""
+    global _latest_metrics_snapshot
+    _metrics_history.clear()
+    _latest_metrics_snapshot = _empty_metrics_snapshot()
     await ptv_client.startup()
     start_broadcast_task()
     start_metrics_task()
@@ -643,6 +1314,42 @@ async def shutdown_background_tasks():
     stop_metrics_task()
     stop_broadcast_task()
     await ptv_client.shutdown()
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
+async def host_root(request: Request):
+    host = _request_host(request)
+    if _is_internal_dashboard_host(host):
+        return HTMLResponse(
+            content=_render_dashboard_html(_metrics_snapshot_payload(), _metrics_history_payload()),
+            headers={"Cache-Control": "no-store"},
+        )
+    if host == PUBLIC_BASE_HOST:
+        return RedirectResponse(
+            url=PUBLIC_APPSTORE_URL,
+            status_code=302,
+            headers={"Cache-Control": "no-store"},
+        )
+    raise HTTPException(status_code=404, detail="Not found")
+
+
+@app.get("/internal/metrics", include_in_schema=False)
+async def internal_metrics(request: Request):
+    _require_internal_dashboard_request(request)
+    return JSONResponse(
+        content=_metrics_snapshot_payload(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/internal/metrics/history", include_in_schema=False)
+async def internal_metrics_history(request: Request):
+    _require_internal_dashboard_request(request)
+    return JSONResponse(
+        content=_metrics_history_payload(),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/v1/stations")
