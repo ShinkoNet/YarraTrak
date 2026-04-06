@@ -19,7 +19,8 @@
         "targetPlatforms": [
           "basalt",
           "chalk",
-          "diorite"
+          "diorite",
+          "emery"
         ],
         "type": "bitmap"
       },
@@ -36,7 +37,9 @@
     "aplite",
     "basalt",
     "chalk",
-    "diorite"
+    "diorite",
+    "emery",
+    "flint"
   ],
   "uuid": "61ae3254-ce00-49db-aad8-23143f649b91",
   "versionCode": 2,

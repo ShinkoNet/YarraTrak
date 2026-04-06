@@ -174,7 +174,33 @@ function startHeartbeat(socket, connectGeneration) {
 }
 
 function getServerHealthUrl(serverUrl) {
-    return serverUrl.replace(/\/+$/, '') + '/pebble-config.html';
+    return serverUrl.replace(/\/+$/, '') + '/api/v1/health';
+}
+
+function isConnectionBannerVisible() {
+    return hasShownMainMenu && (!wsConnected || wsConnecting);
+}
+
+function getConnectionBannerItem() {
+    if (!isConnectionBannerVisible()) {
+        return null;
+    }
+
+    return {
+        title: wsConnecting ? 'Reconnecting...' : 'Offline',
+        subtitle: wsConnecting ? 'Refreshing live data' : 'Showing last known times',
+        data: { system: true }
+    };
+}
+
+function refreshConnectionUi() {
+    if (hasShownMainMenu) {
+        mainMenu.items(0, buildMenuItems());
+    }
+
+    if (watchingButtonIndex !== null) {
+        updateWatchingDisplay(getWatchedDeparture(watchingButtonIndex), watchingRouteText);
+    }
 }
 
 function setLoadingHeadline() {
@@ -409,7 +435,7 @@ Settings.config({
 
 var screenWidth = Feature.resolution().x;  // 144 for Aplite
 var screenHeight = Feature.resolution().y; // 168 for Aplite
-var useTextOnlySplash = Feature.platform({ aplite: true }, true, false);
+var useTextOnlySplash = Feature.platform({ aplite: true, flint: true }, true, false);
 var appBackgroundColor = Feature.color('#291381', 'black');
 
 var loadingCard = new Window({
@@ -503,7 +529,8 @@ function showMainMenu() {
 // Custom watching window with big timer
 // Screen layout (144x168 Aplite): timer big at top, platform medium, route small at bottom
 var watchingWindow = new Window({
-    backgroundColor: appBackgroundColor
+    backgroundColor: appBackgroundColor,
+    rippleBackground: Feature.color(true, false)
 });
 
 // Status text - small (top)
@@ -630,6 +657,11 @@ var mainMenu = new UI.Menu({
 // Build menu items
 function buildMenuItems() {
     var items = [];
+    var connectionBanner = getConnectionBannerItem();
+
+    if (connectionBanner) {
+        items.push(connectionBanner);
+    }
 
     // Station name abbreviation for Aplite menu display
     // Names are pre-abbreviated by settings.html, this just handles final length
@@ -749,7 +781,9 @@ mainMenu.on('show', function () {
 });
 
 mainMenu.on('select', function (e) {
-    if (e.item.title === 'Ask') {
+    if (e.item.data && e.item.data.system) {
+        return;
+    } else if (e.item.title === 'Ask') {
         startVoiceQuery();
     } else if (e.item.data && e.item.data.favourite) {
         runFavouriteQuery(e.item.data.favourite);
@@ -1194,21 +1228,18 @@ function updateWatchingDisplay(dep, route) {
     timerText.font(timerFont);
     timerText.text(timerValue);
 
-    // Distance is shown above platform, only for metro trains
-    if (dep.route_type !== 0) {
-        // Center the timer since distance text is disabled for non-metro routes
-        timerText.position(new Vector2(0, 32));
-        distanceText.text('');
-    } else {
-        // Metro trains (default alignment)
+    var distText = null;
+    if (dep.route_type === 0 && dep.run_ref && dep.run_ref === watchingDistanceRunRef) {
+        distText = formatDistanceText(watchingDistanceKm);
+    }
+
+    if (distText) {
         timerText.position(new Vector2(0, 18));
-        
-        if (dep.run_ref && dep.run_ref === watchingDistanceRunRef && watchingDistanceKm !== null && watchingDistanceKm !== undefined) {
-            var distText = formatDistanceText(watchingDistanceKm);
-            distanceText.text(distText ? distText : '');
-        } else {
-            distanceText.text('');
-        }
+        distanceText.text(distText);
+    } else {
+        // Recenter the timer whenever there is no usable distance text to show
+        timerText.position(new Vector2(0, 50));
+        distanceText.text('');
     }
 
     platformText.text(dep.platform ? 'Platform ' + dep.platform : '');
@@ -1235,9 +1266,9 @@ function updateWatchingDisplay(dep, route) {
 
     // Update top status text
     if (watchingDepartureOffset === 0) {
-        watchingStatusText.text('Next Service');
+        watchingStatusText.text((!wsConnected || wsConnecting) ? 'Reconnecting...' : 'Next Service');
     } else {
-        watchingStatusText.text('Service After');
+        watchingStatusText.text((!wsConnected || wsConnecting) ? 'Reconnecting...' : 'Service After');
     }
 
     progressBar.size(new Vector2(progressWidth, 4));
@@ -1427,6 +1458,7 @@ function connectWebSocket() {
         wsConnected = true;
         console.log('WebSocket connected');
         startHeartbeat(socket, connectGeneration);
+        refreshConnectionUi();
         showMainMenu();
     };
 
@@ -1445,6 +1477,7 @@ function connectWebSocket() {
         if (!hasShownMainMenu) {
             runLoadingDiagnostics(serverUrl, loadingDiagnosticToken);
         }
+        refreshConnectionUi();
 
         // Code 4001 was previously used for invalid API key — no longer applicable
         // Server is now open access for departure data
@@ -1461,6 +1494,7 @@ function connectWebSocket() {
         if (!hasShownMainMenu) {
             runLoadingDiagnostics(serverUrl, loadingDiagnosticToken);
         }
+        refreshConnectionUi();
     };
 
     socket.onmessage = function (event) {
@@ -1545,7 +1579,7 @@ function connectWebSocket() {
                     watchingVehicleDesc = msg.vehicle_desc || null;
                     console.log('[Watch] position_update: distance_km=' + msg.distance_km + ' vehicle_desc=' + msg.vehicle_desc);
 
-                    var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
+                    var currentDep = getWatchedDeparture(watchingButtonIndex);
                     updateWatchingDisplay(currentDep, watchingRouteText);
                 }
                 return;
@@ -1594,6 +1628,7 @@ function reconnect() {
     wsConnected = false;
     // Clear stale departure cache to avoid showing old data after config changes
     buttonDepartures = {};
+    refreshConnectionUi();
     connectWebSocket();
 }
 

@@ -24,9 +24,8 @@
 
 #define EMPTY_TITLE ""
 
-#define MENU_HEADER_HEIGHT 16
-
 #define SPINNER_MS 66
+#define MENU_ROW_GRADIENT_STEPS 10
 
 static GColor8 prv_menu_background_color(void) {
 #if defined(PBL_COLOR)
@@ -101,8 +100,10 @@ struct __attribute__((__packed__)) MenuSelectionPacket {
 };
 
 
+#if !defined(PBL_COLOR)
 static GColor8 s_normal_palette[] = { { GColorBlackARGB8 }, { GColorClearARGB8 } };
 static GColor8 s_inverted_palette[] = { { GColorWhiteARGB8 }, { GColorClearARGB8 } };
+#endif
 
 
 static void simply_menu_clear_section_items(SimplyMenu *self, int section_index);
@@ -116,7 +117,6 @@ static MenuIndex simply_menu_get_selection(SimplyMenu *self);
 static void simply_menu_set_selection(SimplyMenu *self, MenuIndex menu_index, MenuRowAlign align, bool animated);
 
 static void refresh_spinner_timer(SimplyMenu *self);
-static void refresh_header_timer(SimplyMenu *self);
 
 
 static int64_t prv_get_milliseconds(void) {
@@ -124,31 +124,6 @@ static int64_t prv_get_milliseconds(void) {
   uint16_t now_ms_part;
   time_ms(&now_s, &now_ms_part);
   return ((int64_t) now_s) * 1000 + now_ms_part;
-}
-
-static void prv_menu_header_update_callback(Layer *layer, GContext *ctx) {
-  GRect frame = layer_get_bounds(layer);
-  char time_text[16];
-
-  clock_copy_time_string(time_text, sizeof(time_text));
-
-  graphics_context_set_fill_color(ctx, gcolor8_get(prv_menu_background_color()));
-  graphics_fill_rect(ctx, frame, 0, GCornerNone);
-  graphics_context_set_text_color(ctx, GColorWhite);
-
-  graphics_draw_text(ctx, "PTV Notify",
-                     fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                     GRect(4, -1, frame.size.w / 2, frame.size.h),
-                     GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentLeft,
-                     NULL);
-
-  graphics_draw_text(ctx, time_text,
-                     fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                     GRect(frame.size.w / 2, -1, frame.size.w / 2 - 4, frame.size.h),
-                     GTextOverflowModeTrailingEllipsis,
-                     GTextAlignmentRight,
-                     NULL);
 }
 
 static bool prv_send_menu_item(Command type, uint16_t section, uint16_t item) {
@@ -342,15 +317,6 @@ static void spinner_timer_callback(void *data) {
   refresh_spinner_timer(self);
 }
 
-static void header_timer_callback(void *data) {
-  SimplyMenu *self = data;
-  self->header_timer = NULL;
-  if (self->header_layer) {
-    layer_mark_dirty(self->header_layer);
-    refresh_header_timer(self);
-  }
-}
-
 static SimplyMenuItem *get_first_request_item(SimplyMenu *self) {
   return (SimplyMenuItem *)list1_find(self->menu_layer.items, prv_request_item_filter, NULL);
 }
@@ -363,21 +329,6 @@ static void refresh_spinner_timer(SimplyMenu *self) {
   if (!self->spinner_timer && get_first_request_item(self)) {
     self->spinner_timer = app_timer_register(SPINNER_MS, spinner_timer_callback, self);
   }
-}
-
-static void refresh_header_timer(SimplyMenu *self) {
-  int32_t delay_ms;
-
-  if (self->header_timer || !self->header_layer) {
-    return;
-  }
-
-  delay_ms = 60000 - (int32_t)(prv_get_milliseconds() % 60000);
-  if (delay_ms < 250) {
-    delay_ms += 60000;
-  }
-
-  self->header_timer = app_timer_register(delay_ms, header_timer_callback, self);
 }
 
 static uint16_t prv_menu_get_num_sections_callback(MenuLayer *menu_layer, void *data) {
@@ -472,6 +423,119 @@ static void simply_menu_draw_row_spinner(SimplyMenu *self, GContext *ctx,
   }
 }
 
+#if defined(PBL_COLOR)
+static uint8_t prv_menu_mix_u8(uint8_t a, uint8_t b, uint16_t t, uint16_t max_t) {
+  return a + (((int16_t)(b - a) * t) / max_t);
+}
+
+static uint16_t prv_menu_row_gradient_size(uint16_t num_rows) {
+  if (num_rows < 3) {
+    return 3;
+  }
+  if (num_rows > MENU_ROW_GRADIENT_STEPS) {
+    return MENU_ROW_GRADIENT_STEPS;
+  }
+  return num_rows;
+}
+
+static GColor prv_menu_row_fill_color(uint16_t row, uint16_t num_rows) {
+  const uint16_t gradient_size = prv_menu_row_gradient_size(num_rows);
+  const uint16_t max_step = gradient_size - 1;
+  const uint16_t step = row >= max_step ? max_step : row;
+  return GColorFromRGB(
+      prv_menu_mix_u8(41, 0, step, max_step),
+      prv_menu_mix_u8(19, 0, step, max_step),
+      prv_menu_mix_u8(129, 0, step, max_step));
+}
+
+static GColor prv_menu_highlight_fill_color(void) {
+  return GColorFromRGB(0, 170, 255);
+}
+
+static void prv_menu_draw_background_callback(GContext *ctx, const Layer *bg_layer,
+                                              bool highlight, void *data) {
+  SimplyMenu *self = data;
+  GRect bounds = layer_get_bounds(bg_layer);
+
+  if (highlight) {
+    graphics_context_set_fill_color(ctx, prv_menu_highlight_fill_color());
+    graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+    return;
+  }
+
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+
+  if (!self->menu_layer.menu_layer || !PBL_IF_RECT_ELSE(true, false)) {
+    return;
+  }
+
+  SimplyMenuSection *section = prv_get_menu_section(self, 0);
+  if (!section || !section->num_items) {
+    return;
+  }
+
+  const int16_t row_height = MENU_CELL_BASIC_CELL_HEIGHT;
+  const int16_t top_content_y = -scroll_layer_get_content_offset(
+      menu_layer_get_scroll_layer(self->menu_layer.menu_layer)).y;
+
+  for (uint16_t row = 0; row < section->num_items; ++row) {
+    const int16_t y = row * row_height - top_content_y;
+    if (y >= bounds.size.h) {
+      break;
+    }
+    if (y + row_height <= 0) {
+      continue;
+    }
+
+    graphics_context_set_fill_color(ctx, prv_menu_row_fill_color(row, section->num_items));
+    graphics_fill_rect(ctx,
+                       GRect(0, y, bounds.size.w, row_height),
+                       0, GCornerNone);
+  }
+}
+
+static void prv_menu_draw_row_chrome(GContext *ctx, const Layer *cell_layer,
+                                     MenuIndex *cell_index, SimplyMenu *self,
+                                     SimplyMenuSection *section) {
+  GRect bounds = layer_get_bounds(cell_layer);
+  const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
+
+  if (is_highlighted) {
+    graphics_context_set_fill_color(ctx, gcolor8_get_or(self->menu_layer.highlight_background,
+                                                        prv_menu_highlight_fill_color()));
+    graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+    return;
+  }
+}
+
+static void prv_menu_draw_row_text(GContext *ctx, const Layer *cell_layer,
+                                   SimplyMenu *self, SimplyMenuItem *item) {
+  GRect bounds = layer_get_bounds(cell_layer);
+  const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
+  const GColor text_color =
+      gcolor8_get_or(is_highlighted ? self->menu_layer.highlight_foreground :
+                                      self->menu_layer.normal_foreground,
+                     GColorWhite);
+  const GFont title_font = fonts_get_system_font(item->subtitle ? FONT_KEY_GOTHIC_24_BOLD :
+                                                                 FONT_KEY_GOTHIC_28_BOLD);
+  const GRect title_rect = item->subtitle ? GRect(10, 0, bounds.size.w - 20, 24) :
+                                            GRect(10, 7, bounds.size.w - 20, 30);
+
+  graphics_context_set_text_color(ctx, text_color);
+  graphics_draw_text(ctx, item->title, title_font, title_rect,
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+
+  if (!item->subtitle) {
+    return;
+  }
+
+  graphics_draw_text(ctx, item->subtitle, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+                     GRect(10, 23, bounds.size.w - 20, 18),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+}
+#endif
+
 static void prv_menu_draw_row_callback(GContext *ctx, const Layer *cell_layer,
                                        MenuIndex *cell_index, void *data) {
   SimplyMenu *self = data;
@@ -487,6 +551,10 @@ static void prv_menu_draw_row_callback(GContext *ctx, const Layer *cell_layer,
     return;
   }
 
+#if defined(PBL_COLOR)
+  prv_menu_draw_row_chrome(ctx, cell_layer, cell_index, self, section);
+#endif
+
   if (item->title == NULL) {
     SimplyMenuItem *last_request = get_last_request_item(self);
     if (last_request == item) {
@@ -499,6 +567,9 @@ static void prv_menu_draw_row_callback(GContext *ctx, const Layer *cell_layer,
   list1_remove(&self->menu_layer.items, &item->node);
   list1_prepend(&self->menu_layer.items, &item->node);
 
+#if defined(PBL_COLOR)
+  prv_menu_draw_row_text(ctx, cell_layer, self, item);
+#else
   SimplyImage *image = simply_res_get_image(self->window.simply->res, item->icon);
   GColor8 *palette = NULL;
 
@@ -515,6 +586,7 @@ static void prv_menu_draw_row_callback(GContext *ctx, const Layer *cell_layer,
   if (palette) {
     gbitmap_set_palette(image->bitmap, palette, false);
   }
+#endif
 }
 
 static void prv_menu_select_click_callback(MenuLayer *menu_layer, MenuIndex *cell_index,
@@ -547,17 +619,6 @@ static void prv_menu_window_load(Window *window) {
   GRect frame = layer_get_frame(window_layer);
   frame.origin = GPointZero;
 
-  self->header_layer = layer_create((GRect) {
-    .origin = GPointZero,
-    .size = GSize(frame.size.w, MENU_HEADER_HEIGHT)
-  });
-  layer_set_update_proc(self->header_layer, prv_menu_header_update_callback);
-  layer_add_child(window_layer, self->header_layer);
-  refresh_header_timer(self);
-
-  frame.origin.y += MENU_HEADER_HEIGHT;
-  frame.size.h -= MENU_HEADER_HEIGHT;
-
   MenuLayer *menu_layer = self->menu_layer.menu_layer = menu_layer_create(frame);
   Layer *menu_base_layer = menu_layer_get_layer(menu_layer);
   self->window.layer = menu_base_layer;
@@ -574,6 +635,9 @@ static void prv_menu_window_load(Window *window) {
     .draw_row = prv_menu_draw_row_callback,
     .select_click = prv_menu_select_click_callback,
     .select_long_click = prv_menu_select_long_click_callback,
+#if defined(PBL_COLOR)
+    .draw_background = prv_menu_draw_background_callback,
+#endif
   });
 
   menu_layer_set_click_config_provider_onto_window(menu_layer, prv_click_config_provider, window);
@@ -581,19 +645,11 @@ static void prv_menu_window_load(Window *window) {
 
 static void prv_menu_window_appear(Window *window) {
   SimplyMenu *self = window_get_user_data(window);
-  if (self->header_layer) {
-    layer_mark_dirty(self->header_layer);
-    refresh_header_timer(self);
-  }
   simply_window_appear(&self->window);
 }
 
 static void prv_menu_window_disappear(Window *window) {
   SimplyMenu *self = window_get_user_data(window);
-  if (self->header_timer) {
-    app_timer_cancel(self->header_timer);
-    self->header_timer = NULL;
-  }
   if (simply_window_disappear(&self->window)) {
     simply_res_clear(self->window.simply->res);
     simply_menu_clear(self);
@@ -605,8 +661,6 @@ static void prv_menu_window_unload(Window *window) {
 
   menu_layer_destroy(self->menu_layer.menu_layer);
   self->menu_layer.menu_layer = NULL;
-  layer_destroy(self->header_layer);
-  self->header_layer = NULL;
 
   simply_window_unload(&self->window);
 }
@@ -660,12 +714,21 @@ static void prv_handle_menu_props_packet(Simply *simply, Packet *data) {
   menu_layer->highlight_background = packet->highlight_background_color;
   menu_layer->highlight_foreground = packet->highlight_text_color;
 
+#if defined(PBL_COLOR)
+  menu_layer_set_normal_colors(menu_layer->menu_layer,
+                               GColorClear,
+                               gcolor8_get_or(menu_layer->normal_foreground, GColorBlack));
+  menu_layer_set_highlight_colors(menu_layer->menu_layer,
+                                  GColorClear,
+                                  gcolor8_get_or(menu_layer->highlight_foreground, GColorWhite));
+#else
   menu_layer_set_normal_colors(menu_layer->menu_layer,
                                gcolor8_get_or(menu_layer->normal_background, GColorBlack),
                                gcolor8_get_or(menu_layer->normal_foreground, GColorBlack));
   menu_layer_set_highlight_colors(menu_layer->menu_layer,
                                   gcolor8_get_or(menu_layer->highlight_background, GColorBlack),
                                   gcolor8_get_or(menu_layer->highlight_foreground, GColorWhite));
+#endif
 }
 
 static void prv_handle_menu_section_packet(Simply *simply, Packet *data) {

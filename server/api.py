@@ -1794,6 +1794,18 @@ async def internal_metrics_history(request: Request):
     )
 
 
+@app.get("/api/v1/health")
+async def public_health():
+    return JSONResponse(
+        content={
+            "ok": True,
+            "service": "ptv-notify",
+            "timestamp": _utc_isoformat(),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get("/api/v1/stations")
 async def get_stations(type: str = "train"):
     """
