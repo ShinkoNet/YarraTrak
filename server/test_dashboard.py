@@ -50,6 +50,11 @@ def _metric_point(index: int) -> dict[str, int | float | str]:
 
 @pytest.fixture
 def reset_state():
+    api._favourite_subscriptions.clear()
+    api._watch_tasks.clear()
+    api._ws_connections_by_ip.clear()
+    api._ws_client_ips.clear()
+    api._ws_query_limiters.clear()
     api._metrics_history.clear()
     api._latest_metrics_snapshot = api._empty_metrics_snapshot()
     api._metrics_window["last_subscribers"] = 0
@@ -71,6 +76,7 @@ class FakeWebSocket:
     def __init__(self, host: str = "127.0.0.1"):
         self.client = SimpleNamespace(host=host)
         self.client_state = SimpleNamespace(value=1)
+        self.application_state = SimpleNamespace(value=1)
         self.sent = []
 
     async def accept(self):
@@ -80,6 +86,8 @@ class FakeWebSocket:
         self.sent.append(payload)
 
     async def close(self, code=1000):
+        self.client_state.value = 2
+        self.application_state.value = 2
         return None
 
     async def receive_text(self):
@@ -150,3 +158,25 @@ async def test_public_station_api_and_websocket_still_work(reset_state):
     await api.websocket_endpoint(fake_websocket)
     assert fake_websocket.sent
     assert fake_websocket.sent[0]["type"] == "connected"
+
+
+@pytest.mark.asyncio
+async def test_stale_websocket_is_pruned_before_connection_limit_check(reset_state):
+    client_ip = "10.0.0.5"
+    stale_websocket = FakeWebSocket(host=client_ip)
+    stale_websocket.client_state.value = 2
+    stale_websocket.application_state.value = 2
+
+    api._ws_connections_by_ip[client_ip].add(stale_websocket)
+    api._ws_client_ips[stale_websocket] = client_ip
+    api._favourite_subscriptions[stale_websocket] = [
+        {"button_id": 1, "stop_id": 123, "route_type": 0, "direction_id": None, "dest_id": None}
+    ]
+
+    fresh_websocket = FakeWebSocket(host=client_ip)
+    await api.websocket_endpoint(fresh_websocket)
+
+    assert fresh_websocket.sent
+    assert fresh_websocket.sent[0]["type"] == "connected"
+    assert stale_websocket not in api._favourite_subscriptions
+    assert client_ip not in api._ws_connections_by_ip

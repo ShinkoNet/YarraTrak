@@ -19,6 +19,7 @@ import os
 import asyncio
 import time
 import uuid
+from starlette.websockets import WebSocketState
 
 from .enums import RouteType
 from . import agent_engine
@@ -113,7 +114,8 @@ RATE_LIMIT_WINDOW_SECONDS = 60.0
 _http_query_limiters: dict[str, deque[float]] = defaultdict(deque)
 _http_favourite_limiters: dict[str, deque[float]] = defaultdict(deque)
 _ws_query_limiters: dict[str, deque[float]] = defaultdict(deque)
-_ws_connections_by_ip: dict[str, int] = defaultdict(int)
+_ws_connections_by_ip: dict[str, set[WebSocket]] = defaultdict(set)
+_ws_client_ips: dict[WebSocket, str] = {}
 _favourite_fetch_semaphore = asyncio.Semaphore(FAVOURITE_FETCH_LIMIT)
 _metrics_window = {
     "departure_cache_hits": 0,
@@ -834,20 +836,104 @@ def _scoped_session_id(session_id: str, client_scope: str, llm_key: str | None) 
     return f"{client_scope}:{_key_fingerprint(llm_key)}:{session_id}"
 
 
-def _register_websocket_connection(client_ip: str) -> bool:
-    current = _ws_connections_by_ip[client_ip]
+def _state_is_connected(state: object | None) -> bool:
+    if state is None:
+        return True
+    if state == WebSocketState.CONNECTED:
+        return True
+    value = getattr(state, "value", None)
+    if value is not None:
+        return value == WebSocketState.CONNECTED.value
+    return getattr(state, "name", None) == "CONNECTED"
+
+
+def _is_websocket_active(websocket: WebSocket) -> bool:
+    return _state_is_connected(getattr(websocket, "client_state", None)) and _state_is_connected(
+        getattr(websocket, "application_state", None)
+    )
+
+
+def _release_websocket_connection(websocket: WebSocket, client_ip: str | None = None) -> None:
+    resolved_ip = _ws_client_ips.pop(websocket, None) or client_ip
+    if resolved_ip is None:
+        return
+
+    _ws_query_limiters.pop(f"{resolved_ip}:{id(websocket)}", None)
+    sockets = _ws_connections_by_ip.get(resolved_ip)
+    if not sockets or websocket not in sockets:
+        return
+
+    sockets.discard(websocket)
+    active_count = len(sockets)
+    if active_count == 0:
+        _ws_connections_by_ip.pop(resolved_ip, None)
+    logger.info(
+        "Released websocket for %s (%d/%d active)",
+        resolved_ip,
+        active_count,
+        MAX_WS_CONNECTIONS_PER_IP,
+    )
+
+
+def _cleanup_websocket_state(
+    websocket: WebSocket,
+    client_ip: str | None = None,
+    *,
+    log_reason: str | None = None,
+) -> None:
+    if websocket in _favourite_subscriptions:
+        del _favourite_subscriptions[websocket]
+    _cancel_watch_task(websocket)
+    _release_websocket_connection(websocket, client_ip)
+    if log_reason:
+        logger.info(log_reason)
+
+
+def _prune_stale_websocket_connections(client_ip: str) -> None:
+    sockets = list(_ws_connections_by_ip.get(client_ip, set()))
+    stale = [websocket for websocket in sockets if not _is_websocket_active(websocket)]
+    for websocket in stale:
+        _cleanup_websocket_state(
+            websocket,
+            client_ip,
+            log_reason=f"Pruned stale websocket for {client_ip}",
+        )
+
+
+def _register_websocket_connection(websocket: WebSocket, client_ip: str) -> bool:
+    _prune_stale_websocket_connections(client_ip)
+    sockets = _ws_connections_by_ip[client_ip]
+    current = len(sockets)
     if current >= MAX_WS_CONNECTIONS_PER_IP:
+        logger.warning(
+            "Rejecting websocket for %s (%d/%d active)",
+            client_ip,
+            current,
+            MAX_WS_CONNECTIONS_PER_IP,
+        )
         return False
-    _ws_connections_by_ip[client_ip] = current + 1
+    sockets.add(websocket)
+    _ws_client_ips[websocket] = client_ip
+    logger.info(
+        "Registered websocket for %s (%d/%d active)",
+        client_ip,
+        len(sockets),
+        MAX_WS_CONNECTIONS_PER_IP,
+    )
     return True
 
 
-def _release_websocket_connection(client_ip: str) -> None:
-    current = _ws_connections_by_ip.get(client_ip, 0)
-    if current <= 1:
-        _ws_connections_by_ip.pop(client_ip, None)
-    else:
-        _ws_connections_by_ip[client_ip] = current - 1
+def _active_favourite_subscriptions() -> list[tuple[WebSocket, list[dict]]]:
+    active: list[tuple[WebSocket, list[dict]]] = []
+    for websocket, buttons in list(_favourite_subscriptions.items()):
+        if _is_websocket_active(websocket):
+            active.append((websocket, buttons))
+        else:
+            _cleanup_websocket_state(
+                websocket,
+                log_reason="Removed inactive client from favourite subscriptions",
+            )
+    return active
 
 
 async def _send_favourite_updates(websocket: WebSocket, updates: list[dict], chunk_size: int = 1) -> None:
@@ -993,7 +1079,7 @@ async def _watch_position_loop(
 ):
     while True:
         try:
-            if websocket.client_state.value != 1:
+            if not _is_websocket_active(websocket):
                 break
 
             distance_km = None
@@ -1019,6 +1105,8 @@ async def _watch_position_loop(
             break
         except Exception as e:
             logger.warning("Position update error: %s", e)
+            _cleanup_websocket_state(websocket, log_reason="Stopped position watch after websocket error")
+            break
 
         await asyncio.sleep(POSITION_BROADCAST_INTERVAL)
 
@@ -1137,11 +1225,13 @@ async def broadcast_favourite_updates():
         await asyncio.sleep(FAVOURITE_BROADCAST_INTERVAL)
         loop_started = time.perf_counter()
         
+        active_subscriptions = _active_favourite_subscriptions()
+
         # Collect all unique stop/direction combos from connected clients
         all_buttons: dict[tuple, list[tuple[WebSocket, int]]] = {}  # cache_key -> [(ws, button_id), ...]
-        
+
         # Connected clients
-        for ws, buttons in list(_favourite_subscriptions.items()):
+        for ws, buttons in active_subscriptions:
             for btn in buttons:
                 cache_key = (
                     btn["stop_id"],
@@ -1155,7 +1245,7 @@ async def broadcast_favourite_updates():
         
         # Skip if nothing to do
         if not all_buttons:
-            _record_broadcast_metrics(0.0, 0, len(_favourite_subscriptions))
+            _record_broadcast_metrics(0.0, 0, len(active_subscriptions))
             continue
         
         # Fetch all unique stops concurrently, with a shared semaphore.
@@ -1201,14 +1291,12 @@ async def broadcast_favourite_updates():
         
         # Clean up disconnected clients
         for ws in disconnected:
-            if ws in _favourite_subscriptions:
-                del _favourite_subscriptions[ws]
-                logger.info("Removed disconnected client from favourite subscriptions")
+            _cleanup_websocket_state(ws, log_reason="Removed disconnected client from favourite subscriptions")
 
         _record_broadcast_metrics(
             time.perf_counter() - loop_started,
             len(all_buttons),
-            len(_favourite_subscriptions),
+            len(_active_favourite_subscriptions()),
         )
 
 
@@ -1488,7 +1576,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
     """
     client_ip = _client_ip_from_websocket(websocket)
 
-    if not _register_websocket_connection(client_ip):
+    if not _register_websocket_connection(websocket, client_ip):
         await websocket.accept()
         await websocket.send_json({
             "type": "error",
@@ -1557,6 +1645,11 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                         await _send_favourite_updates(websocket, initial_updates)
                     except Exception as e:
                         logger.warning("Error pushing initial favourite data: %s", e)
+                        _cleanup_websocket_state(
+                            websocket,
+                            client_ip,
+                            log_reason="Initial favourite push failed; cleaned up websocket state",
+                        )
                 
                 asyncio.create_task(push_initial_data())
         except Exception as e:
@@ -1667,7 +1760,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                     if button_config:
                         response["button_config"] = button_config
                     
-                    if websocket.client_state.value == 1:  # CONNECTED
+                    if _is_websocket_active(websocket):
                         await websocket.send_json(response)
                     else:
                         logger.info("WebSocket closed before response could be sent (state: %s)", websocket.client_state)
@@ -1675,7 +1768,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                 except Exception as e:
                     logger.warning("WebSocket query error: %s", e)
                     try:
-                        if websocket.client_state.value == 1:
+                        if _is_websocket_active(websocket):
                             await websocket.send_json({
                                 "type": "error",
                                 "id": msg_id,
@@ -1880,6 +1973,11 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                             await _send_favourite_updates(websocket, initial_updates)
                         except Exception as e:
                             logger.warning("Error pushing subscribe favourite data: %s", e)
+                            _cleanup_websocket_state(
+                                websocket,
+                                client_ip,
+                                log_reason="Favourite subscription push failed; cleaned up websocket state",
+                            )
                     
                     asyncio.create_task(push_subscribe_data())
                 
@@ -1897,19 +1995,11 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                 })
                 
     except WebSocketDisconnect:
-        # Clean up subscription on disconnect
-        if websocket in _favourite_subscriptions:
-            del _favourite_subscriptions[websocket]
-        _cancel_watch_task(websocket)
         logger.info("WebSocket client disconnected")
     except Exception as e:
-        # Clean up subscription on error
-        if websocket in _favourite_subscriptions:
-            del _favourite_subscriptions[websocket]
-        _cancel_watch_task(websocket)
         logger.warning("WebSocket error: %s", e)
     finally:
-        _release_websocket_connection(client_ip)
+        _cleanup_websocket_state(websocket, client_ip)
 
 
 # Serve Pebble config from pebble/config/settings.html (single source of truth)
