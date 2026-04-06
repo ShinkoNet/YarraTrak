@@ -28,6 +28,7 @@ struct SimplyWindow {
   bool use_scroll_layer:1;
   bool use_status_bar:1;
   bool use_action_bar:1;
+  bool use_ripple_background:1;
 #if defined(PBL_ROUND)
   bool status_bar_insets_bottom:1;
 #endif
@@ -50,6 +51,7 @@ void simply_window_set_scrollable(SimplyWindow *self, bool is_scrollable, bool i
                                   bool animated, bool reset);
 void simply_window_set_status_bar(SimplyWindow *self, bool use_status_bar);
 void simply_window_set_background_color(SimplyWindow *self, GColor8 background_color);
+void simply_window_set_ripple_background(SimplyWindow *self, bool use_ripple_background);
 
 void simply_window_set_button(SimplyWindow *self, ButtonId button, bool enable);
 

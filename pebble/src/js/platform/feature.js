@@ -25,6 +25,7 @@ Feature.blackAndWhite = Feature.makePlatformTest({
   basalt: false,
   chalk: false,
   diorite: true,
+  flint: true,
   emery: false,
 });
 
@@ -33,6 +34,7 @@ Feature.color = Feature.makePlatformTest({
   basalt: true,
   chalk: true,
   diorite: false,
+  flint: false,
   emery: true,
 });
 
@@ -41,6 +43,7 @@ Feature.rectangle = Feature.makePlatformTest({
   basalt: true,
   chalk: false,
   diorite: true,
+  flint: true,
   emery: true,
 });
 
@@ -49,6 +52,7 @@ Feature.round = Feature.makePlatformTest({
   basalt: false,
   chalk: true,
   diorite: false,
+  flint: false,
   emery: false,
 });
 
@@ -57,6 +61,7 @@ Feature.microphone = Feature.makePlatformTest({
   basalt: true,
   chalk: true,
   diorite: true,
+  flint: true,
   emery: true,
 });
 
@@ -65,6 +70,7 @@ Feature.resolution = Feature.makePlatformTest({
   basalt: new Vector2(144, 168),
   chalk: new Vector2(180, 180),
   diorite: new Vector2(144, 168),
+  flint: new Vector2(144, 168),
   emery: new Vector2(200, 228),
 });
 

@@ -42,6 +42,8 @@ struct SimplyStageLayer {
 struct SimplyStage {
   SimplyWindow window;
   SimplyStageLayer stage_layer;
+  AppTimer *ripple_timer;
+  int64_t ripple_started_ms;
 };
 
 typedef struct SimplyElementCommon SimplyElementCommon;
@@ -115,5 +117,6 @@ struct SimplyAnimation {
 
 SimplyStage *simply_stage_create(Simply *simply);
 void simply_stage_destroy(SimplyStage *self);
+void simply_stage_update_ripple_timer(SimplyStage *self);
 
 bool simply_stage_handle_packet(Simply *simply, Packet *packet);

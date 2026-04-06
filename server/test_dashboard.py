@@ -190,10 +190,13 @@ async def test_internal_metrics_snapshot_and_history_are_capped_and_ordered(rese
 @pytest.mark.asyncio
 async def test_public_station_api_and_websocket_still_work(reset_state):
     stations_response = await _request("/api/v1/stations", api.PUBLIC_BASE_HOST)
+    health_response = await _request("/api/v1/health", api.PUBLIC_BASE_HOST)
     config_response = await _request("/pebble-config.html", api.PUBLIC_BASE_HOST)
 
     assert stations_response.status_code == 200
     assert "stations" in stations_response.json()
+    assert health_response.status_code == 200
+    assert health_response.json()["ok"] is True
     assert config_response.status_code == 200
 
     fake_websocket = FakeWebSocket()
