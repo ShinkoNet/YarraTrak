@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 # Initialize PTV Client
 client = PTVClient()
+_station_db_cache: dict[int, list[dict]] = {}
 
 
 def sanitize_query(query: str) -> str:
@@ -382,9 +383,13 @@ def _load_station_db(route_type: int) -> list[dict]:
     """Load the appropriate station database for the route type."""
     import json
     import os
-    
+
+    cached = _station_db_cache.get(route_type)
+    if cached is not None:
+        return cached
+
     base_dir = os.path.dirname(__file__)
-    
+
     if route_type == RouteType.TRAIN:
         filename = "stations_train.json"
     elif route_type == RouteType.VLINE:
@@ -393,17 +398,70 @@ def _load_station_db(route_type: int) -> list[dict]:
         filename = "stops_tram.json"
     else:
         return []
-    
+
     filepath = os.path.join(base_dir, filename)
     if not os.path.exists(filepath):
         return []
-    
+
     try:
         with open(filepath, "r") as f:
             data = json.load(f)
-        return data.get("stops", [])
+        stops = data.get("stops", [])
+        _station_db_cache[route_type] = stops
+        return stops
     except Exception:
         return []
+
+
+def resolve_trip_patterns(
+    start_stop_id: int,
+    dest_stop_id: int,
+    route_type: int = RouteType.TRAIN
+) -> list[dict]:
+    """
+    Resolve all valid route/direction pairs for traveling from start to destination.
+
+    Returns a list of:
+    {route_id, route_name, direction_id, direction_name}
+    """
+    stations = _load_station_db(route_type)
+    if not stations:
+        return []
+
+    start_station = next((s for s in stations if s.get("stop_id") == start_stop_id), None)
+    dest_station = next((s for s in stations if s.get("stop_id") == dest_stop_id), None)
+
+    if not start_station or not dest_station:
+        return []
+
+    start_routes = start_station.get("routes", {})
+    dest_routes = dest_station.get("routes", {})
+
+    if not start_routes or not dest_routes:
+        return []
+
+    patterns = []
+    for route_id, route_info in start_routes.items():
+        dest_route_info = dest_routes.get(route_id)
+        if not dest_route_info:
+            continue
+
+        dirs = route_info.get("dirs", {})
+        dest_dirs = dest_route_info.get("dirs", {})
+        for dir_id, dir_info in dirs.items():
+            start_seq = dir_info.get("seq")
+            dest_seq = dest_dirs.get(dir_id, {}).get("seq")
+
+            if start_seq is not None and dest_seq is not None and start_seq < dest_seq:
+                patterns.append({
+                    "route_id": int(route_id),
+                    "route_name": route_info.get("name", ""),
+                    "direction_id": int(dir_id),
+                    "direction_name": dir_info.get("name", "")
+                })
+
+    patterns.sort(key=lambda p: (p["route_id"], p["direction_id"]))
+    return patterns
 
 
 
@@ -418,52 +476,10 @@ def resolve_direction_id(
     
     Returns: {direction_id: int, direction_name: str, route_id: int, route_name: str} or {}
     """
-    stations = _load_station_db(route_type)
-    if not stations:
+    patterns = resolve_trip_patterns(start_stop_id, dest_stop_id, route_type)
+    if not patterns:
         return {}
-    
-    # Find both stations
-    start_station = next((s for s in stations if s.get("stop_id") == start_stop_id), None)
-    dest_station = next((s for s in stations if s.get("stop_id") == dest_stop_id), None)
-    
-    if not start_station or not dest_station:
-        return {}
-    
-    start_routes = start_station.get("routes", {})
-    dest_routes = dest_station.get("routes", {})
-    
-    if not start_routes or not dest_routes:
-        return {}
-    
-    # Find a shared route
-    shared_route_id = None
-    for route_id in start_routes:
-        if route_id in dest_routes:
-            shared_route_id = route_id
-            break
-    
-    if not shared_route_id:
-        return {}
-    
-    route_info = start_routes[shared_route_id]
-    route_name = route_info.get("name", "")
-    dirs = route_info.get("dirs", {})
-    
-    # Find direction where start.seq < dest.seq
-    for dir_id, dir_info in dirs.items():
-        start_seq = dir_info.get("seq")
-        dest_dir_info = dest_routes.get(shared_route_id, {}).get("dirs", {}).get(dir_id, {})
-        dest_seq = dest_dir_info.get("seq")
-        
-        if start_seq is not None and dest_seq is not None and start_seq < dest_seq:
-            return {
-                "direction_id": int(dir_id),
-                "direction_name": dir_info.get("name", ""),
-                "route_id": int(shared_route_id),
-                "route_name": route_name
-            }
-    
-    return {}
+    return patterns[0]
 
 
 async def configure_pebble_button(

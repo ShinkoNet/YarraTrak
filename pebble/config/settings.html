@@ -235,18 +235,20 @@
         <span id="save_status" style="color: #4CAF50; font-size: 14px;"></span>
     </div>
 
-    <!-- Server URL is auto-detected, hidden from user -->
-    <input type="hidden" id="server_url">
-
-    <h2>Authentication</h2>
+    <h2>Server</h2>
     <div class="form-group">
-        <label>API Key</label>
+        <label>Server URL</label>
+        <input type="text" id="server_url" placeholder="https://ptv.netcavy.net">
+        <div class="hint">Default: https://ptv.netcavy.net</div>
+    </div>
+
+    <h2>AI Agent (Optional)</h2>
+    <div class="form-group">
+        <label>Anthropic API Key</label>
         <div style="display: flex; gap: 10px;">
-            <input type="password" id="api_key" placeholder="Enter your API key" style="flex-grow: 1;">
-            <button id="set_key_btn" class="small-btn" style="background: #ff6b00;">Set Key</button>
+            <input type="password" id="llm_api_key" placeholder="sk-ant-..." style="flex-grow: 1;">
         </div>
-        <div class="hint">Required to connect to the server</div>
-        <div id="api_key_status" style="font-size: 13px; margin-top: 6px;"></div>
+        <div class="hint">Optional — enables voice/text queries via Claude. Get a key at <a href="https://console.anthropic.com" style="color: #ff6b00;">console.anthropic.com</a></div>
     </div>
 
     <h2>Favourite Entries</h2>
@@ -264,8 +266,8 @@
     <details style="margin-top: 30px;">
         <summary style="color: #888; cursor: pointer; font-size: 14px;">Developer Tools</summary>
         <div style="padding: 15px; background: #222; border-radius: 8px; margin-top: 10px;">
-            <button id="debug_defaults" style="background: #444; margin-top: 0; margin-bottom: 15px;">Load Dev
-                Defaults</button>
+            <button id="load_demo" style="background: #4CAF50; margin-top: 0; margin-bottom: 15px;">Load Demo
+                Entries</button>
             <div style="font-size: 12px; color: #888;">Debug Log:</div>
             <div id="debug_info"
                 style="font-size: 11px; margin-top: 4px; color: #aaa; word-break: break-all; min-height: 40px; background: #1a1a1a; padding: 8px; border-radius: 4px;">
@@ -274,7 +276,7 @@
     </details>
 
     <script>
-        // Hardcoded production server - ignore any saved/detected URLs
+        // Hardcoded production server - can be overridden in settings
         var serverBase = 'https://ptv.netcavy.net';
         // Separate station arrays by route type for lazy loading
         var stationsByType = { 0: [], 1: [], 3: [] }; // 0=train, 1=tram, 3=vline
@@ -292,11 +294,10 @@
 
         // Init UI
         var serverUrlEl = document.getElementById('server_url');
-        var apiKeyEl = document.getElementById('api_key');
-        // Always use hardcoded serverBase, ignore any saved server_url
-        serverUrlEl.value = serverBase;
-        if (options.api_key) {
-            apiKeyEl.value = options.api_key;
+        var llmKeyEl = document.getElementById('llm_api_key');
+        serverUrlEl.value = options.server_url || serverBase;
+        if (options.llm_api_key) {
+            llmKeyEl.value = options.llm_api_key;
         }
 
         // Dynamic Entry Management
@@ -535,9 +536,10 @@
         }
 
         document.getElementById('save').addEventListener('click', function () {
-            var apiKey = apiKeyEl.value.trim();
+            var llmKey = llmKeyEl.value.trim();
+            var serverUrl = serverUrlEl.value.trim() || serverBase;
 
-            var newOptions = { server_url: serverBase, api_key: apiKey, entry_count: entryCount };
+            var newOptions = { server_url: serverUrl, llm_api_key: llmKey, entry_count: entryCount };
             for (var i = 1; i <= entryCount; i++) {
                 var startIdEl = document.getElementById('entry' + i + '_start_id');
                 var destIdEl = document.getElementById('entry' + i + '_dest_id');
@@ -640,21 +642,20 @@
                 return null;
             }
 
-            // Find a shared route
             var startRoutes = Object.keys(startStation.routes);
-            var sharedRoute = startRoutes.find(r => destStation.routes[r]);
-            if (!sharedRoute) return null;
+            for (var i = 0; i < startRoutes.length; i++) {
+                var routeId = startRoutes[i];
+                var destRoute = destStation.routes[routeId];
+                if (!destRoute) continue;
 
-            // Get directions for this route from start station
-            var dirs = startStation.routes[sharedRoute].dirs;
+                var dirs = startStation.routes[routeId].dirs || {};
+                for (var dirId in dirs) {
+                    var startSeq = dirs[dirId].seq;
+                    var destSeq = destRoute.dirs && destRoute.dirs[dirId] ? destRoute.dirs[dirId].seq : undefined;
 
-            // Find direction where start.seq < dest.seq
-            for (var dirId in dirs) {
-                var startSeq = dirs[dirId].seq;
-                var destSeq = destStation.routes[sharedRoute]?.dirs?.[dirId]?.seq;
-
-                if (startSeq !== undefined && destSeq !== undefined && startSeq < destSeq) {
-                    return parseInt(dirId);
+                    if (startSeq !== undefined && destSeq !== undefined && startSeq < destSeq) {
+                        return parseInt(dirId);
+                    }
                 }
             }
 
@@ -870,85 +871,12 @@
             }
         }
 
-        var keyValidated = false;
+        // validateApiKey is no longer needed — stations are open access
 
-        async function validateApiKey() {
-            var base = serverUrlEl.value.trim() || serverBase;
-            if (base.endsWith('/')) base = base.slice(0, -1);
-            var apiKey = apiKeyEl.value.trim();
-            var statusEl = document.getElementById('api_key_status');
-            var setKeyBtn = document.getElementById('set_key_btn');
-
-            if (!apiKey) {
-                statusEl.textContent = 'Please enter an API key';
-                statusEl.style.color = '#ff4444';
-                return false;
-            }
-
-            setKeyBtn.textContent = '...';
-            setKeyBtn.disabled = true;
-
-            try {
-                var res = await fetch(base + '/api/v1/stations?type=train', {
-                    headers: { 'X-API-Key': apiKey }
-                });
-
-                if (res.status === 401) {
-                    statusEl.textContent = '✗ Invalid API key';
-                    statusEl.style.color = '#ff4444';
-                    keyValidated = false;
-                    setKeyBtn.textContent = 'Set Key';
-                    setKeyBtn.disabled = false;
-                    return false;
-                }
-
-                if (!res.ok) {
-                    statusEl.textContent = '✗ Server error (' + res.status + ')';
-                    statusEl.style.color = '#ff4444';
-                    setKeyBtn.textContent = 'Set Key';
-                    setKeyBtn.disabled = false;
-                    return false;
-                }
-
-                // Key is valid - load the train data we just fetched
-                var data = await res.json();
-                if (data.stations) {
-                    stationsByType[0] = data.stations;
-                    loadedTypes[0] = true;
-                    console.log("Loaded " + data.stations.length + " train stations");
-                }
-
-                statusEl.textContent = '✓ Key validated';
-                statusEl.style.color = '#4CAF50';
-                keyValidated = true;
-                setKeyBtn.textContent = '✓ Set';
-                setKeyBtn.style.background = '#4CAF50';
-                return true;
-
-            } catch (e) {
-                console.error('API key validation error:', e);
-                var url = base + '/api/v1/stations?type=train';
-                statusEl.textContent = '✗ Error: ' + (e.message || 'Connection failed');
-                statusEl.style.color = '#ff4444';
-                // Show debug info on page
-                var debugEl = document.getElementById('debug_info');
-                debugEl.textContent = 'URL: ' + url;
-                setKeyBtn.textContent = 'Set Key';
-                setKeyBtn.disabled = false;
-                return false;
-            }
-        }
 
         async function loadStationData(routeType) {
             var base = serverUrlEl.value.trim() || serverBase;
             if (base.endsWith('/')) base = base.slice(0, -1);
-            var apiKey = apiKeyEl.value.trim();
-
-            // Require validated key before loading
-            if (!keyValidated && !apiKey) {
-                console.log('Skipping station load - no API key');
-                return;
-            }
 
             // Map route_type to API type param
             var typeParam = 'train';
@@ -956,15 +884,9 @@
             else if (routeType === 3) typeParam = 'vline';
 
             try {
-                var headers = {};
-                if (apiKey) {
-                    headers['X-API-Key'] = apiKey;
-                }
-                var res = await fetch(base + '/api/v1/stations?type=' + typeParam, { headers: headers });
-                if (res.status === 401) {
-                    var statusEl = document.getElementById('api_key_status');
-                    statusEl.textContent = '✗ API key required';
-                    statusEl.style.color = '#ff4444';
+                var res = await fetch(base + '/api/v1/stations?type=' + typeParam);
+                if (!res.ok) {
+                    console.error('Failed to load ' + typeParam + ' stations: HTTP ' + res.status);
                     return;
                 }
                 var data = await res.json();
@@ -978,57 +900,60 @@
             }
         }
 
-        // Set Key button handler
-        document.getElementById('set_key_btn').addEventListener('click', validateApiKey);
+        // Auto-load train stations on page load (no API key needed)
+        loadStationData(0);
 
-        // Auto-validate if key already exists (from saved settings)
-        if (apiKeyEl.value.trim()) {
-            validateApiKey();
-        }
-
-        // Debug Defaults
-        document.getElementById('debug_defaults').addEventListener('click', async function () {
+        // Load Demo Entries
+        document.getElementById('load_demo').addEventListener('click', async function () {
             // Ensure train data is loaded
             if (!loadedTypes[0]) {
                 await loadStationData(0);
             }
 
-            // Server
-            document.getElementById('server_url').value = 'https://ptv.netcavy.net';
-
-            // First, clear all entries and add 3 new ones
+            // First, clear all entries
             while (entryCount > 0) removeEntry();
-            addEntry(); addEntry(); addEntry();
+            // Add 4 demo entries
+            addEntry(); addEntry(); addEntry(); addEntry();
 
-            // Entry 1: Narre Warren -> Flinders
+            // Entry 1: Flinders Street -> Belgrave (Train)
             document.getElementById('entry1_type').value = '0';
-            document.getElementById('entry1_start_search').value = 'Narre Warren Station';
-            document.getElementById('entry1_start_id').value = '1139';
-            document.getElementById('entry1_dest_search').value = 'Town Hall Station';
+            document.getElementById('entry1_start_search').value = 'Flinders Street Station';
+            document.getElementById('entry1_start_id').value = '1071';
+            document.getElementById('entry1_dest_search').value = 'Belgrave Station';
             document.getElementById('entry1_dest_search').disabled = false;
-            document.getElementById('entry1_dest_id').value = '1235';
-            document.getElementById('entry1_direction_id').value = '1'; // City direction
+            document.getElementById('entry1_dest_id').value = '1018';
+            document.getElementById('entry1_direction_id').value = '2';
             updateStatus(1);
 
-            // Entry 2: Flinders -> Narre Warren
+            // Entry 2: Caulfield -> Town Hall (Train)
             document.getElementById('entry2_type').value = '0';
-            document.getElementById('entry2_start_search').value = 'Town Hall Station';
-            document.getElementById('entry2_start_id').value = '1235';
-            document.getElementById('entry2_dest_search').value = 'Narre Warren Station';
+            document.getElementById('entry2_start_search').value = 'Caulfield Station';
+            document.getElementById('entry2_start_id').value = '1036';
+            document.getElementById('entry2_dest_search').value = 'Town Hall Station';
             document.getElementById('entry2_dest_search').disabled = false;
-            document.getElementById('entry2_dest_id').value = '1139';
-            document.getElementById('entry2_direction_id').value = '10'; // Pakenham direction
+            document.getElementById('entry2_dest_id').value = '1235';
+            document.getElementById('entry2_direction_id').value = '1';
             updateStatus(2);
 
-            // Entry 3: Southern Cross -> Brunswick
-            document.getElementById('entry3_type').value = '0';
-            document.getElementById('entry3_start_search').value = 'Southern Cross Station';
-            document.getElementById('entry3_start_id').value = '1181';
-            document.getElementById('entry3_dest_search').value = 'Brunswick Station';
+            // Entry 3: Barkly Square/Sydney Rd -> QVM/Elizabeth St (Tram)
+            document.getElementById('entry3_type').value = '1';
+            document.getElementById('entry3_start_search').value = 'Barkly Square/Sydney Rd #20';
+            document.getElementById('entry3_start_id').value = '2811';
+            document.getElementById('entry3_dest_search').value = 'Queen Victoria Market/Elizabeth St #7';
             document.getElementById('entry3_dest_search').disabled = false;
-            document.getElementById('entry3_dest_id').value = '1029';
-            document.getElementById('entry3_direction_id').value = '15'; // Upfield direction
+            document.getElementById('entry3_dest_id').value = '2258';
+            document.getElementById('entry3_direction_id').value = '11';
             updateStatus(3);
+
+            // Entry 4: Southern Cross -> Bendigo (V/Line)
+            document.getElementById('entry4_type').value = '3';
+            document.getElementById('entry4_start_search').value = 'Southern Cross Railway Station';
+            document.getElementById('entry4_start_id').value = '1181';
+            document.getElementById('entry4_dest_search').value = 'Bendigo Railway Station';
+            document.getElementById('entry4_dest_search').disabled = false;
+            document.getElementById('entry4_dest_id').value = '1509';
+            document.getElementById('entry4_direction_id').value = '6';
+            updateStatus(4);
 
             // Auto Save
             setTimeout(function () {

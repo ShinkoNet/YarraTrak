@@ -1,12 +1,15 @@
 """
 PTV Notify API - FastAPI server for public transport queries.
+
+Open-data architecture: departure/station endpoints are unauthenticated.
+Agent (LLM) endpoints use Bring-Your-Own-Key (BYOK) via Anthropic API key.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect, Depends, Header, Query
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 import json
 from pydantic import BaseModel
 from datetime import datetime, timezone
@@ -14,11 +17,9 @@ import os
 import asyncio
 import time
 import uuid
-import html
 
 from .enums import RouteType
 from . import agent_engine
-from . import config
 from . import tools
 from .ptv_client import PTVClient
 from . import route_geometry
@@ -36,21 +37,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- API Key Authentication ---
-
-async def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")):
-    """Verify API key from header. If no keys configured, allow all (dev mode)."""
-    if not config.API_KEYS:
-        return  # No keys configured = open access (dev mode)
-    if x_api_key not in config.API_KEYS:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-
 # --- Request Models ---
 
 class FavouriteRequest(BaseModel):
     button_id: int
     stop_id: int
     stop_name: str | None = None
+    dest_id: int | None = None
     direction_id: int | None = None
     direction_name: str | None = None
     route_type: int = RouteType.TRAIN
@@ -64,50 +57,25 @@ class AgentRequest(BaseModel):
     query: str
     session_id: str | None = None
     query_history: list[StopHistory] | None = None
+    llm_api_key: str | None = None
 
 # --- Initialization ---
 
 ptv_client = PTVClient()
 
-# Azure TTS (optional)
-speech_config = None
-try:
-    import azure.cognitiveservices.speech as speechsdk
-    if config.AZURE_SPEECH_KEY and config.AZURE_SPEECH_REGION:
-        speech_config = speechsdk.SpeechConfig(
-            subscription=config.AZURE_SPEECH_KEY,
-            region=config.AZURE_SPEECH_REGION
-        )
-        speech_config.speech_synthesis_voice_name = "en-US-AshleyNeural"
-        speech_config.set_speech_synthesis_output_format(
-            speechsdk.SpeechSynthesisOutputFormat.Riff48Khz16BitMonoPcm
-        )
-        print("Azure TTS initialized")
-except Exception as e:
-    print(f"Azure TTS not available: {e}")
-
-# --- Audio Store (Claim Check Pattern) ---
-
-_audio_store: dict[str, dict] = {}
-
 # --- Button Configurations (for MCP/agent setup) ---
 # This allows the agent to configure favourite buttons via set_button WebSocket message
 _button_configs: dict[str, dict] = {}
 
-# --- API Key → Button Registry (for pre-warming cache) ---
-# Populated from: WebSocket connect (learns buttons), LLM set_button (dynamic update)
-# Background broadcast loop keeps ALL registered buttons warm, not just connected clients
-_api_key_buttons: dict[str, list[dict]] = {}  # api_key → [{button_id, stop_id, route_type, direction_id}, ...]
-
 # --- Live Favourite Updates ---
-# Subscription registry: websocket -> list of button configs with stop/direction info
+# Subscription registry: websocket -> list of button configs with start/destination info
 _favourite_subscriptions: dict[WebSocket, list[dict]] = {}
 
-# Shared departure cache: (stop_id, route_type, direction_id) -> {departures: [...], fetched_at}
+# Shared departure cache: (stop_id, route_type, direction_id, dest_id) -> {departures: [...], fetched_at}
 # With multi-departure caching, we can use longer TTL - client switches between cached departures
 _departure_cache: dict[tuple, dict] = {}
-FAVOURITE_CACHE_TTL = 30.0  # seconds (was 4s, increased since client caches multiple departures)
-FAVOURITE_BROADCAST_INTERVAL = 15.0  # seconds (was 5s, client has second-by-second countdown)
+FAVOURITE_CACHE_TTL = 30.0  # seconds
+FAVOURITE_BROADCAST_INTERVAL = 15.0  # seconds
 
 # Background task reference
 _broadcast_task: asyncio.Task | None = None
@@ -121,12 +89,13 @@ POSITION_BROADCAST_INTERVAL = 5.0  # seconds
 _watch_tasks: dict[WebSocket, asyncio.Task] = {}
 
 
-def _cleanup_audio_store():
-    """Remove expired audio tickets (5 min TTL)."""
-    now = time.time()
-    expired = [k for k, v in _audio_store.items() if now - v["created_at"] > 300]
-    for k in expired:
-        del _audio_store[k]
+def _resolve_allowed_trip_pairs(stop_id: int, dest_id: int | None, route_type: int) -> set[tuple[int, int]] | None:
+    """Resolve all valid (route_id, direction_id) pairs for a saved start/end selection."""
+    if dest_id is None:
+        return None
+
+    patterns = tools.resolve_trip_patterns(stop_id, dest_id, route_type)
+    return set((p["route_id"], p["direction_id"]) for p in patterns)
 
 
 def _extract_vehicle_position(run_data: dict) -> tuple[float, float] | None:
@@ -135,6 +104,8 @@ def _extract_vehicle_position(run_data: dict) -> tuple[float, float] | None:
         return None
 
     candidates = []
+    if "runs" in run_data and isinstance(run_data.get("runs"), list) and run_data["runs"]:
+        candidates.append(run_data["runs"][0].get("vehicle_position"))
     if "vehicle_position" in run_data:
         candidates.append(run_data.get("vehicle_position"))
     if "run" in run_data and isinstance(run_data.get("run"), dict):
@@ -161,6 +132,8 @@ def _extract_vehicle_desc(run_data: dict) -> str | None:
         return None
 
     candidates = []
+    if "runs" in run_data and isinstance(run_data.get("runs"), list) and run_data["runs"]:
+        candidates.append(run_data["runs"][0].get("vehicle_descriptor"))
     if "vehicle_descriptor" in run_data:
         candidates.append(run_data.get("vehicle_descriptor"))
     if "run" in run_data and isinstance(run_data.get("run"), dict):
@@ -171,8 +144,17 @@ def _extract_vehicle_desc(run_data: dict) -> str | None:
             continue
         desc = vd.get("description") or vd.get("name") or vd.get("vehicle_description")
         if desc:
-            return str(desc)
+            return _normalize_vehicle_desc(str(desc))
     return None
+
+
+def _normalize_vehicle_desc(desc: str) -> str:
+    """Normalize known vehicle descriptions."""
+    normalized = desc.strip()
+    mapping = {
+        "3 Car Silver Hitachi": "7 Car HCMT",
+    }
+    return mapping.get(normalized, normalized)
 
 
 async def _get_run_position(run_ref: int, route_type: int) -> dict | None:
@@ -249,49 +231,21 @@ async def _watch_position_loop(
         await asyncio.sleep(POSITION_BROADCAST_INTERVAL)
 
 
-async def _generate_audio(ticket_id: str, text: str):
-    """Background TTS generation."""
-    if not speech_config or not text:
-        _audio_store[ticket_id] = {"status": "error", "data": None, "created_at": time.time()}
-        return
-
-    try:
-        import azure.cognitiveservices.speech as speechsdk
-
-        pull_stream = speechsdk.audio.PullAudioOutputStream()
-        audio_config = speechsdk.audio.AudioOutputConfig(stream=pull_stream)
-        synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
-
-        ssml = f"""
-        <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
-            <voice name="{speech_config.speech_synthesis_voice_name}">
-                <prosody pitch="+30%">{html.escape(text)}</prosody>
-            </voice>
-        </speak>
-        """
-
-        result = await asyncio.to_thread(lambda: synthesizer.speak_ssml_async(ssml).get())
-
-        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            _audio_store[ticket_id] = {"status": "ready", "data": result.audio_data, "created_at": time.time()}
-        else:
-            _audio_store[ticket_id] = {"status": "error", "data": None, "created_at": time.time()}
-    except Exception as e:
-        print(f"TTS error: {e}")
-        _audio_store[ticket_id] = {"status": "error", "data": None, "created_at": time.time()}
-
-    _cleanup_audio_store()
-
-
 # --- Live Favourite Broadcast ---
 
-async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id: int | None, max_departures: int = 3) -> dict:
+async def fetch_departure_for_button(
+    stop_id: int,
+    route_type: int,
+    direction_id: int | None,
+    dest_id: int | None = None,
+    max_departures: int = 3
+) -> dict:
     """
-    Fetch next departures for a stop/direction, using cache if fresh.
+    Fetch next departures for a stop/destination selection, using cache if fresh.
     Returns {departures: [{minutes, platform, departure_time}, ...], fetched_at} or error dict.
     Client can switch between cached departures as trains pass, reducing API calls.
     """
-    cache_key = (stop_id, route_type, direction_id)
+    cache_key = (stop_id, route_type, direction_id, dest_id)
     now = time.time()
     
     # Check cache
@@ -311,9 +265,19 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
         
         now_utc = datetime.now(timezone.utc)
         collected = []
+        allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
+
+        if dest_id is not None and not allowed_trip_pairs:
+            result = {"departures": [], "fetched_at": now}
+            _departure_cache[cache_key] = result
+            return result
         
         for d in departures:
-            if direction_id is not None and d.get("direction_id") != direction_id:
+            if allowed_trip_pairs is not None:
+                dep_pair = (d.get("route_id"), d.get("direction_id"))
+                if dep_pair not in allowed_trip_pairs:
+                    continue
+            elif direction_id is not None and d.get("direction_id") != direction_id:
                 continue
             
             dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
@@ -352,41 +316,37 @@ async def fetch_departure_for_button(stop_id: int, route_type: int, direction_id
 async def broadcast_favourite_updates():
     """
     Background task that broadcasts departure updates to all subscribed clients every 15 seconds.
-    Also pre-warms cache for all registered API key buttons (even disconnected clients).
     """
     while True:
         await asyncio.sleep(FAVOURITE_BROADCAST_INTERVAL)
         
-        # Collect all unique stop/direction combos from BOTH connected clients AND registry
+        # Collect all unique stop/direction combos from connected clients
         all_buttons: dict[tuple, list[tuple[WebSocket, int]]] = {}  # cache_key -> [(ws, button_id), ...]
-        registry_cache_keys: set[tuple] = set()  # Cache keys from registry (for pre-warming)
         
         # Connected clients
         for ws, buttons in list(_favourite_subscriptions.items()):
             for btn in buttons:
-                cache_key = (btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id"))
+                cache_key = (
+                    btn["stop_id"],
+                    btn.get("route_type", 0),
+                    btn.get("direction_id"),
+                    btn.get("dest_id")
+                )
                 if cache_key not in all_buttons:
                     all_buttons[cache_key] = []
                 all_buttons[cache_key].append((ws, btn["button_id"]))
         
-        # Registry (for pre-warming disconnected API key buttons)
-        for api_key, buttons in _api_key_buttons.items():
-            for btn in buttons:
-                cache_key = (btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id"))
-                registry_cache_keys.add(cache_key)
-        
         # Skip if nothing to do
-        if not all_buttons and not registry_cache_keys:
+        if not all_buttons:
             continue
         
-        # Fetch all unique stops (connected clients + registry)
-        all_cache_keys = set(all_buttons.keys()) | registry_cache_keys
+        # Fetch all unique stops
         fetch_results: dict[tuple, dict] = {}
-        for cache_key in all_cache_keys:
-            stop_id, route_type, direction_id = cache_key
-            fetch_results[cache_key] = await fetch_departure_for_button(stop_id, route_type, direction_id)
+        for cache_key in all_buttons.keys():
+            stop_id, route_type, direction_id, dest_id = cache_key
+            fetch_results[cache_key] = await fetch_departure_for_button(stop_id, route_type, direction_id, dest_id)
         
-        # Build per-client update messages (only for connected clients)
+        # Build per-client update messages
         client_updates: dict[WebSocket, list[dict]] = {}
         for cache_key, clients in all_buttons.items():
             result = fetch_results[cache_key]
@@ -435,6 +395,13 @@ def stop_broadcast_task():
         print("Favourite broadcast task stopped")
 
 
+# --- Helper: resolve LLM API key ---
+
+def _resolve_llm_key(provided_key: str | None) -> str | None:
+    """Return the user-provided key, or None if not provided (BYOK only)."""
+    return provided_key if provided_key else None
+
+
 # --- Endpoints ---
 
 
@@ -442,16 +409,14 @@ def stop_broadcast_task():
 async def startup_start_broadcast():
     """Start the broadcast task on server startup to keep registry buttons warm."""
     start_broadcast_task()
-    print("Broadcast task started on startup - registry buttons will stay warm")
+    print("Broadcast task started on startup")
     route_geometry.load_train_routes()
 
 
-
-
 @app.get("/api/v1/stations")
-async def get_stations(type: str = "train", _: None = Depends(verify_api_key)):
+async def get_stations(type: str = "train"):
     """
-    Get stations from the database.
+    Get stations from the database. Open access — no API key required.
     type: 'train' (metro), 'vline', 'tram', or 'all'
     Returns schema with route/direction data for filtering.
     """
@@ -482,10 +447,10 @@ async def get_stations(type: str = "train", _: None = Depends(verify_api_key)):
 
 
 @app.post("/api/v1/favourite")
-async def favourite_departure(req: FavouriteRequest, _: None = Depends(verify_api_key)):
+async def favourite_departure(req: FavouriteRequest):
     """
-    Quick departure check for pre-configured buttons.
-    Returns vibration pattern encoding minutes until next departure.
+    Quick departure check for pre-configured buttons. Open access.
+    Returns next departure info.
     """
     if not req.stop_id:
         return {"vibration": [100, 100], "message": "Not configured"}
@@ -498,9 +463,17 @@ async def favourite_departure(req: FavouriteRequest, _: None = Depends(verify_ap
             return {"vibration": [200, 200], "message": "No services"}
 
         now_utc = datetime.now(timezone.utc)
+        allowed_trip_pairs = _resolve_allowed_trip_pairs(req.stop_id, req.dest_id, req.route_type)
+
+        if req.dest_id is not None and not allowed_trip_pairs:
+            return {"vibration": [200, 200], "message": "No services"}
 
         for d in departures:
-            if req.direction_id is not None and d.get("direction_id") != req.direction_id:
+            if allowed_trip_pairs is not None:
+                dep_pair = (d.get("route_id"), d.get("direction_id"))
+                if dep_pair not in allowed_trip_pairs:
+                    continue
+            elif req.direction_id is not None and d.get("direction_id") != req.direction_id:
                 continue
 
             dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
@@ -526,111 +499,15 @@ async def favourite_departure(req: FavouriteRequest, _: None = Depends(verify_ap
         return {"vibration": [500, 100, 500], "message": "Error"}
 
 
-@app.post("/api/v1/voice")
-async def voice_query(
-    file: UploadFile = File(...),
-    session_id: str | None = None,
-    query_history: str | None = None,  # JSON string of [{stop_id, stop_name, route_type}, ...]
-    background_tasks: BackgroundTasks = None,
-    _: None = Depends(verify_api_key)
-):
-    """
-    Voice query endpoint with speculative execution.
-    Runs ASR and speculative departure fetch in parallel for lower latency.
-
-    Args:
-        file: Audio file (webm/wav)
-        session_id: Session ID for conversation context
-        query_history: JSON array of previous stops for speculative fetch
-    """
-    from groq import AsyncGroq
-    import json
-
-    if not config.GROQ_API_KEY:
-        raise HTTPException(status_code=500, detail="Groq API key not configured")
-
-    session_id = session_id or str(uuid.uuid4())
-    content = await file.read()
-
-    # Parse query_history from JSON string
-    history_list = []
-    if query_history:
-        try:
-            history_list = json.loads(query_history)
-        except json.JSONDecodeError:
-            pass
-
-    async def run_asr():
-        groq = AsyncGroq(api_key=config.GROQ_API_KEY)
-        result = await groq.audio.transcriptions.create(
-            file=(file.filename, content),
-            model="whisper-large-v3",
-            response_format="json",
-            language="en",
-            temperature=0.0
-        )
-        return result.text
-
-    async def run_speculative():
-        prefetched = await tools.speculative_fetch(history_list)
-        return tools.format_speculative_context(prefetched)
-
-    try:
-        # Run ASR and speculative fetch in parallel
-        transcript, prefetched_context = await asyncio.gather(
-            run_asr(),
-            run_speculative()
-        )
-    except Exception as e:
-        print(f"Voice query error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-    # Run agent with pre-fetched context
-    result = await agent_engine.run_agent(transcript, session_id, prefetched_context)
-
-    # Extract TTS text based on response type
-    payload = result.get("payload", {})
-    tts_text = payload.get("tts_text") or payload.get("question_text") or payload.get("message", "")
-
-    # Start TTS generation in background
-    audio_ticket = None
-    if tts_text and speech_config:
-        audio_ticket = f"aud_{uuid.uuid4().hex[:8]}"
-        _audio_store[audio_ticket] = {"status": "pending", "created_at": time.time()}
-        background_tasks.add_task(_generate_audio, audio_ticket, tts_text)
-
-    # Add vibration pattern for results and trim to first departure only
-    # Extract learned_stop if this was a successful query
-    learned_stop = None
-    if result.get("type") == "RESULT":
-        departure = payload.get("departure")
-        if departure:
-            # Ensure it's a dict (Pydantic model dump)
-            if hasattr(departure, "model_dump"):
-                departure = departure.model_dump()
-            
-            # Vibration is now calculated client-side from departure timestamps
-
-        # Return learned stop for client to store
-        if payload.get("_stop_info"):
-            learned_stop = payload.pop("_stop_info")
-
-    return {
-        "status": "success",
-        "session_id": session_id,
-        "transcript": transcript,
-        "audio_ticket": audio_ticket,
-        "learned_stop": learned_stop,
-        "data": result
-    }
-
-
 @app.post("/api/v1/query")
-async def text_query(request: AgentRequest, background_tasks: BackgroundTasks, _: None = Depends(verify_api_key)):
+async def text_query(request: AgentRequest):
     """
-    Text-only agent endpoint for debugging. No ASR, just sends text to agent.
-    Uses client-provided query_history for speculative fetch.
+    Text-only agent endpoint. Requires LLM API key (BYOK) or server fallback.
     """
+    llm_key = _resolve_llm_key(request.llm_api_key)
+    if not llm_key:
+        raise HTTPException(status_code=401, detail="Anthropic API key required. Provide llm_api_key in request body.")
+
     session_id = request.session_id or str(uuid.uuid4())
 
     # Convert query_history from Pydantic models to dicts
@@ -640,81 +517,39 @@ async def text_query(request: AgentRequest, background_tasks: BackgroundTasks, _
     prefetched = await tools.speculative_fetch(history_list)
     prefetched_context = tools.format_speculative_context(prefetched)
 
-    result = await agent_engine.run_agent(request.query, session_id, prefetched_context)
+    result = await agent_engine.run_agent(request.query, session_id, prefetched_context, llm_api_key=llm_key)
 
-    # Extract TTS text based on response type
+    # Extract learned stop
     payload = result.get("payload", {})
-    tts_text = payload.get("tts_text") or payload.get("question_text") or payload.get("message", "")
-
-    # Start TTS generation in background
-    audio_ticket = None
-    if tts_text and speech_config:
-        audio_ticket = f"aud_{uuid.uuid4().hex[:8]}"
-        _audio_store[audio_ticket] = {"status": "pending", "created_at": time.time()}
-        background_tasks.add_task(_generate_audio, audio_ticket, tts_text)
-
-    # Add vibration pattern for results and trim to first departure only
     learned_stop = None
     if result.get("type") == "RESULT":
         departure = payload.get("departure")
         if departure:
-            # Ensure it's a dict
             if hasattr(departure, "model_dump"):
                 departure = departure.model_dump()
 
-            # Vibration is now calculated client-side from departure timestamps
-
-        # Return learned stop for client to store
         if payload.get("_stop_info"):
             learned_stop = payload.pop("_stop_info")
 
     return {
         "status": "success",
         "session_id": session_id,
-        "audio_ticket": audio_ticket,
         "learned_stop": learned_stop,
         "data": result
     }
 
 
-@app.get("/api/v1/media/{ticket_id}")
-async def get_media(ticket_id: str):
-    """
-    Retrieve generated audio. Long-polls for up to 2 seconds.
-    Returns 202 if still processing, 200 with audio when ready.
-    """
-    timeout = 2.0
-    start = time.time()
-
-    while time.time() - start < timeout:
-        item = _audio_store.get(ticket_id)
-
-        if not item:
-            raise HTTPException(status_code=404, detail="Ticket not found")
-
-        if item["status"] == "ready":
-            return StreamingResponse(iter([item["data"]]), media_type="audio/wav")
-
-        if item["status"] == "error":
-            raise HTTPException(status_code=500, detail="Audio generation failed")
-
-        await asyncio.sleep(0.1)
-
-    return Response(status_code=202)
-
-
 # --- WebSocket Endpoint ---
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), buttons: str = Query(None)):
+async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None), llm_api_key: str = Query(None)):
     """
-    WebSocket endpoint for real-time communication.
+    WebSocket endpoint for real-time communication. Open access for departure data.
     
-    API Key: Pass as query param ?api_key=YOUR_KEY
-    If no API keys configured in server, all connections allowed (dev mode).
-    
-    Buttons: Pass as query param ?buttons=1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID
+    Buttons: Pass as query param ?buttons=1:STOP_ID:ROUTE_TYPE:DIR_ID:DEST_ID,...
     If provided, server immediately fetches and pushes departure data on connection.
+    
+    llm_api_key: Optional Anthropic API key for agent queries (BYOK).
     
     Message Protocol:
     
@@ -735,15 +570,10 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
         "learned_stop": { ... }       // Optional
     }
     """
-    # Verify API key before accepting connection
-    if config.API_KEYS and api_key not in config.API_KEYS:
-        await websocket.close(code=4001, reason="Invalid or missing API key")
-        return
-    
     await websocket.accept()
     
     # Parse buttons from query param and immediately push departure data
-    # Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID"
+    # Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID:DEST_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID:DEST_ID"
     if buttons:
         try:
             parsed_buttons = []
@@ -754,21 +584,18 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     stop_id = int(parts[1])
                     route_type = int(parts[2]) if len(parts) > 2 else 0
                     direction_id = int(parts[3]) if len(parts) > 3 and parts[3] else None
+                    dest_id = int(parts[4]) if len(parts) > 4 and parts[4] else None
                     parsed_buttons.append({
                         "button_id": button_id,
                         "stop_id": stop_id,
                         "route_type": route_type,
-                        "direction_id": direction_id
+                        "direction_id": direction_id,
+                        "dest_id": dest_id
                     })
             
             if parsed_buttons:
                 # Register subscription for connected client
                 _favourite_subscriptions[websocket] = parsed_buttons
-                
-                # Update API key registry (for pre-warming after disconnect/reconnect)
-                if api_key:
-                    _api_key_buttons[api_key] = parsed_buttons
-                    print(f"Registry updated for {api_key[:8]}... with {len(parsed_buttons)} buttons")
                 
                 start_broadcast_task()
                 print(f"Client connected with {len(parsed_buttons)} buttons in URL")
@@ -779,7 +606,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     try:
                         fetch_tasks = [
                             fetch_departure_for_button(
-                                btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
+                                btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id"), btn.get("dest_id")
                             )
                             for btn in parsed_buttons
                         ]
@@ -824,10 +651,22 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
             msg_id = message.get("id")
             
             if msg_type == "query":
-                # Handle text query
+                # Handle text query — requires LLM key
                 query_text = message.get("text", "").strip()
                 session_id = message.get("session_id") or str(uuid.uuid4())
                 query_history = message.get("query_history", [])
+                
+                # Resolve LLM key: message field > WS query param > server fallback
+                msg_llm_key = message.get("llm_api_key") or llm_api_key
+                resolved_key = _resolve_llm_key(msg_llm_key)
+                
+                if not resolved_key:
+                    await websocket.send_json({
+                        "type": "error",
+                        "id": msg_id,
+                        "error": "Anthropic API key required for agent queries. Configure in settings."
+                    })
+                    continue
                 
                 if not query_text:
                     await websocket.send_json({
@@ -842,8 +681,8 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     prefetched = await tools.speculative_fetch(query_history)
                     prefetched_context = tools.format_speculative_context(prefetched)
                     
-                    # Run agent
-                    result = await agent_engine.run_agent(query_text, session_id, prefetched_context)
+                    # Run agent with resolved key
+                    result = await agent_engine.run_agent(query_text, session_id, prefetched_context, llm_api_key=resolved_key)
                     
                     # Extract learned stop if present
                     learned_stop = None
@@ -855,12 +694,11 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                         if departure:
                             if hasattr(departure, "model_dump"):
                                 departure = departure.model_dump()
-                            # Vibration is now calculated client-side from departure timestamps
                         
                         if payload.get("_stop_info"):
                             learned_stop = payload.pop("_stop_info")
                         
-                        # Extract button config (can be at result level from short-circuit or payload level)
+                        # Extract button config
                         if result.get("_button_config"):
                             button_config = result.pop("_button_config")
                         elif payload.get("_button_config"):
@@ -877,7 +715,6 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     if button_config:
                         response["button_config"] = button_config
                     
-                    # Check if connection is still open before sending
                     if websocket.client_state.value == 1:  # CONNECTED
                         await websocket.send_json(response)
                     else:
@@ -903,10 +740,11 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                 })
             
             elif msg_type == "favourite":
-                # Direct departure fetch - no LLM, just stop_id/route_type/direction_id
+                # Direct departure fetch - no LLM, filtered by destination when available
                 stop_id = message.get("stop_id")
                 route_type = message.get("route_type", RouteType.TRAIN)
                 direction_id = message.get("direction_id")
+                dest_id = message.get("dest_id")
                 
                 if not stop_id:
                     await websocket.send_json({
@@ -930,9 +768,22 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     
                     now_utc = datetime.now(timezone.utc)
                     found = False
+                    allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
+
+                    if dest_id is not None and not allowed_trip_pairs:
+                        await websocket.send_json({
+                            "type": "favourite_result",
+                            "id": msg_id,
+                            "message": "No future services"
+                        })
+                        continue
                     
                     for d in departures:
-                        if direction_id is not None and d.get("direction_id") != direction_id:
+                        if allowed_trip_pairs is not None:
+                            dep_pair = (d.get("route_id"), d.get("direction_id"))
+                            if dep_pair not in allowed_trip_pairs:
+                                continue
+                        elif direction_id is not None and d.get("direction_id") != direction_id:
                             continue
                         
                         dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
@@ -948,13 +799,22 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                             vehicle = {RouteType.TRAIN: "train", RouteType.TRAM: "tram", RouteType.BUS: "bus",
                                        RouteType.VLINE: "train", RouteType.NIGHT_BUS: "bus"}.get(route_type, "service")
                             
-                            # Build message with platform if available
                             if minutes == 0:
                                 msg = "Now"
                             else:
                                 msg = f"{minutes} min"
+                            
                             if platform:
                                 msg += f" • P{platform}"
+                                if route_type == RouteType.TRAM:
+                                    msg += " • Tram"
+                            else:
+                                if route_type == RouteType.TRAM:
+                                    msg += " • Tram"
+                                elif route_type == RouteType.VLINE:
+                                    msg += " • V/Line"
+                                else:
+                                    msg += " • Train"
                             
                             await websocket.send_json({
                                 "type": "favourite_result",
@@ -1036,11 +896,11 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
             elif msg_type == "set_button":
                 # Agent can set button config (for MCP use)
                 button_id = message.get("button_id")
-                if button_id is None or button_id < 1 or button_id > 3:
+                if button_id is None or button_id < 1 or button_id > 10:
                     await websocket.send_json({
                         "type": "error",
                         "id": msg_id,
-                        "error": "button_id must be 1, 2, or 3"
+                        "error": "button_id must be 1-10"
                     })
                     continue
                 
@@ -1048,23 +908,12 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                     "name": message.get("name", f"Button {button_id}"),
                     "stop_id": message.get("stop_id"),
                     "stop_name": message.get("stop_name"),
+                    "dest_id": message.get("dest_id"),
+                    "dest_name": message.get("dest_name"),
                     "route_type": message.get("route_type", RouteType.TRAIN),
                     "direction_id": message.get("direction_id"),
                     "direction_name": message.get("direction_name")
                 }
-                
-                # Update API key registry (for pre-warming cache)
-                if api_key:
-                    existing = _api_key_buttons.get(api_key, [])
-                    # Merge or replace by button_id
-                    updated = [b for b in existing if b.get("button_id") != button_id]
-                    updated.append({
-                        "button_id": button_id,
-                        "stop_id": message.get("stop_id"),
-                        "route_type": message.get("route_type", RouteType.TRAIN),
-                        "direction_id": message.get("direction_id")
-                    })
-                    _api_key_buttons[api_key] = updated
                 
                 await websocket.send_json({
                     "type": "button_set",
@@ -1084,7 +933,8 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                             "button_id": btn.get("button_id"),
                             "stop_id": btn.get("stop_id"),
                             "route_type": btn.get("route_type", 0),
-                            "direction_id": btn.get("direction_id")
+                            "direction_id": btn.get("direction_id"),
+                            "dest_id": btn.get("dest_id")
                         })
                 
                 if valid_buttons:
@@ -1097,7 +947,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None), b
                         try:
                             fetch_tasks = [
                                 fetch_departure_for_button(
-                                    btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id")
+                                    btn["stop_id"], btn.get("route_type", 0), btn.get("direction_id"), btn.get("dest_id")
                                 )
                                 for btn in valid_buttons
                             ]
@@ -1158,10 +1008,3 @@ async def pebble_config():
         with open(pebble_config_path, "r", encoding="utf-8") as f:
             return Response(content=f.read(), media_type="text/html; charset=utf-8")
     raise HTTPException(status_code=404, detail="Pebble config not found")
-
-
-# Mount static files
-web_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
-if os.path.exists(web_path):
-    app.mount("/", StaticFiles(directory=web_path, html=True), name="web")
-

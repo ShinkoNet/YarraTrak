@@ -13,6 +13,7 @@ var Window = require('ui/window');
 var Text = require('ui/text');
 var Rect = require('ui/rect');
 var Vector2 = require('vector2');
+var Image = require('ui/image');
 
 // Custom vibration pattern player
 // Pebble.js only supports 'short', 'long', 'double' - we simulate patterns
@@ -113,6 +114,7 @@ var watchingDistanceKm = null;   // Latest distance to stop (km)
 var watchingVehicleDesc = null;  // Latest vehicle descriptor
 var watchingRunRef = null;       // Current watched run_ref
 var watchingStopId = null;       // Current watched stop_id
+var watchingDistanceRunRef = null; // Run_ref associated with distance
 
 // Get the current valid departure from the cached array
 // Auto-switches to next departure when first train has passed
@@ -156,6 +158,34 @@ function generateUUID() {
 // Initialize settings with defaults
 var DEFAULT_SERVER_URL = 'https://ptv.netcavy.net';
 
+// Demo entries for first launch (Rebble App Contest)
+var DEMO_ENTRIES = [
+    { name: 'Flinders St', stop_id: 1071, dest_name: 'Belgrave', dest_id: 1018, route_type: 0, direction_id: 2, direction_name: 'Belgrave' },
+    { name: 'Caulfield', stop_id: 1036, dest_name: 'Town Hall', dest_id: 1235, route_type: 0, direction_id: 1, direction_name: 'City' },
+    { name: 'Barkly Sq/Syd Rd', stop_id: 2811, dest_name: 'QVM/Eliz St', dest_id: 2258, route_type: 1, direction_id: 11, direction_name: 'Flinders St' },
+    { name: 'Sth Cross', stop_id: 1181, dest_name: 'Bendigo', dest_id: 1509, route_type: 3, direction_id: 6, direction_name: 'Bendigo' }
+];
+
+function populateDemoEntries() {
+    console.log('First launch: populating demo entries');
+    Settings.option('entry_count', DEMO_ENTRIES.length);
+    for (var i = 0; i < DEMO_ENTRIES.length; i++) {
+        var d = DEMO_ENTRIES[i];
+        var n = i + 1;
+        Settings.option('entry' + n + '_name', d.name);
+        Settings.option('entry' + n + '_stop_id', d.stop_id);
+        Settings.option('entry' + n + '_dest_name', d.dest_name);
+        Settings.option('entry' + n + '_dest_id', d.dest_id);
+        Settings.option('entry' + n + '_route_type', d.route_type);
+        Settings.option('entry' + n + '_direction_id', d.direction_id);
+    }
+}
+
+// Auto-populate demo entries on first launch
+if (!Settings.option('entry_count') && !Settings.option('entry1_stop_id') && !Settings.option('btn1_stop_id')) {
+    populateDemoEntries();
+}
+
 // Hardcoded server URL - always use DEFAULT_SERVER_URL
 
 Settings.config({
@@ -179,11 +209,34 @@ Settings.config({
 );
 
 // Loading screen (used during WebSocket connection)
-var loadingCard = new UI.Card({
-    title: 'PTV Notify',
-    subtitle: 'Starting...',
-    scrollable: false
+var screenWidth = Feature.resolution().x;  // 144 for Aplite
+var screenHeight = Feature.resolution().y; // 168 for Aplite
+
+var loadingCard = new Window({
+    backgroundColor: 'black'
 });
+
+var splashImage = new Image({
+    position: new Vector2((screenWidth - 120) / 2, (screenHeight - 120) / 2 - 15),
+    size: new Vector2(120, 120),
+    image: 'IMAGE_LOGO_SPLASH'
+});
+loadingCard.add(splashImage);
+
+var splashStatusText = new Text({
+    position: new Vector2(0, screenHeight - 40),
+    size: new Vector2(screenWidth, 24),
+    font: 'gothic-18-bold',
+    color: 'white',
+    textAlign: 'center',
+    text: 'Starting...'
+});
+loadingCard.add(splashStatusText);
+
+// Stub out title/subtitle/body methods so that reconnect() doesn't break
+loadingCard.title = function(t){};
+loadingCard.subtitle = function(t){ splashStatusText.text(t); };
+loadingCard.body = function(t){};
 
 // Custom watching window with big timer
 // Screen layout (144x168 Aplite): timer big at top, platform medium, route small at bottom
@@ -217,10 +270,21 @@ var timerText = new Text({
 });
 watchingWindow.add(timerText);
 
-// Platform text - medium (middle)
+// Distance text - medium (between timer and platform)
+var distanceText = new Text({
+    position: new Vector2(0, 67),
+    size: new Vector2(screenWidth, 28),
+    font: 'gothic-24-bold',
+    color: 'white',
+    textAlign: 'center',
+    text: ''
+});
+watchingWindow.add(distanceText);
+
+// Platform text - medium (lower-middle)
 var platformText = new Text({
-    position: new Vector2(0, 75),
-    size: new Vector2(screenWidth, 30),
+    position: new Vector2(0, 95),
+    size: new Vector2(screenWidth, 28),
     font: 'gothic-24-bold',
     color: 'white',
     textAlign: 'center',
@@ -230,14 +294,35 @@ watchingWindow.add(platformText);
 
 // Route text - small (bottom, 2 lines max)
 var routeText = new Text({
-    position: new Vector2(5, 115),
-    size: new Vector2(screenWidth - 10, 50),
+    position: new Vector2(5, 123),
+    size: new Vector2(screenWidth - 10, 35),
     font: 'gothic-18',
     color: 'lightGray',
     textAlign: 'center',
     text: ''
 });
 watchingWindow.add(routeText);
+
+// Up/Down arrows to indicate panel navigation
+var upArrowText = new Text({
+    position: new Vector2(screenWidth - 22, 2),
+    size: new Vector2(20, 20),
+    font: 'gothic-24-bold',
+    color: 'lightGray',
+    textAlign: 'right',
+    text: ''
+});
+watchingWindow.add(upArrowText);
+
+var downArrowText = new Text({
+    position: new Vector2(screenWidth - 22, screenHeight - 32),
+    size: new Vector2(20, 20),
+    font: 'gothic-24-bold',
+    color: 'lightGray',
+    textAlign: 'right',
+    text: ''
+});
+watchingWindow.add(downArrowText);
 
 // Progress bar - shows seconds visually (shrinks as time passes)
 var progressBar = new Rect({
@@ -308,7 +393,8 @@ function buildMenuItems() {
         return name.substring(0, maxLen);
     }
 
-    // Voice option only if microphone available (aplite doesn't have mic)
+    // Voice/Ask option: always show if microphone available
+    // (will show setup notice if no API key is configured)
     if (Feature.microphone()) {
         items.push({
             title: 'Ask',
@@ -366,8 +452,21 @@ function buildMenuItems() {
                         subtitle = roundedMinutes + ' min';
                     }
                 }
+                var routeType = parseInt(Settings.option('entry' + i + '_route_type') || Settings.option('btn' + i + '_route_type') || 0);
+
                 if (dep.platform) {
                     subtitle += ' • P' + dep.platform;
+                    if (routeType === 1) {
+                        subtitle += ' • Tram';
+                    }
+                } else {
+                    if (routeType === 1) {
+                        subtitle += ' • Tram';
+                    } else if (routeType === 3) {
+                        subtitle += ' • V/Line';
+                    } else {
+                        subtitle += ' • Train';
+                    }
                 }
             }
             items.push({ title: title, subtitle: subtitle, data: { favourite: i } });
@@ -413,10 +512,19 @@ voiceCard.on('click', 'back', function () {
 });
 
 // Voice query flow
-// Voice query flow
 function startVoiceQuery() {
     // Cancel any pending queries to prevent memory buildup
     cancelPendingQueries();
+
+    // If no LLM API key, show setup notice instead of starting dictation
+    var llmKey = Settings.option('llm_api_key') || '';
+    if (!llmKey) {
+        voiceCard.title('PTV Assistant');
+        voiceCard.subtitle('');
+        voiceCard.body('To use the PTV\nassistant, add an\nAnthropic API key to this\napp\'s settings.');
+        voiceCard.show();
+        return;
+    }
 
     // Don't show card yet - let dictation happen on top of current view
     // This avoids window stack conflicts and memory pressure
@@ -487,24 +595,46 @@ function getDepartureByOffset(buttonIndex, offset) {
     return null;
 }
 
-function formatDistanceText(distanceKm, vehicleDesc) {
-    var distText = distanceKm.toFixed(1) + ' km away';
-    if (vehicleDesc) {
-        return distText + ' • ' + vehicleDesc;
+function formatDistanceText(distanceKm) {
+    if (distanceKm === null || distanceKm === undefined || isNaN(distanceKm)) {
+        return null;
     }
+    if (distanceKm <= 0) {
+        return null;
+    }
+    var distText = '';
+    if (distanceKm < 1.0) {
+        var meters = Math.round(distanceKm * 1000);
+        if (meters <= 0) {
+            return null;
+        }
+        distText = meters + ' m away';
+    } else if (distanceKm < 10.0) {
+        distText = distanceKm.toFixed(1) + ' km away';
+    } else {
+        distText = Math.round(distanceKm) + ' km away';
+    }
+
     return distText;
 }
 
 function sendWatchStart(dep, stopId) {
     if (!ws || !wsConnected) return;
-    if (!dep || !dep.run_ref || stopId === null || stopId === undefined) return;
+    if (!dep || !dep.run_ref || stopId === null || stopId === undefined) {
+        watchingRunRef = null;
+        watchingDistanceKm = null;
+        watchingDistanceRunRef = null;
+        return;
+    }
 
     if (watchingRunRef === dep.run_ref) return;
 
     watchingRunRef = dep.run_ref;
     watchingDistanceKm = null;
+    watchingDistanceRunRef = null;
     watchingVehicleDesc = null;
 
+    console.log('[Watch] Sending watch_start: run_ref=' + dep.run_ref + ' stop_id=' + stopId);
     ws.send(JSON.stringify({
         type: 'watch_start',
         run_ref: dep.run_ref,
@@ -664,6 +794,7 @@ function updateWatchingDisplay(dep, route) {
     if (!dep) {
         timerText.text('...');
         platformText.text('');
+        distanceText.text('');
         routeText.text(route || '');
         progressBar.size(new Vector2(screenWidth, 4));  // Full bar when waiting
         return;
@@ -687,10 +818,11 @@ function updateWatchingDisplay(dep, route) {
             var totalMins = Math.floor(diffSec / 60);
             var secs = diffSec % 60;
             if (totalMins >= 60) {
-                // Show H:MM:SS for 60+ minutes
+                // Show H:MM:SS for 60+ minutes — use smaller font to fit on one line
                 var hrs = Math.floor(totalMins / 60);
                 var mins = totalMins % 60;
                 timerValue = hrs + ':' + (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+                timerFont = 'leco-36-bold-numbers';  // Smaller to fit H:MM:SS on one line
                 // Progress bar: shrinks with seconds
                 progressWidth = Math.floor(screenWidth * secs / 60);
             } else if (totalMins > 0) {
@@ -719,6 +851,7 @@ function updateWatchingDisplay(dep, route) {
                 var hrs = Math.floor(dep.minutes / 60);
                 var mins = dep.minutes % 60;
                 timerValue = hrs + ':' + (mins < 10 ? '0' : '') + mins;
+                timerFont = 'gothic-28-bold';  // Smaller to fit H:MM on one line
             } else {
                 timerValue = dep.minutes + ' min';
             }
@@ -730,16 +863,45 @@ function updateWatchingDisplay(dep, route) {
 
     timerText.font(timerFont);
     timerText.text(timerValue);
+
+    // Distance is shown above platform, only for metro trains
+    if (dep.route_type !== 0) {
+        // Center the timer since distance text is disabled for non-metro routes
+        timerText.position(new Vector2(0, 32));
+        distanceText.text('');
+    } else {
+        // Metro trains (default alignment)
+        timerText.position(new Vector2(0, 18));
+        
+        if (dep.run_ref && dep.run_ref === watchingDistanceRunRef && watchingDistanceKm !== null && watchingDistanceKm !== undefined) {
+            var distText = formatDistanceText(watchingDistanceKm);
+            distanceText.text(distText ? distText : '');
+        } else {
+            distanceText.text('');
+        }
+    }
+
     platformText.text(dep.platform ? 'Platform ' + dep.platform : '');
+
+    // Service name alternates with train model for metro trains
     var bottomText = route || '';
-    if (watchingButtonIndex !== null && watchingDistanceKm !== null && watchingDistanceKm !== undefined) {
+    if (dep.route_type === 0 && watchingVehicleDesc) {
         var nowSec = Math.floor(Date.now() / 1000);
-        var showDistance = (nowSec % 6) >= 3;
-        if (showDistance) {
-            bottomText = formatDistanceText(watchingDistanceKm, watchingVehicleDesc);
+        var showAlt = (nowSec % 6) >= 3;
+        if (showAlt) {
+            bottomText = watchingVehicleDesc;
         }
     }
     routeText.text(bottomText);
+
+    // Update arrow hints
+    if (watchingDepartureOffset === 0) {
+        upArrowText.text('');
+        downArrowText.text('v');
+    } else {
+        upArrowText.text('^');
+        downArrowText.text('');
+    }
 
     // Update top status text
     if (watchingDepartureOffset === 0) {
@@ -762,6 +924,7 @@ function stopWatching() {
     watchingVehicleDesc = null;
     watchingRunRef = null;
     watchingStopId = null;
+    watchingDistanceRunRef = null;
     if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
@@ -844,28 +1007,23 @@ function showClarificationMenu(options, parentCard) {
 
 // WebSocket connection
 function connectWebSocket() {
-    var serverUrl = DEFAULT_SERVER_URL;
-    var apiKey = Settings.option('api_key') || '';
+    var serverUrl = Settings.option('server_url') || DEFAULT_SERVER_URL;
+    var llmApiKey = Settings.option('llm_api_key') || '';
 
     console.log('Using server URL: ' + serverUrl);
 
-    // Check if API key is configured
-    if (!apiKey) {
-        loadingCard.title('Setup Required');
-        loadingCard.subtitle('');
-        loadingCard.body('Open settings in\nthe Pebble app\nand enter your\nAPI key');
-        loadingCard.show();
-        return;
-    }
-
-    // Convert to WebSocket URL with API key
+    // Convert to WebSocket URL — no API key required for data
     var wsUrl = serverUrl
         .replace('https://', 'wss://')
         .replace('http://', 'ws://')
         .replace(/\/+$/, '') + '/ws';
 
-    // Add API key as query parameter
-    wsUrl += '?api_key=' + encodeURIComponent(apiKey);
+    // Add LLM API key if configured (for agent queries)
+    var separator = '?';
+    if (llmApiKey) {
+        wsUrl += separator + 'llm_api_key=' + encodeURIComponent(llmApiKey);
+        separator = '&';
+    }
 
     // Build buttons query param for instant data on connect
     // Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID"
@@ -887,15 +1045,19 @@ function connectWebSocket() {
         if (stopId) {
             var routeType = Settings.option('entry' + i + '_route_type') || Settings.option('btn' + i + '_route_type') || 0;
             var directionId = Settings.option('entry' + i + '_direction_id') || Settings.option('btn' + i + '_direction_id');
+            var destId = Settings.option('entry' + i + '_dest_id') || Settings.option('btn' + i + '_dest_id');
             var part = i + ':' + stopId + ':' + routeType;
-            if (directionId !== undefined && directionId !== null) {
-                part += ':' + directionId;
+            if ((directionId !== undefined && directionId !== null) || (destId !== undefined && destId !== null)) {
+                part += ':' + ((directionId !== undefined && directionId !== null) ? directionId : '');
+            }
+            if (destId !== undefined && destId !== null) {
+                part += ':' + destId;
             }
             buttonParts.push(part);
         }
     }
     if (buttonParts.length > 0) {
-        wsUrl += '&buttons=' + encodeURIComponent(buttonParts.join(','));
+        wsUrl += separator + 'buttons=' + encodeURIComponent(buttonParts.join(','));
     }
 
     console.log('Connecting to: ' + wsUrl);
@@ -958,14 +1120,8 @@ function connectWebSocket() {
             menuShowTimer = null;
         }
 
-        // Code 4001 = invalid API key (custom code from server)
-        if (e.code === 4001) {
-            loadingCard.title('Invalid API Key');
-            loadingCard.subtitle('');
-            loadingCard.body('Please check your\nAPI key in settings');
-            loadingCard.show();
-            return; // Don't auto-reconnect for auth errors
-        }
+        // Code 4001 was previously used for invalid API key — no longer applicable
+        // Server is now open access for departure data
 
         // Auto-reconnect for other disconnects
         if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -995,7 +1151,7 @@ function connectWebSocket() {
 
                     // Station watching mode: vibrate when minutes change
                     if (watchingButtonIndex === u.button_id) {
-                        var dep = getCurrentDeparture(u.button_id);
+                        var dep = getDepartureByOffset(u.button_id, watchingDepartureOffset);
                         if (dep) {
                             sendWatchStart(dep, watchingStopId);
                             // Calculate fresh minutes
@@ -1058,10 +1214,13 @@ function connectWebSocket() {
                 if (watchingButtonIndex !== null) {
                     if (msg.distance_km !== null && msg.distance_km !== undefined) {
                         watchingDistanceKm = msg.distance_km;
+                        watchingDistanceRunRef = watchingRunRef;
                     } else {
                         watchingDistanceKm = null;
+                        watchingDistanceRunRef = null;
                     }
                     watchingVehicleDesc = msg.vehicle_desc || null;
+                    console.log('[Watch] position_update: distance_km=' + msg.distance_km + ' vehicle_desc=' + msg.vehicle_desc);
 
                     var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
                     updateWatchingDisplay(currentDep, watchingRouteText);
@@ -1177,6 +1336,9 @@ function saveButtonConfig(config) {
     // Also save dest_name if provided
     if (config.dest_name) {
         Settings.option('entry' + entryId + '_dest_name', config.dest_name);
+    }
+    if (config.dest_id !== undefined && config.dest_id !== null) {
+        Settings.option('entry' + entryId + '_dest_id', config.dest_id);
     }
 
     if (config.direction_id !== undefined && config.direction_id !== null) {
