@@ -63,6 +63,7 @@ node_modules/
 tools/
 .claude/
 .codex/
+.codex
 
 # Pebble SDK
 pebble/build/
