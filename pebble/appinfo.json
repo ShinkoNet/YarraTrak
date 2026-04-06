@@ -16,11 +16,11 @@
       {
         "file": "images/logo_splash.png",
         "name": "IMAGE_LOGO_SPLASH",
-        "type": "bitmap"
-      },
-      {
-        "file": "images/tile_splash.png",
-        "name": "IMAGE_TILE_SPLASH",
+        "targetPlatforms": [
+          "basalt",
+          "chalk",
+          "diorite"
+        ],
         "type": "bitmap"
       },
       {
