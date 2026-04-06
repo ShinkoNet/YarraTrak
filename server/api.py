@@ -140,16 +140,6 @@ def _scoped_session_id(session_id: str, client_scope: str, llm_key: str | None) 
     return f"{client_scope}:{_key_fingerprint(llm_key)}:{session_id}"
 
 
-def _origin_allowed(websocket: WebSocket) -> bool:
-    if not ALLOWED_ORIGINS:
-        return True
-    origin = websocket.headers.get("origin")
-    if not origin:
-        # Pebble/mobile clients may not send Origin.
-        return True
-    return origin in ALLOWED_ORIGINS
-
-
 def _register_websocket_connection(client_ip: str) -> bool:
     current = _ws_connections_by_ip[client_ip]
     if current >= MAX_WS_CONNECTIONS_PER_IP:
@@ -164,6 +154,22 @@ def _release_websocket_connection(client_ip: str) -> None:
         _ws_connections_by_ip.pop(client_ip, None)
     else:
         _ws_connections_by_ip[client_ip] = current - 1
+
+
+async def _send_favourite_updates(websocket: WebSocket, updates: list[dict], chunk_size: int = 1) -> None:
+    """Send favourite updates in small chunks for Pebble-friendly startup."""
+    if not updates:
+        await websocket.send_json({
+            "type": "favourite_update",
+            "updates": [],
+        })
+        return
+
+    for i in range(0, len(updates), max(1, chunk_size)):
+        await websocket.send_json({
+            "type": "favourite_update",
+            "updates": updates[i:i + max(1, chunk_size)],
+        })
 
 
 def _validate_query_text(query_text: str) -> str:
@@ -455,10 +461,7 @@ async def broadcast_favourite_updates():
         disconnected = []
         for ws, updates in client_updates.items():
             try:
-                await ws.send_json({
-                    "type": "favourite_update",
-                    "updates": updates
-                })
+                await _send_favourite_updates(ws, updates)
             except Exception as e:
                 logger.warning("Broadcast error: %s", e)
                 disconnected.append(ws)
@@ -679,15 +682,6 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
     }
     """
     client_ip = _client_ip_from_websocket(websocket)
-    if not _origin_allowed(websocket):
-        await websocket.accept()
-        await websocket.send_json({
-            "type": "error",
-            "id": None,
-            "error": "Origin not allowed"
-        })
-        await websocket.close(code=1008)
-        return
 
     if not _register_websocket_connection(client_ip):
         await websocket.accept()
@@ -700,6 +694,10 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
         return
 
     await websocket.accept()
+    await websocket.send_json({
+        "type": "connected",
+        "id": None,
+    })
     
     # Parse buttons from query param and immediately push departure data
     # Format: "1:STOP_ID:ROUTE_TYPE:DIR_ID:DEST_ID,2:STOP_ID:ROUTE_TYPE:DIR_ID:DEST_ID"
@@ -751,10 +749,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                                 "departures": result.get("departures", [])
                             })
                         
-                        await websocket.send_json({
-                            "type": "favourite_update",
-                            "updates": initial_updates
-                        })
+                        await _send_favourite_updates(websocket, initial_updates)
                     except Exception as e:
                         logger.warning("Error pushing initial favourite data: %s", e)
                 
@@ -1077,10 +1072,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                                     "departures": result.get("departures", [])
                                 })
                             
-                            await websocket.send_json({
-                                "type": "favourite_update",
-                                "updates": initial_updates
-                            })
+                            await _send_favourite_updates(websocket, initial_updates)
                         except Exception as e:
                             logger.warning("Error pushing subscribe favourite data: %s", e)
                     
