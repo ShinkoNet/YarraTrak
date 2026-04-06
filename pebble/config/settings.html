@@ -264,14 +264,9 @@
     <button id="save">Save Settings</button>
 
     <details style="margin-top: 30px;">
-        <summary style="color: #888; cursor: pointer; font-size: 14px;">Developer Tools</summary>
+        <summary style="color: #888; cursor: pointer; font-size: 14px;">Extra Settings</summary>
         <div style="padding: 15px; background: #222; border-radius: 8px; margin-top: 10px;">
-            <button id="load_demo" style="background: #4CAF50; margin-top: 0; margin-bottom: 15px;">Load Demo
-                Entries</button>
-            <div style="font-size: 12px; color: #888;">Debug Log:</div>
-            <div id="debug_info"
-                style="font-size: 11px; margin-top: 4px; color: #aaa; word-break: break-all; min-height: 40px; background: #1a1a1a; padding: 8px; border-radius: 4px;">
-                No debug info yet</div>
+            <button id="reset_defaults" style="background: #4CAF50; margin-top: 0; margin-bottom: 0;">Reset to Default</button>
         </div>
     </details>
 
@@ -618,26 +613,18 @@
 
             // Check if we're in a real Pebble app or just a browser
             var returnTo = getQueryParam('return_to');
-            var debugEl = document.getElementById('debug_info');
-
             // If origin is production server and no return_to, we're likely in Pebble app
             var isFromPebbleApp = window.location.origin.includes('ptv.netcavy.net') ||
                 navigator.userAgent.toLowerCase().includes('pebble') ||
                 location.protocol === 'file:';
 
-            debugEl.textContent = 'Save: returnTo=' + (returnTo ? 'yes' : 'no') + ', isPebble=' + isFromPebbleApp;
-
             if (returnTo) {
-                // Coming from emulator config
-                debugEl.textContent += ' -> emulator redirect';
                 location.href = returnTo + encodeURIComponent(JSON.stringify(newOptions));
             } else if (isFromPebbleApp) {
                 // On phone - close config page and return options to Pebble app
-                debugEl.textContent += ' -> pebblejs://close';
                 location.href = 'pebblejs://close#' + encodeURIComponent(JSON.stringify(newOptions));
             } else {
                 // In browser - just show success and stay on page
-                debugEl.textContent += ' -> browser mode';
                 var statusEl = document.getElementById('save_status');
                 statusEl.textContent = '✓ Saved!';
                 statusEl.style.color = '#4CAF50';
@@ -954,8 +941,8 @@
             }
         }
 
-        // Load Demo Entries
-        document.getElementById('load_demo').addEventListener('click', async function () {
+        // Reset to the default demo entries
+        document.getElementById('reset_defaults').addEventListener('click', async function () {
             // Ensure train data is loaded
             if (!loadedTypes[0]) {
                 await loadStationData(0);
