@@ -900,6 +900,25 @@ def _prune_stale_websocket_connections(client_ip: str) -> None:
         )
 
 
+async def _evict_existing_websocket_connections(client_ip: str) -> None:
+    sockets = list(_ws_connections_by_ip.get(client_ip, set()))
+    if not sockets:
+        return
+
+    for websocket in sockets:
+        try:
+            if _is_websocket_active(websocket):
+                await websocket.close(code=1012)
+        except Exception as exc:
+            logger.warning("Error closing superseded websocket for %s: %s", client_ip, exc)
+        finally:
+            _cleanup_websocket_state(
+                websocket,
+                client_ip,
+                log_reason=f"Superseded websocket for {client_ip} with a newer connection",
+            )
+
+
 def _register_websocket_connection(websocket: WebSocket, client_ip: str) -> bool:
     _prune_stale_websocket_connections(client_ip)
     sockets = _ws_connections_by_ip[client_ip]
@@ -1575,6 +1594,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
     }
     """
     client_ip = _client_ip_from_websocket(websocket)
+    await _evict_existing_websocket_connections(client_ip)
 
     if not _register_websocket_connection(websocket, client_ip):
         await websocket.accept()
