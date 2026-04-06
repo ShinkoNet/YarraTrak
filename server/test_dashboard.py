@@ -12,6 +12,8 @@ REQUIRED_METRIC_FIELDS = {
     "timestamp",
     "subscribers",
     "unique_keys",
+    "active_clients",
+    "known_clients",
     "broadcast_loops",
     "avg_loop_ms",
     "max_loop_ms",
@@ -33,6 +35,8 @@ def _metric_point(index: int) -> dict[str, int | float | str]:
     point.update(
         subscribers=index,
         unique_keys=index + 1,
+        active_clients=max(0, index - 1),
+        known_clients=index + 2,
         broadcast_loops=index + 2,
         avg_loop_ms=round(10.0 + index / 10.0, 2),
         max_loop_ms=round(15.0 + index / 5.0, 2),
@@ -52,13 +56,17 @@ def _metric_point(index: int) -> dict[str, int | float | str]:
 def reset_state():
     api._favourite_subscriptions.clear()
     api._watch_tasks.clear()
-    api._ws_connections_by_ip.clear()
+    api._ws_connections_by_scope.clear()
     api._ws_client_ips.clear()
+    api._ws_connection_scopes.clear()
+    api._ws_client_ids.clear()
+    api._client_activity.clear()
     api._ws_query_limiters.clear()
     api._metrics_history.clear()
     api._latest_metrics_snapshot = api._empty_metrics_snapshot()
     api._metrics_window["last_subscribers"] = 0
     api._metrics_window["last_unique_keys"] = 0
+    api._metrics_window["last_active_clients"] = 0
     yield
 
 
@@ -130,6 +138,19 @@ async def test_internal_metrics_snapshot_and_history_are_capped_and_ordered(rese
     api._latest_metrics_snapshot = dict(api._metrics_history[-1])
     api._metrics_window["last_subscribers"] = 99
     api._metrics_window["last_unique_keys"] = 88
+    api._metrics_window["last_active_clients"] = 77
+    api._client_activity["client:test"] = {
+        "label": "test-client",
+        "scope_kind": "client_id",
+        "client_id": "test-client",
+        "ip_fingerprint": "deadbeef00",
+        "connections_opened": 4,
+        "ws_queries": 3,
+        "active_connections": 1,
+        "active_buttons": 2,
+        "active_subscriber": True,
+        "last_seen": "2026-01-01T00:00:00Z",
+    }
 
     snapshot_response = await _request("/internal/metrics", api.INTERNAL_DASHBOARD_HOST)
     history_response = await _request("/internal/metrics/history", api.INTERNAL_DASHBOARD_HOST)
@@ -141,6 +162,9 @@ async def test_internal_metrics_snapshot_and_history_are_capped_and_ordered(rese
     assert REQUIRED_METRIC_FIELDS.issubset(snapshot.keys())
     assert snapshot["subscribers"] == 99
     assert snapshot["unique_keys"] == 88
+    assert snapshot["active_clients"] == 77
+    assert snapshot["known_clients"] == 1
+    assert snapshot["client_activity"][0]["label"] == "test-client"
     assert history_response.status_code == 200
     assert len(history) == api.METRICS_HISTORY_MAX_POINTS
     assert REQUIRED_METRIC_FIELDS.issubset(history[0].keys())
@@ -165,12 +189,14 @@ async def test_public_station_api_and_websocket_still_work(reset_state):
 @pytest.mark.asyncio
 async def test_stale_websocket_is_pruned_before_connection_limit_check(reset_state):
     client_ip = "10.0.0.5"
+    scope_key = api._client_scope_key(client_ip, None)
     stale_websocket = FakeWebSocket(host=client_ip)
     stale_websocket.client_state.value = 2
     stale_websocket.application_state.value = 2
 
-    api._ws_connections_by_ip[client_ip].add(stale_websocket)
+    api._ws_connections_by_scope[scope_key].add(stale_websocket)
     api._ws_client_ips[stale_websocket] = client_ip
+    api._ws_connection_scopes[stale_websocket] = scope_key
     api._favourite_subscriptions[stale_websocket] = [
         {"button_id": 1, "stop_id": 123, "route_type": 0, "direction_id": None, "dest_id": None}
     ]
@@ -181,16 +207,18 @@ async def test_stale_websocket_is_pruned_before_connection_limit_check(reset_sta
     assert fresh_websocket.sent
     assert fresh_websocket.sent[0]["type"] == "connected"
     assert stale_websocket not in api._favourite_subscriptions
-    assert client_ip not in api._ws_connections_by_ip
+    assert scope_key not in api._ws_connections_by_scope
 
 
 @pytest.mark.asyncio
 async def test_new_websocket_evicts_existing_same_ip_connections(reset_state):
     client_ip = "10.0.0.5"
+    scope_key = api._client_scope_key(client_ip, None)
     existing_websocket = FakeWebSocket(host=client_ip)
 
-    api._ws_connections_by_ip[client_ip].add(existing_websocket)
+    api._ws_connections_by_scope[scope_key].add(existing_websocket)
     api._ws_client_ips[existing_websocket] = client_ip
+    api._ws_connection_scopes[existing_websocket] = scope_key
     api._favourite_subscriptions[existing_websocket] = [
         {"button_id": 1, "stop_id": 123, "route_type": 0, "direction_id": None, "dest_id": None}
     ]
@@ -202,3 +230,21 @@ async def test_new_websocket_evicts_existing_same_ip_connections(reset_state):
     assert existing_websocket not in api._favourite_subscriptions
     assert fresh_websocket.sent
     assert fresh_websocket.sent[0]["type"] == "connected"
+
+
+@pytest.mark.asyncio
+async def test_same_ip_different_client_ids_can_connect_without_eviction(reset_state):
+    shared_ip = "10.0.0.5"
+    first_scope = api._client_scope_key(shared_ip, "alpha-client")
+    first_websocket = FakeWebSocket(host=shared_ip)
+    api._ws_connections_by_scope[first_scope].add(first_websocket)
+    api._ws_client_ips[first_websocket] = shared_ip
+    api._ws_connection_scopes[first_websocket] = first_scope
+    api._ws_client_ids[first_websocket] = "alpha-client"
+
+    second_websocket = FakeWebSocket(host=shared_ip)
+    await api.websocket_endpoint(second_websocket, client_id="beta-client")
+
+    assert first_websocket.close_calls == []
+    assert second_websocket.sent[0]["type"] == "connected"
+    assert first_scope in api._ws_connections_by_scope

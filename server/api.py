@@ -114,8 +114,11 @@ RATE_LIMIT_WINDOW_SECONDS = 60.0
 _http_query_limiters: dict[str, deque[float]] = defaultdict(deque)
 _http_favourite_limiters: dict[str, deque[float]] = defaultdict(deque)
 _ws_query_limiters: dict[str, deque[float]] = defaultdict(deque)
-_ws_connections_by_ip: dict[str, set[WebSocket]] = defaultdict(set)
+_ws_connections_by_scope: dict[str, set[WebSocket]] = defaultdict(set)
 _ws_client_ips: dict[WebSocket, str] = {}
+_ws_connection_scopes: dict[WebSocket, str] = {}
+_ws_client_ids: dict[WebSocket, str | None] = {}
+_client_activity: dict[str, dict[str, object]] = {}
 _favourite_fetch_semaphore = asyncio.Semaphore(FAVOURITE_FETCH_LIMIT)
 _metrics_window = {
     "departure_cache_hits": 0,
@@ -125,6 +128,7 @@ _metrics_window = {
     "broadcast_duration_max": 0.0,
     "last_unique_keys": 0,
     "last_subscribers": 0,
+    "last_active_clients": 0,
 }
 _metrics_history: deque[dict[str, int | float | str]] = deque(
     maxlen=max(1, METRICS_HISTORY_MAX_POINTS)
@@ -168,6 +172,8 @@ def _empty_metrics_snapshot(timestamp: datetime | None = None) -> dict[str, int 
         "timestamp": _utc_isoformat(timestamp),
         "subscribers": 0,
         "unique_keys": 0,
+        "active_clients": 0,
+        "known_clients": 0,
         "broadcast_loops": 0,
         "avg_loop_ms": 0.0,
         "max_loop_ms": 0.0,
@@ -198,10 +204,109 @@ def _dashboard_tuning() -> dict[str, int | float]:
     }
 
 
+def _client_ip_fingerprint(client_ip: str) -> str:
+    return hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:10]
+
+
+def _normalize_client_id(client_id: str | None) -> str | None:
+    if client_id is None:
+        return None
+    normalized = "".join(
+        ch for ch in client_id.strip().lower()
+        if ch.isalnum() or ch in {"-", "_"}
+    )
+    return normalized[:64] or None
+
+
+def _client_scope_key(client_ip: str, client_id: str | None) -> str:
+    if client_id:
+        return f"client:{client_id}"
+    return f"ip:{client_ip}"
+
+
+def _client_scope_label(client_ip: str, client_id: str | None) -> str:
+    if client_id:
+        return client_id[:12]
+    return f"ip-{_client_ip_fingerprint(client_ip)}"
+
+
+def _touch_client_activity(scope_key: str, client_ip: str, client_id: str | None) -> dict[str, object]:
+    activity = _client_activity.get(scope_key)
+    if activity is None:
+        activity = {
+            "label": _client_scope_label(client_ip, client_id),
+            "scope_kind": "client_id" if client_id else "ip_fallback",
+            "client_id": client_id,
+            "ip_fingerprint": _client_ip_fingerprint(client_ip),
+            "connections_opened": 0,
+            "ws_queries": 0,
+            "active_connections": 0,
+            "active_buttons": 0,
+            "active_subscriber": False,
+            "last_seen": _utc_isoformat(),
+        }
+        _client_activity[scope_key] = activity
+    else:
+        activity["last_seen"] = _utc_isoformat()
+        if client_id:
+            activity["client_id"] = client_id
+            activity["label"] = _client_scope_label(client_ip, client_id)
+            activity["scope_kind"] = "client_id"
+        activity["ip_fingerprint"] = _client_ip_fingerprint(client_ip)
+    return activity
+
+
+def _client_activity_rows(limit: int = 12) -> list[dict[str, object]]:
+    active_buttons_by_scope: dict[str, int] = defaultdict(int)
+    active_subscribers: set[str] = set()
+    for websocket, buttons in _active_favourite_subscriptions():
+        scope_key = _ws_connection_scopes.get(websocket)
+        if scope_key is None:
+            continue
+        active_subscribers.add(scope_key)
+        active_buttons_by_scope[scope_key] += len(buttons)
+
+    active_client_count = 0
+    rows: list[dict[str, object]] = []
+    for scope_key, activity in _client_activity.items():
+        active_connections = len(_ws_connections_by_scope.get(scope_key, set()))
+        if active_connections > 0:
+            active_client_count += 1
+        activity["active_connections"] = active_connections
+        activity["active_buttons"] = active_buttons_by_scope.get(scope_key, 0)
+        activity["active_subscriber"] = scope_key in active_subscribers
+        rows.append({
+            "label": activity["label"],
+            "scope_kind": activity["scope_kind"],
+            "ip_fingerprint": activity["ip_fingerprint"],
+            "connections_opened": int(activity["connections_opened"]),
+            "ws_queries": int(activity["ws_queries"]),
+            "active_connections": active_connections,
+            "active_buttons": int(activity["active_buttons"]),
+            "active_subscriber": bool(activity["active_subscriber"]),
+            "last_seen": activity["last_seen"],
+        })
+
+    rows.sort(
+        key=lambda row: (
+            1 if row["active_subscriber"] else 0,
+            int(row["active_connections"]),
+            int(row["ws_queries"]),
+            int(row["connections_opened"]),
+            str(row["last_seen"]),
+        ),
+        reverse=True,
+    )
+    return rows[:limit]
+
+
 def _metrics_snapshot_payload() -> dict[str, object]:
     payload = dict(_latest_metrics_snapshot)
     payload["subscribers"] = int(_metrics_window.get("last_subscribers", payload["subscribers"]))
     payload["unique_keys"] = int(_metrics_window.get("last_unique_keys", payload["unique_keys"]))
+    payload["active_clients"] = int(_metrics_window.get("last_active_clients", payload["active_clients"]))
+    payload["known_clients"] = len(_client_activity)
+    payload["client_activity"] = _client_activity_rows()
     payload["tuning"] = _dashboard_tuning()
     payload["history_points"] = len(_metrics_history)
     payload["history_capacity"] = max(1, METRICS_HISTORY_MAX_POINTS)
@@ -235,6 +340,8 @@ def _normalize_metrics_snapshot(
         "timestamp": _utc_isoformat(),
         "subscribers": int(api_metrics.get("last_subscribers", 0)),
         "unique_keys": int(api_metrics.get("last_unique_keys", 0)),
+        "active_clients": int(api_metrics.get("last_active_clients", 0)),
+        "known_clients": len(_client_activity),
         "broadcast_loops": broadcast_loops,
         "avg_loop_ms": round(avg_loop_ms, 2),
         "max_loop_ms": round(float(api_metrics.get("broadcast_duration_max", 0.0)) * 1000.0, 2),
@@ -499,6 +606,41 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       color: var(--ink);
       font-weight: 700;
     }}
+    .client-list {{
+      display: grid;
+      gap: 12px;
+    }}
+    .client-row {{
+      display: grid;
+      gap: 8px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+    }}
+    .client-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }}
+    .client-label {{
+      font-weight: 700;
+      color: var(--ink);
+    }}
+    .client-kind {{
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }}
+    .client-meta {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }}
     @media (max-width: 960px) {{
       .chart-panel,
       .info-panel {{
@@ -532,6 +674,7 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
 
     <section class="stats">
       <article class="stat-card"><div class="stat-label">Subscribers</div><div class="stat-value" id="stat-subscribers">0</div></article>
+      <article class="stat-card"><div class="stat-label">Active Clients</div><div class="stat-value" id="stat-active-clients">0</div><div class="stat-subvalue" id="stat-known-clients">0 seen since restart</div></article>
       <article class="stat-card"><div class="stat-label">Unique Keys</div><div class="stat-value" id="stat-unique-keys">0</div></article>
       <article class="stat-card"><div class="stat-label">Cache Hit Rate</div><div class="stat-value" id="stat-cache-hit-rate">0%</div><div class="stat-subvalue" id="stat-cache-breakdown">0 hits / 0 misses</div></article>
       <article class="stat-card"><div class="stat-label">Upstream RPS</div><div class="stat-value" id="stat-upstream-rps">0.00</div><div class="stat-subvalue" id="stat-upstream-total">0 requests / sample</div></article>
@@ -575,6 +718,13 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
           <div class="panel-meta">Latest normalized counters</div>
         </div>
         <div class="kv-list" id="snapshot-breakdown"></div>
+      </article>
+      <article class="panel info-panel">
+        <div class="panel-head">
+          <h2>Client Activity</h2>
+          <div class="panel-meta">Anonymous subscriber IDs and per-client websocket query counts</div>
+        </div>
+        <div class="client-list" id="client-activity"></div>
       </article>
     </section>
   </main>
@@ -620,6 +770,8 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
     function renderStats() {{
       const snap = state.snapshot || {{}};
       setText("stat-subscribers", formatNumber(snap.subscribers));
+      setText("stat-active-clients", formatNumber(snap.active_clients));
+      setText("stat-known-clients", `${{formatNumber(snap.known_clients || 0)}} seen since restart`);
       setText("stat-unique-keys", formatNumber(snap.unique_keys));
       setText("stat-cache-hit-rate", formatPercent(snap.cache_hit_rate));
       setText("stat-cache-breakdown", `${{formatNumber(snap.cache_hits)}} hits / ${{formatNumber(snap.cache_misses)}} misses`);
@@ -649,6 +801,7 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       const target = document.getElementById("snapshot-breakdown");
       const snap = state.snapshot || {{}};
       const rows = [
+        ["Known clients", formatNumber(snap.known_clients)],
         ["PTV departures", formatNumber(snap.ptv_departures)],
         ["PTV runs", formatNumber(snap.ptv_runs)],
         ["PTV directions", formatNumber(snap.ptv_directions)],
@@ -657,6 +810,34 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
         ["Dashboard host", snap.internal_dashboard_host || "internal"],
       ];
       target.innerHTML = rows.map(([label, value]) => `<div class="kv-row"><span>${{label}}</span><strong>${{value}}</strong></div>`).join("");
+    }}
+
+    function renderClientActivity() {{
+      const target = document.getElementById("client-activity");
+      const clients = (state.snapshot && state.snapshot.client_activity) || [];
+      if (!clients.length) {{
+        target.innerHTML = '<div class="chart-placeholder">No anonymous clients seen yet</div>';
+        return;
+      }}
+      target.innerHTML = clients.map((client) => {{
+        const status = client.active_subscriber ? "subscriber" : (client.active_connections > 0 ? "connected" : "idle");
+        return `
+          <div class="client-row">
+            <div class="client-head">
+              <div class="client-label">${{client.label}}</div>
+              <div class="client-kind">${{client.scope_kind === "client_id" ? "client id" : "ip fallback"}}</div>
+            </div>
+            <div class="client-meta">
+              <span>Status: ${{status}}</span>
+              <span>Sockets: ${{formatNumber(client.active_connections)}}</span>
+              <span>Buttons: ${{formatNumber(client.active_buttons)}}</span>
+              <span>WS queries: ${{formatNumber(client.ws_queries)}}</span>
+              <span>Reconnects: ${{formatNumber(client.connections_opened)}}</span>
+              <span>IP hash: ${{client.ip_fingerprint}}</span>
+            </div>
+          </div>
+        `;
+      }}).join("");
     }}
 
     function linePath(points, width, height, minValue, maxValue, key) {{
@@ -763,6 +944,7 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       renderStats();
       renderTuning();
       renderBreakdown();
+      renderClientActivity();
       renderCharts();
     }}
 
@@ -796,7 +978,12 @@ def _record_metric(name: str, amount: int = 1) -> None:
     _metrics_window[name] += amount
 
 
-def _record_broadcast_metrics(duration_seconds: float, unique_keys: int, subscribers: int) -> None:
+def _record_broadcast_metrics(
+    duration_seconds: float,
+    unique_keys: int,
+    subscribers: int,
+    active_clients: int,
+) -> None:
     _metrics_window["broadcast_iterations"] += 1
     _metrics_window["broadcast_duration_sum"] += duration_seconds
     _metrics_window["broadcast_duration_max"] = max(
@@ -804,8 +991,10 @@ def _record_broadcast_metrics(duration_seconds: float, unique_keys: int, subscri
     )
     _metrics_window["last_unique_keys"] = unique_keys
     _metrics_window["last_subscribers"] = subscribers
+    _metrics_window["last_active_clients"] = active_clients
     _latest_metrics_snapshot["unique_keys"] = unique_keys
     _latest_metrics_snapshot["subscribers"] = subscribers
+    _latest_metrics_snapshot["active_clients"] = active_clients
 
 
 def _snapshot_and_reset_metrics() -> dict[str, float]:
@@ -853,23 +1042,32 @@ def _is_websocket_active(websocket: WebSocket) -> bool:
     )
 
 
-def _release_websocket_connection(websocket: WebSocket, client_ip: str | None = None) -> None:
+def _release_websocket_connection(
+    websocket: WebSocket,
+    client_ip: str | None = None,
+    scope_key: str | None = None,
+) -> None:
     resolved_ip = _ws_client_ips.pop(websocket, None) or client_ip
-    if resolved_ip is None:
+    resolved_scope = _ws_connection_scopes.pop(websocket, None) or scope_key
+    _ws_client_ids.pop(websocket, None)
+    if resolved_ip is None or resolved_scope is None:
         return
 
-    _ws_query_limiters.pop(f"{resolved_ip}:{id(websocket)}", None)
-    sockets = _ws_connections_by_ip.get(resolved_ip)
+    _ws_query_limiters.pop(resolved_scope, None)
+    sockets = _ws_connections_by_scope.get(resolved_scope)
     if not sockets or websocket not in sockets:
         return
 
     sockets.discard(websocket)
     active_count = len(sockets)
     if active_count == 0:
-        _ws_connections_by_ip.pop(resolved_ip, None)
+        _ws_connections_by_scope.pop(resolved_scope, None)
+
+    activity = _touch_client_activity(resolved_scope, resolved_ip, None)
+    activity["active_connections"] = active_count
     logger.info(
         "Released websocket for %s (%d/%d active)",
-        resolved_ip,
+        activity["label"],
         active_count,
         MAX_WS_CONNECTIONS_PER_IP,
     )
@@ -878,30 +1076,31 @@ def _release_websocket_connection(websocket: WebSocket, client_ip: str | None = 
 def _cleanup_websocket_state(
     websocket: WebSocket,
     client_ip: str | None = None,
+    scope_key: str | None = None,
     *,
     log_reason: str | None = None,
 ) -> None:
     if websocket in _favourite_subscriptions:
         del _favourite_subscriptions[websocket]
     _cancel_watch_task(websocket)
-    _release_websocket_connection(websocket, client_ip)
+    _release_websocket_connection(websocket, client_ip, scope_key)
     if log_reason:
         logger.info(log_reason)
 
 
-def _prune_stale_websocket_connections(client_ip: str) -> None:
-    sockets = list(_ws_connections_by_ip.get(client_ip, set()))
+def _prune_stale_websocket_connections(scope_key: str) -> None:
+    sockets = list(_ws_connections_by_scope.get(scope_key, set()))
     stale = [websocket for websocket in sockets if not _is_websocket_active(websocket)]
     for websocket in stale:
         _cleanup_websocket_state(
             websocket,
-            client_ip,
-            log_reason=f"Pruned stale websocket for {client_ip}",
+            scope_key=scope_key,
+            log_reason=f"Pruned stale websocket for {scope_key}",
         )
 
 
-async def _evict_existing_websocket_connections(client_ip: str) -> None:
-    sockets = list(_ws_connections_by_ip.get(client_ip, set()))
+async def _evict_existing_websocket_connections(scope_key: str) -> None:
+    sockets = list(_ws_connections_by_scope.get(scope_key, set()))
     if not sockets:
         return
 
@@ -910,32 +1109,43 @@ async def _evict_existing_websocket_connections(client_ip: str) -> None:
             if _is_websocket_active(websocket):
                 await websocket.close(code=1012)
         except Exception as exc:
-            logger.warning("Error closing superseded websocket for %s: %s", client_ip, exc)
+            logger.warning("Error closing superseded websocket for %s: %s", scope_key, exc)
         finally:
             _cleanup_websocket_state(
                 websocket,
-                client_ip,
-                log_reason=f"Superseded websocket for {client_ip} with a newer connection",
+                scope_key=scope_key,
+                log_reason=f"Superseded websocket for {scope_key} with a newer connection",
             )
 
 
-def _register_websocket_connection(websocket: WebSocket, client_ip: str) -> bool:
-    _prune_stale_websocket_connections(client_ip)
-    sockets = _ws_connections_by_ip[client_ip]
+def _register_websocket_connection(
+    websocket: WebSocket,
+    client_ip: str,
+    client_id: str | None,
+    scope_key: str,
+) -> bool:
+    _prune_stale_websocket_connections(scope_key)
+    sockets = _ws_connections_by_scope[scope_key]
     current = len(sockets)
     if current >= MAX_WS_CONNECTIONS_PER_IP:
+        activity = _touch_client_activity(scope_key, client_ip, client_id)
         logger.warning(
             "Rejecting websocket for %s (%d/%d active)",
-            client_ip,
+            activity["label"],
             current,
             MAX_WS_CONNECTIONS_PER_IP,
         )
         return False
     sockets.add(websocket)
     _ws_client_ips[websocket] = client_ip
+    _ws_connection_scopes[websocket] = scope_key
+    _ws_client_ids[websocket] = client_id
+    activity = _touch_client_activity(scope_key, client_ip, client_id)
+    activity["connections_opened"] = int(activity["connections_opened"]) + 1
+    activity["active_connections"] = len(sockets)
     logger.info(
         "Registered websocket for %s (%d/%d active)",
-        client_ip,
+        activity["label"],
         len(sockets),
         MAX_WS_CONNECTIONS_PER_IP,
     )
@@ -1245,6 +1455,14 @@ async def broadcast_favourite_updates():
         loop_started = time.perf_counter()
         
         active_subscriptions = _active_favourite_subscriptions()
+        active_subscriber_scopes = {
+            _ws_connection_scopes[ws]
+            for ws, _buttons in active_subscriptions
+            if ws in _ws_connection_scopes
+        }
+        active_client_count = sum(
+            1 for sockets in _ws_connections_by_scope.values() if any(_is_websocket_active(ws) for ws in sockets)
+        )
 
         # Collect all unique stop/direction combos from connected clients
         all_buttons: dict[tuple, list[tuple[WebSocket, int]]] = {}  # cache_key -> [(ws, button_id), ...]
@@ -1264,7 +1482,7 @@ async def broadcast_favourite_updates():
         
         # Skip if nothing to do
         if not all_buttons:
-            _record_broadcast_metrics(0.0, 0, len(active_subscriptions))
+            _record_broadcast_metrics(0.0, 0, len(active_subscriber_scopes), active_client_count)
             continue
         
         # Fetch all unique stops concurrently, with a shared semaphore.
@@ -1315,7 +1533,12 @@ async def broadcast_favourite_updates():
         _record_broadcast_metrics(
             time.perf_counter() - loop_started,
             len(all_buttons),
-            len(_active_favourite_subscriptions()),
+            len({
+                _ws_connection_scopes[ws]
+                for ws, _buttons in _active_favourite_subscriptions()
+                if ws in _ws_connection_scopes
+            }),
+            sum(1 for sockets in _ws_connections_by_scope.values() if any(_is_websocket_active(ws) for ws in sockets)),
         )
 
 
@@ -1566,7 +1789,11 @@ async def text_query(agent_request: AgentRequest, request: Request):
 # --- WebSocket Endpoint ---
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    buttons: str | None = None,
+    client_id: str | None = None,
+):
     """
     WebSocket endpoint for real-time communication. Open access for departure data.
     
@@ -1594,9 +1821,11 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
     }
     """
     client_ip = _client_ip_from_websocket(websocket)
-    await _evict_existing_websocket_connections(client_ip)
+    normalized_client_id = _normalize_client_id(client_id)
+    scope_key = _client_scope_key(client_ip, normalized_client_id)
+    await _evict_existing_websocket_connections(scope_key)
 
-    if not _register_websocket_connection(websocket, client_ip):
+    if not _register_websocket_connection(websocket, client_ip, normalized_client_id, scope_key):
         await websocket.accept()
         await websocket.send_json({
             "type": "error",
@@ -1668,6 +1897,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                         _cleanup_websocket_state(
                             websocket,
                             client_ip,
+                            scope_key,
                             log_reason="Initial favourite push failed; cleaned up websocket state",
                         )
                 
@@ -1711,7 +1941,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                 
                 if not _check_rate_limit(
                     _ws_query_limiters,
-                    f"{client_ip}:{id(websocket)}",
+                    scope_key,
                     WS_QUERY_RATE_LIMIT,
                 ):
                     await websocket.send_json({
@@ -1720,6 +1950,9 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                         "error": "Too many AI queries on this connection. Please wait a moment."
                     })
                     continue
+
+                activity = _touch_client_activity(scope_key, client_ip, normalized_client_id)
+                activity["ws_queries"] = int(activity["ws_queries"]) + 1
 
                 resolved_key = _resolve_llm_key(message.get("llm_api_key"))
                 
@@ -1996,6 +2229,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
                             _cleanup_websocket_state(
                                 websocket,
                                 client_ip,
+                                scope_key,
                                 log_reason="Favourite subscription push failed; cleaned up websocket state",
                             )
                     
@@ -2019,7 +2253,7 @@ async def websocket_endpoint(websocket: WebSocket, buttons: str = Query(None)):
     except Exception as e:
         logger.warning("WebSocket error: %s", e)
     finally:
-        _cleanup_websocket_state(websocket, client_ip)
+        _cleanup_websocket_state(websocket, client_ip, scope_key)
 
 
 # Serve Pebble config from pebble/config/settings.html (single source of truth)
