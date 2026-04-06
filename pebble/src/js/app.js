@@ -1067,7 +1067,6 @@ function showClarificationMenu(options, parentCard) {
 // WebSocket connection
 function connectWebSocket() {
     var serverUrl = Settings.option('server_url') || DEFAULT_SERVER_URL;
-    var llmApiKey = Settings.option('llm_api_key') || '';
 
     console.log('Using server URL: ' + serverUrl);
 
@@ -1077,12 +1076,7 @@ function connectWebSocket() {
         .replace('http://', 'ws://')
         .replace(/\/+$/, '') + '/ws';
 
-    // Add LLM API key if configured (for agent queries)
     var separator = '?';
-    if (llmApiKey) {
-        wsUrl += separator + 'llm_api_key=' + encodeURIComponent(llmApiKey);
-        separator = '&';
-    }
 
     // build buttons query param for instant data on connect format: "1:stop_id:route_type:dir_id,2:stop_id:route_type:dir_id"
     var entryCount = Settings.option('entry_count');
@@ -1118,7 +1112,7 @@ function connectWebSocket() {
         wsUrl += separator + 'buttons=' + encodeURIComponent(buttonParts.join(','));
     }
 
-    console.log('Connecting to: ' + wsUrl);
+    console.log('Connecting WebSocket');
 
     loadingCard.title('PTV Notify');
     loadingCard.subtitle('Connecting...');
@@ -1354,12 +1348,15 @@ function sendQuery(text, successCb, errorCb) {
 
     console.log('sendQuery: sending...');
 
+    var llmApiKey = Settings.option('llm_api_key') || '';
+
     // Minimal payload to test if large queryHistory is causing crash
     ws.send(JSON.stringify({
         type: 'query',
         id: id,
         text: text,
-        session_id: sessionId
+        session_id: sessionId,
+        llm_api_key: llmApiKey
         // queryHistory temporarily removed to test memory issue
     }));
 
@@ -1381,7 +1378,7 @@ function addToHistory(stopInfo) {
     }
 }
 
-// Save button config from server (LLM set_button command)
+// Save button config returned from the server after agent setup
 function saveButtonConfig(config) {
     if (!config || !config.button_id) return;
 
