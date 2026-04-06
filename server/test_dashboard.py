@@ -81,6 +81,15 @@ async def _request(path: str, host: str, follow_redirects: bool = True):
         return await client.get(path, headers={"host": host})
 
 
+async def _post(path: str, host: str, payload: dict):
+    transport = httpx.ASGITransport(app=api.app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as client:
+        return await client.post(path, headers={"host": host}, json=payload)
+
+
 class FakeWebSocket:
     def __init__(self, host: str = "127.0.0.1"):
         self.client = SimpleNamespace(host=host)
@@ -188,15 +197,52 @@ async def test_public_station_api_and_websocket_still_work(reset_state):
     assert config_response.status_code == 200
 
     fake_websocket = FakeWebSocket()
-    await api.websocket_endpoint(fake_websocket)
+    await api.websocket_endpoint(fake_websocket, client_id="watch-alpha")
     assert fake_websocket.sent
     assert fake_websocket.sent[0]["type"] == "connected"
 
 
 @pytest.mark.asyncio
+async def test_websocket_rejects_missing_client_id(reset_state):
+    fake_websocket = FakeWebSocket()
+
+    await api.websocket_endpoint(fake_websocket)
+
+    assert fake_websocket.sent
+    assert fake_websocket.sent[0]["type"] == "error"
+    assert fake_websocket.sent[0]["error"] == "client_id is required"
+    assert fake_websocket.close_calls == [1008]
+
+
+@pytest.mark.asyncio
+async def test_http_query_requires_client_id(reset_state):
+    response = await _post(
+        "/api/v1/query",
+        api.PUBLIC_BASE_HOST,
+        {"query": "next train", "llm_api_key": "dummy"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "client_id is required"
+
+
+@pytest.mark.asyncio
+async def test_http_favourite_requires_client_id(reset_state):
+    response = await _post(
+        "/api/v1/favourite",
+        api.PUBLIC_BASE_HOST,
+        {"button_id": 1, "stop_id": 1071, "route_type": 0},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "client_id is required"
+
+
+@pytest.mark.asyncio
 async def test_stale_websocket_is_pruned_before_connection_limit_check(reset_state):
     client_ip = "10.0.0.5"
-    scope_key = api._client_scope_key(client_ip, None)
+    client_id = "alpha-client"
+    scope_key = api._client_scope_key(client_ip, client_id)
     stale_websocket = FakeWebSocket(host=client_ip)
     stale_websocket.client_state.value = 2
     stale_websocket.application_state.value = 2
@@ -204,12 +250,13 @@ async def test_stale_websocket_is_pruned_before_connection_limit_check(reset_sta
     api._ws_connections_by_scope[scope_key].add(stale_websocket)
     api._ws_client_ips[stale_websocket] = client_ip
     api._ws_connection_scopes[stale_websocket] = scope_key
+    api._ws_client_ids[stale_websocket] = client_id
     api._favourite_subscriptions[stale_websocket] = [
         {"button_id": 1, "stop_id": 123, "route_type": 0, "direction_id": None, "dest_id": None}
     ]
 
     fresh_websocket = FakeWebSocket(host=client_ip)
-    await api.websocket_endpoint(fresh_websocket)
+    await api.websocket_endpoint(fresh_websocket, client_id=client_id)
 
     assert fresh_websocket.sent
     assert fresh_websocket.sent[0]["type"] == "connected"
@@ -220,18 +267,20 @@ async def test_stale_websocket_is_pruned_before_connection_limit_check(reset_sta
 @pytest.mark.asyncio
 async def test_new_websocket_evicts_existing_same_ip_connections(reset_state):
     client_ip = "10.0.0.5"
-    scope_key = api._client_scope_key(client_ip, None)
+    client_id = "alpha-client"
+    scope_key = api._client_scope_key(client_ip, client_id)
     existing_websocket = FakeWebSocket(host=client_ip)
 
     api._ws_connections_by_scope[scope_key].add(existing_websocket)
     api._ws_client_ips[existing_websocket] = client_ip
     api._ws_connection_scopes[existing_websocket] = scope_key
+    api._ws_client_ids[existing_websocket] = client_id
     api._favourite_subscriptions[existing_websocket] = [
         {"button_id": 1, "stop_id": 123, "route_type": 0, "direction_id": None, "dest_id": None}
     ]
 
     fresh_websocket = FakeWebSocket(host=client_ip)
-    await api.websocket_endpoint(fresh_websocket)
+    await api.websocket_endpoint(fresh_websocket, client_id=client_id)
 
     assert existing_websocket.close_calls == [1012]
     assert existing_websocket not in api._favourite_subscriptions
