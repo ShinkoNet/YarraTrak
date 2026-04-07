@@ -346,7 +346,7 @@ def test_summarize_favourite_disruption_respects_priority_order(reset_state):
         },
     }
 
-    assert api._summarize_favourite_disruption(departures, disruptions) == "Bus Replacements"
+    assert api._summarize_favourite_disruption(departures, disruptions, 1153, 1235, 0) == "Bus Replacements"
 
 
 def test_summarize_favourite_disruption_distinguishes_major_and_minor(reset_state):
@@ -395,7 +395,43 @@ def test_summarize_favourite_disruption_ignores_planned_and_unrelated(reset_stat
         },
     }
 
-    assert api._summarize_favourite_disruption(departures, disruptions) is None
+    assert api._summarize_favourite_disruption(departures, disruptions, 1153, 1235, 0) is None
+
+
+def test_bus_replacement_range_excludes_unaffected_trip_segment(reset_state):
+    departures = [
+        {"route_id": 11, "direction_id": 1, "disruption_ids": [401]},
+    ]
+    disruptions = {
+        "401": {
+            "disruption_id": 401,
+            "disruption_status": "Current",
+            "disruption_type": "Part Suspended",
+            "title": "Cranbourne and Pakenham lines: Buses replacing trains on Tuesday 7 April 2026",
+            "description": "Passengers are advised that buses are currently replacing train services between Oakleigh and Westall Stations.",
+            "routes": [{"route_id": 11}],
+        }
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1036, 1235, 0) is None
+
+
+def test_bus_replacement_range_keeps_affected_trip_segment(reset_state):
+    departures = [
+        {"route_id": 11, "direction_id": 1, "disruption_ids": [402]},
+    ]
+    disruptions = {
+        "402": {
+            "disruption_id": 402,
+            "disruption_status": "Current",
+            "disruption_type": "Part Suspended",
+            "title": "Cranbourne and Pakenham lines: Buses replacing trains on Tuesday 7 April 2026",
+            "description": "Passengers are advised that buses are currently replacing train services between Oakleigh and Westall Stations.",
+            "routes": [{"route_id": 11}],
+        }
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements"
 
 
 @pytest.mark.asyncio

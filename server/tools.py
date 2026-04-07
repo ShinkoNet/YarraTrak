@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 # Initialize PTV Client
 client = PTVClient()
 _station_db_cache: dict[int, list[dict]] = {}
+_route_direction_stop_cache: dict[tuple[int, int, int], list[dict]] = {}
 
 
 def sanitize_query(query: str) -> str:
@@ -411,6 +412,39 @@ def _load_station_db(route_type: int) -> list[dict]:
         return stops
     except Exception:
         return []
+
+
+def get_route_direction_stops(
+    route_id: int,
+    direction_id: int,
+    route_type: int = RouteType.TRAIN,
+) -> list[dict]:
+    """Return ordered stops for a specific route/direction with stop sequence metadata."""
+    cache_key = (route_type, route_id, direction_id)
+    cached = _route_direction_stop_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    stops = []
+    for stop in _load_station_db(route_type):
+        route_info = (stop.get("routes") or {}).get(str(route_id))
+        if not route_info:
+            continue
+        dir_info = (route_info.get("dirs") or {}).get(str(direction_id))
+        if not dir_info:
+            continue
+        seq = dir_info.get("seq")
+        if seq is None:
+            continue
+        stops.append({
+            "stop_id": stop.get("stop_id"),
+            "stop_name": stop.get("name", ""),
+            "seq": seq,
+        })
+
+    stops.sort(key=lambda item: (item["seq"], item["stop_name"]))
+    _route_direction_stop_cache[cache_key] = stops
+    return stops
 
 
 def resolve_trip_patterns(
