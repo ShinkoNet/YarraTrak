@@ -790,27 +790,7 @@ def _planned_bus_replacement_label_for_trip(
     current_label = _bus_replacement_label_for_trip(disruption, departures, stop_id, dest_id, route_type)
     if current_label is None:
         return None
-
-    from_dt = _parse_melbourne_datetime(disruption.get("from_date"))
-    melbourne_now = datetime.now(_MELBOURNE_TZ)
-    if from_dt is not None:
-        melbourne_today = melbourne_now.date()
-        if from_dt.date() == melbourne_today + timedelta(days=1):
-            return "Bus Replacements Tomorrow"
-        if from_dt.date() == melbourne_today and from_dt > melbourne_now:
-            time_label = _format_compact_time(from_dt.hour, from_dt.minute)
-            return f"Bus Replacements {time_label}" if time_label else None
-
-    searchable_text = " ".join(
-        part.strip().lower()
-        for part in (disruption.get("title") or "", disruption.get("description") or "")
-        if part
-    )
-    if any(keyword in searchable_text for keyword in ("today", "tonight")):
-        time_label = _extract_planned_time_label(disruption)
-        if time_label:
-            return f"Bus Replacements {time_label}"
-    return None
+    return _planned_timed_disruption_label(current_label, disruption)
 
 
 def _service_change_label_for_trip(
@@ -837,15 +817,7 @@ def _service_change_label_for_trip(
     return "Service Changes"
 
 
-def _planned_service_change_label_for_trip(
-    disruption: dict,
-    departures: list[dict],
-    route_type: int,
-) -> str | None:
-    base_label = _service_change_label_for_trip(disruption, departures, route_type)
-    if base_label is None:
-        return None
-
+def _planned_timed_disruption_label(base_label: str, disruption: dict) -> str | None:
     from_dt = _parse_melbourne_datetime(disruption.get("from_date"))
     melbourne_now = datetime.now(_MELBOURNE_TZ)
     if from_dt is not None:
@@ -868,6 +840,17 @@ def _planned_service_change_label_for_trip(
         if time_label:
             return f"{base_label} {time_label}"
     return None
+
+
+def _planned_service_change_label_for_trip(
+    disruption: dict,
+    departures: list[dict],
+    route_type: int,
+) -> str | None:
+    base_label = _service_change_label_for_trip(disruption, departures, route_type)
+    if base_label is None:
+        return None
+    return _planned_timed_disruption_label(base_label, disruption)
 
 
 def _resolve_disruption_label(

@@ -422,14 +422,22 @@ function formatTimedDisruptionLabel(label) {
     return match[1] + (hour < 10 ? '0' : '') + hour + ':' + minute;
 }
 
-function isUpcomingServiceChangeLabel(label) {
+function isUpcomingTimedDisruptionLabel(label, prefixPattern) {
     if (!label) {
         return false;
     }
-    if (!/^(Service Changes|Starts |Ends |Change at |Starts\/Ends )/.test(label)) {
+    if (!prefixPattern.test(label)) {
         return false;
     }
     return / Tomorrow$/i.test(label) || / \d{1,2}:\d{2}(?:am|pm)?$/i.test(label);
+}
+
+function isUpcomingServiceChangeLabel(label) {
+    return isUpcomingTimedDisruptionLabel(label, /^(Service Changes|Starts |Ends |Change at |Starts\/Ends )/);
+}
+
+function isUpcomingBusReplacementLabel(label) {
+    return isUpcomingTimedDisruptionLabel(label, /^Bus Replacements/);
 }
 
 function getMenuDisruptionLabel(label) {
@@ -583,7 +591,7 @@ var cautionTextColor = Feature.color('yellow', 'white');
 
 function getDisruptionTextColor(label) {
     if (!label) return secondaryTextColor;
-    if (label.indexOf('Minor Delays') === 0 || label === 'Bus Replacements Tomorrow' || /^Bus Replacements \d/.test(label) || isUpcomingServiceChangeLabel(label)) {
+    if (label.indexOf('Minor Delays') === 0 || isUpcomingBusReplacementLabel(label) || isUpcomingServiceChangeLabel(label)) {
         return cautionTextColor;
     }
     return warningTextColor;
