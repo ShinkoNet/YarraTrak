@@ -395,12 +395,12 @@ function getCurrentDisruptionLabels(buttonIndex) {
     return cache.disruptionLabels;
 }
 
-function formatBusReplacementLabel(label) {
+function formatTimedDisruptionLabel(label) {
     if (!label || !prefers24HourTime()) {
         return label;
     }
 
-    var match = /^(Bus Replacements )(\d{1,2}):(\d{2})(am|pm)$/i.exec(label);
+    var match = /^(.* )(\d{1,2}):(\d{2})(am|pm)$/i.exec(label);
     if (!match) {
         return label;
     }
@@ -422,8 +422,18 @@ function formatBusReplacementLabel(label) {
     return match[1] + (hour < 10 ? '0' : '') + hour + ':' + minute;
 }
 
+function isUpcomingServiceChangeLabel(label) {
+    if (!label) {
+        return false;
+    }
+    if (!/^(Service Changes|Starts |Ends |Change at |Starts\/Ends )/.test(label)) {
+        return false;
+    }
+    return / Tomorrow$/i.test(label) || / \d{1,2}:\d{2}(am|pm)$/i.test(label);
+}
+
 function getMenuDisruptionLabel(label) {
-    label = formatBusReplacementLabel(label);
+    label = formatTimedDisruptionLabel(label);
     if (!label) {
         return null;
     }
@@ -573,7 +583,7 @@ var cautionTextColor = Feature.color('yellow', 'white');
 
 function getDisruptionTextColor(label) {
     if (!label) return secondaryTextColor;
-    if (label.indexOf('Minor Delays') === 0 || label === 'Bus Replacements Tomorrow' || /^Bus Replacements \d/.test(label)) {
+    if (label.indexOf('Minor Delays') === 0 || label === 'Bus Replacements Tomorrow' || /^Bus Replacements \d/.test(label) || isUpcomingServiceChangeLabel(label)) {
         return cautionTextColor;
     }
     return warningTextColor;
@@ -585,7 +595,7 @@ function getWatchDisruptionLabel(buttonIndex) {
         return null;
     }
     var rotationIndex = Math.floor(Date.now() / 3000) % labels.length;
-    return formatBusReplacementLabel(labels[rotationIndex]);
+    return formatTimedDisruptionLabel(labels[rotationIndex]);
 }
 
 var loadingCard = new Window({

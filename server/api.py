@@ -222,7 +222,8 @@ _DISRUPTION_PRIORITY = {
     "Service Changes": 1,
     "Major Delays": 2,
     "Minor Delays": 3,
-    "Bus Replacements Tomorrow": 4,
+    "Service Changes Tomorrow": 4,
+    "Bus Replacements Tomorrow": 5,
 }
 _DISRUPTION_SORT_ORDER = {
     "Bus Replacements Here": 0,
@@ -231,8 +232,10 @@ _DISRUPTION_SORT_ORDER = {
     "Service Changes": 3,
     "Major Delays": 4,
     "Minor Delays": 5,
-    "Bus Replacements Today": 6,
-    "Bus Replacements Tomorrow": 7,
+    "Service Changes Today": 6,
+    "Service Changes Tomorrow": 7,
+    "Bus Replacements Today": 8,
+    "Bus Replacements Tomorrow": 9,
 }
 _MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 
@@ -834,6 +837,39 @@ def _service_change_label_for_trip(
     return "Service Changes"
 
 
+def _planned_service_change_label_for_trip(
+    disruption: dict,
+    departures: list[dict],
+    route_type: int,
+) -> str | None:
+    base_label = _service_change_label_for_trip(disruption, departures, route_type)
+    if base_label is None:
+        return None
+
+    from_dt = _parse_melbourne_datetime(disruption.get("from_date"))
+    melbourne_now = datetime.now(_MELBOURNE_TZ)
+    if from_dt is not None:
+        melbourne_today = melbourne_now.date()
+        if from_dt.date() == melbourne_today + timedelta(days=1):
+            return f"{base_label} Tomorrow"
+        if from_dt.date() == melbourne_today and from_dt > melbourne_now:
+            time_label = _format_compact_time(from_dt.hour, from_dt.minute)
+            return f"{base_label} {time_label}" if time_label else None
+
+    searchable_text = " ".join(
+        part.strip().lower()
+        for part in (disruption.get("title") or "", disruption.get("description") or "")
+        if part
+    )
+    if "tomorrow" in searchable_text:
+        return f"{base_label} Tomorrow"
+    if any(keyword in searchable_text for keyword in ("today", "tonight")):
+        time_label = _extract_planned_time_label(disruption)
+        if time_label:
+            return f"{base_label} {time_label}"
+    return None
+
+
 def _resolve_disruption_label(
     disruption: dict,
     departures: list[dict],
@@ -853,20 +889,7 @@ def _resolve_disruption_label(
     if label == "Service Changes":
         if disruption_status == "Current":
             return _service_change_label_for_trip(disruption, departures, route_type)
-        from_dt = _parse_melbourne_datetime(disruption.get("from_date"))
-        melbourne_now = datetime.now(_MELBOURNE_TZ)
-        if from_dt is not None:
-            melbourne_today = melbourne_now.date()
-            if from_dt.date() in {melbourne_today, melbourne_today + timedelta(days=1)}:
-                return _service_change_label_for_trip(disruption, departures, route_type)
-        searchable_text = " ".join(
-            part.strip().lower()
-            for part in (disruption.get("title") or "", disruption.get("description") or "")
-            if part
-        )
-        if any(keyword in searchable_text for keyword in ("today", "tonight", "tomorrow")):
-            return _service_change_label_for_trip(disruption, departures, route_type)
-        return None
+        return _planned_service_change_label_for_trip(disruption, departures, route_type)
 
     if disruption_status != "Current":
         return None
@@ -906,12 +929,23 @@ def _disruption_matches_favourite(
 
 
 def _label_priority(label: str) -> int:
+    if label == "Service Changes Tomorrow" or label.endswith(" Tomorrow") and (
+        label.startswith("Starts ")
+        or label.startswith("Ends ")
+        or label.startswith("Change at ")
+        or label.startswith("Starts/Ends ")
+        or label == "Service Changes"
+    ):
+        return _DISRUPTION_PRIORITY["Service Changes Tomorrow"]
     if (
         label == "Service Changes"
         or label.startswith("Starts ")
         or label.startswith("Ends ")
         or label.startswith("Change at ")
+        or label.startswith("Starts/Ends ")
     ):
+        if re.search(r" \d{1,2}:\d{2}(?:am|pm)$", label, re.IGNORECASE):
+            return _DISRUPTION_PRIORITY["Service Changes Tomorrow"]
         return _DISRUPTION_PRIORITY["Service Changes"]
     if label.startswith("Major Delays"):
         return _DISRUPTION_PRIORITY["Major Delays"]
@@ -925,12 +959,23 @@ def _label_priority(label: str) -> int:
 
 
 def _label_sort_order(label: str) -> int:
+    if label == "Service Changes Tomorrow" or label.endswith(" Tomorrow") and (
+        label.startswith("Starts ")
+        or label.startswith("Ends ")
+        or label.startswith("Change at ")
+        or label.startswith("Starts/Ends ")
+        or label == "Service Changes"
+    ):
+        return _DISRUPTION_SORT_ORDER["Service Changes Tomorrow"]
     if (
         label == "Service Changes"
         or label.startswith("Starts ")
         or label.startswith("Ends ")
         or label.startswith("Change at ")
+        or label.startswith("Starts/Ends ")
     ):
+        if re.search(r" \d{1,2}:\d{2}(?:am|pm)$", label, re.IGNORECASE):
+            return _DISRUPTION_SORT_ORDER["Service Changes Today"]
         return _DISRUPTION_SORT_ORDER["Service Changes"]
     if label.startswith("Major Delays"):
         return _DISRUPTION_SORT_ORDER["Major Delays"]
