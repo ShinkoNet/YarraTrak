@@ -1,7 +1,7 @@
 from PIL import Image, ImageEnhance
 import os
 
-source_path = "ptvnotify-transparent-full.png"
+source_path = "yarratrak-transparent-full.png"
 background_color = (41, 19, 129, 255)
 
 print("Enhancing contrast and saturation...")

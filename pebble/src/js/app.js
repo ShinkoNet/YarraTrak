@@ -1,4 +1,4 @@
-// ptv notify - melbourne public transport for pebble voice-enabled departure queries via websocket
+// yarratrak - melbourne public transport for pebble voice-enabled departure queries via websocket
 
 var UI = require('ui');
 var Settings = require('settings');
@@ -11,10 +11,54 @@ var Rect = require('ui/rect');
 var Vector2 = require('vector2');
 var Image = require('ui/image');
 
+var DEFAULT_SERVER_URL = 'https://ptv.netcavy.net';
+var CONFIG_URL = DEFAULT_SERVER_URL + '/pebble-config.html';
+
+function getBooleanOption(name) {
+    var value = Settings.option(name);
+    return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+function prefers24HourTime() {
+    return getBooleanOption('use_24hr_time');
+}
+
+function isAiAssistantEnabled() {
+    return !getBooleanOption('disable_ai_assistant');
+}
+
+function isThirdPartyEndpointEnabled() {
+    return getBooleanOption('enable_third_party_endpoint');
+}
+
+function isVibrationDisabled() {
+    return getBooleanOption('disable_vibration');
+}
+
+function isRippleVfxDisabled() {
+    return getBooleanOption('disable_ripple_vfx');
+}
+
+function isTimerShakeDisabled() {
+    return getBooleanOption('disable_timer_shake');
+}
+
+function getConfiguredServerUrl() {
+    if (!isThirdPartyEndpointEnabled()) {
+        return DEFAULT_SERVER_URL;
+    }
+
+    return Settings.option('server_url') || DEFAULT_SERVER_URL;
+}
+
 // custom vibration pattern player pebble.js only supports 'short', 'long', 'double' - we simulate patterns pattern format: [vibe_ms, pause_ms, vibe_ms, pause_ms, ...]
 var vibeTimer = null;
 
 function playVibrationPattern(pattern) {
+    if (isVibrationDisabled()) {
+        return;
+    }
+
     // Clear any ongoing pattern (legacy timer)
     if (vibeTimer) {
         clearTimeout(vibeTimer);
@@ -35,6 +79,14 @@ function playVibrationPattern(pattern) {
 
     console.log('Sending custom vibration pattern: ' + JSON.stringify(pattern));
     Vibe.vibrateCustom(pattern);
+}
+
+function playShortVibration() {
+    if (isVibrationDisabled()) {
+        return;
+    }
+
+    Vibe.vibrate('short');
 }
 
 // calculate vibration pattern locally (no network call needed) encodes minutes as haptic pattern: hours=1000ms, tens=500ms,
@@ -60,12 +112,6 @@ function calculateVibration(minutes) {
     console.log('calculateVibration: ' + minutes + ' mins -> ' + JSON.stringify(pattern));
     return pattern;
 }
-
-var Vector2 = require('vector2');
-
-// Server configuration - update this URL to your server
-var CONFIG_URL = 'https://ptv.netcavy.net/pebble-config.html';
-
 // Application state
 
 var ws = null;
@@ -188,7 +234,7 @@ function getConnectionBannerItem() {
 
 function refreshConnectionUi() {
     if (hasShownMainMenu) {
-        mainMenu.items(0, buildMenuItems());
+        updateMainMenu();
     }
 
     if (watchingButtonIndex !== null) {
@@ -282,6 +328,7 @@ var watchingDistanceRunRef = null; // Run_ref associated with distance
 var lastRenderedWatchTimerValue = null; // Last timer string shown on the watch page
 var lastRenderedWatchTimerMetric = null; // Last comparable countdown value for watch page
 var watchTimerAnimationTimers = []; // Active timer text animation timeouts
+var lastRenderedMainMenuItems = null; // Cached menu rows to avoid clearing the whole menu during live updates
 
 // get the current valid departure from the cached array auto-switches to next departure when first train has passed
 function getCurrentDeparture(buttonIndex) {
@@ -327,9 +374,40 @@ function getCurrentDisruptionLabels(buttonIndex) {
     return cache.disruptionLabels;
 }
 
+function formatBusReplacementLabel(label) {
+    if (!label || !prefers24HourTime()) {
+        return label;
+    }
+
+    var match = /^(Bus Replacements )(\d{1,2}):(\d{2})(am|pm)$/i.exec(label);
+    if (!match) {
+        return label;
+    }
+
+    var hour = parseInt(match[2], 10);
+    var minute = match[3];
+    var meridiem = match[4].toLowerCase();
+
+    if (hour < 1 || hour > 12) {
+        return label;
+    }
+
+    if (meridiem === 'am') {
+        hour = hour === 12 ? 0 : hour;
+    } else {
+        hour = hour === 12 ? 12 : hour + 12;
+    }
+
+    return match[1] + (hour < 10 ? '0' : '') + hour + ':' + minute;
+}
+
 function getMenuDisruptionLabel(label) {
+    label = formatBusReplacementLabel(label);
     if (!label) {
         return null;
+    }
+    if (/^Bus Replacements \d/.test(label)) {
+        return label.replace(/^Bus Replacements /, 'Bus ');
     }
     if (label.indexOf('Bus Replacements') === 0) {
         return 'Bus Replcmnt';
@@ -363,9 +441,6 @@ function getOrCreateClientId() {
     }
     return clientId;
 }
-
-// Initialize settings with defaults
-var DEFAULT_SERVER_URL = 'https://ptv.netcavy.net';
 
 // Demo entries for first launch (Rebble App Contest)
 var DEMO_ENTRIES = [
@@ -439,7 +514,7 @@ if (!Settings.option('entry_count') && !Settings.option('entry1_stop_id') && !Se
 
 getOrCreateClientId();
 
-// Hardcoded server URL - always use DEFAULT_SERVER_URL
+// Config page stays on the default server; data traffic can use an optional third-party endpoint.
 
 Settings.config({
     url: CONFIG_URL
@@ -454,7 +529,9 @@ Settings.config({
         buttonDepartures = {};
 
         // Always refresh menu items to show new button config immediately
-        mainMenu.items(0, buildMenuItems());
+        updateMainMenu({ forceFullRefresh: true });
+        applyWatchAppearanceSettings();
+        refreshConnectionUi();
 
         // Reconnect WebSocket with new buttons in URL to get fresh data
         reconnect();
@@ -483,7 +560,7 @@ function getWatchDisruptionLabel(buttonIndex) {
         return null;
     }
     var rotationIndex = Math.floor(Date.now() / 3000) % labels.length;
-    return labels[rotationIndex];
+    return formatBusReplacementLabel(labels[rotationIndex]);
 }
 
 var loadingCard = new Window({
@@ -497,7 +574,7 @@ if (useTextOnlySplash) {
         font: 'gothic-24-bold',
         color: 'white',
         textAlign: 'center',
-        text: 'PTV Notify'
+        text: 'YarraTrak'
     });
     loadingCard.add(splashWordmark);
 } else {
@@ -567,9 +644,7 @@ function showLoadingScreen(statusText, serverUrl) {
 function showMainMenu() {
     clearLoadingTimers();
     hasShownMainMenu = true;
-    var items = buildMenuItems();
-    mainMenu.items(0, items);
-    mainMenu.selection(0, getDefaultMainMenuIndex(items));
+    updateMainMenu({ forceFullRefresh: true, resetSelection: true });
     loadingCard.hide();
     mainMenu.show();
 }
@@ -663,6 +738,19 @@ var progressBar = new Rect({
     backgroundColor: 'white'
 });
 watchingWindow.add(progressBar);
+
+function applyWatchAppearanceSettings() {
+    if (isRippleVfxDisabled()) {
+        watchingWindow.backgroundColor('black');
+        watchingWindow.rippleBackground(false);
+        return;
+    }
+
+    watchingWindow.backgroundColor(appBackgroundColor);
+    watchingWindow.rippleBackground(Feature.color(true, false));
+}
+
+applyWatchAppearanceSettings();
 
 function clearWatchTimerAnimation() {
     while (watchTimerAnimationTimers.length) {
@@ -787,7 +875,7 @@ function buildMenuItems() {
     }
 
     // voice/ask option: always show if microphone available (will show setup notice if no api key is configured)
-    if (Feature.microphone()) {
+    if (Feature.microphone() && isAiAssistantEnabled()) {
         items.push({
             title: 'Ask',
             subtitle: 'Voice query'
@@ -878,6 +966,64 @@ function buildMenuItems() {
     return items;
 }
 
+function normalizeMenuItem(item) {
+    var data = item.data || {};
+
+    return {
+        title: item.title || '',
+        subtitle: item.subtitle || null,
+        textColor: item.textColor || null,
+        backgroundColor: item.backgroundColor || null,
+        data: {
+            favourite: data.favourite || null,
+            system: !!data.system
+        }
+    };
+}
+
+function isSameMenuItem(a, b) {
+    if (!a || !b) {
+        return false;
+    }
+
+    var aData = a.data || {};
+    var bData = b.data || {};
+
+    return a.title === b.title &&
+        a.subtitle === b.subtitle &&
+        a.textColor === b.textColor &&
+        a.backgroundColor === b.backgroundColor &&
+        aData.favourite === bData.favourite &&
+        !!aData.system === !!bData.system;
+}
+
+function updateMainMenu(options) {
+    options = options || {};
+
+    var items = (options.items || buildMenuItems()).map(normalizeMenuItem);
+    var needsFullRefresh = options.forceFullRefresh ||
+        !lastRenderedMainMenuItems ||
+        lastRenderedMainMenuItems.length !== items.length;
+
+    if (needsFullRefresh) {
+        mainMenu.items(0, items);
+    } else {
+        for (var i = 0; i < items.length; i++) {
+            if (!isSameMenuItem(lastRenderedMainMenuItems[i], items[i])) {
+                mainMenu.item(0, i, items[i]);
+            }
+        }
+    }
+
+    lastRenderedMainMenuItems = items.map(normalizeMenuItem);
+
+    if (options.resetSelection) {
+        mainMenu.selection(0, getDefaultMainMenuIndex(items));
+    }
+
+    return items;
+}
+
 function getDefaultMainMenuIndex(items) {
     for (var i = 0; i < items.length; i++) {
         if (items[i].data && items[i].data.favourite) {
@@ -889,7 +1035,7 @@ function getDefaultMainMenuIndex(items) {
 
 // Menu handlers
 mainMenu.on('show', function () {
-    mainMenu.items(0, buildMenuItems());
+    updateMainMenu({ forceFullRefresh: true });
 });
 
 mainMenu.on('select', function (e) {
@@ -918,6 +1064,10 @@ voiceCard.on('click', 'back', function () {
 
 // Voice query flow
 function startVoiceQuery() {
+    if (!isAiAssistantEnabled()) {
+        return;
+    }
+
     // Cancel any pending queries to prevent memory buildup
     cancelPendingQueries();
 
@@ -1134,7 +1284,7 @@ function runFavouriteQuery(buttonIndex) {
     }
 
     if (!stopId) {
-        Vibe.vibrate('short');
+        playShortVibration();
         return;
     }
 
@@ -1245,7 +1395,7 @@ function runFavouriteQuery(buttonIndex) {
         } else {
             lastVibratedMinutes = null;
             lastDepartureTime = null;
-            Vibe.vibrate('short');
+            playShortVibration();
         }
     } else {
         timerText.text('...');
@@ -1253,7 +1403,7 @@ function runFavouriteQuery(buttonIndex) {
         routeText.text(watchingRouteText);
         lastVibratedMinutes = null;
         lastDepartureTime = null;
-        Vibe.vibrate('short');
+        playShortVibration();
     }
 
     watchingWindow.show();
@@ -1393,7 +1543,8 @@ function updateWatchingDisplay(dep, route) {
 
     progressBar.size(new Vector2(progressWidth, 4));
 
-    if (lastRenderedWatchTimerValue !== null && timerValue !== lastRenderedWatchTimerValue &&
+    if (!isTimerShakeDisabled() &&
+            lastRenderedWatchTimerValue !== null && timerValue !== lastRenderedWatchTimerValue &&
             lastRenderedWatchTimerMetric !== null && timerMetric !== null) {
         if (timerMetric < lastRenderedWatchTimerMetric) {
             animateWatchTimerBounce(timerBaseX, timerBaseY);
@@ -1516,7 +1667,7 @@ function connectWebSocket() {
         return;
     }
 
-    var serverUrl = Settings.option('server_url') || DEFAULT_SERVER_URL;
+    var serverUrl = getConfiguredServerUrl();
 
     console.log('Using server URL: ' + serverUrl);
 
@@ -1694,7 +1845,7 @@ function connectWebSocket() {
                     }
                 }
                 // Refresh menu to show updated times
-                mainMenu.items(0, buildMenuItems());
+                updateMainMenu();
                 return;
             }
 
@@ -1766,6 +1917,10 @@ function reconnect() {
 // Send query
 function sendQuery(text, successCb, errorCb) {
     console.log('sendQuery: start');
+    if (!isAiAssistantEnabled()) {
+        errorCb({ message: 'AI assistant disabled in settings' });
+        return;
+    }
     if (!ws || !wsConnected) {
         console.log('sendQuery: not connected');
         errorCb({ message: 'Not connected' });
@@ -1849,10 +2004,10 @@ function saveButtonConfig(config) {
     delete buttonDepartures[entryId];
 
     // Refresh menu to show new entry configuration
-    mainMenu.items(0, buildMenuItems());
+    updateMainMenu({ forceFullRefresh: true });
 
     // Vibrate to confirm
-    Vibe.vibrate('short');
+    playShortVibration();
     console.log('Entry ' + entryId + ' saved successfully');
 
     // reconnect websocket with new entries in url to get fresh data delayed to allow llm response panel to display first
@@ -1862,6 +2017,6 @@ function saveButtonConfig(config) {
 }
 
 // Start the app
-console.log('PTV Notify starting...');
-showLoadingScreen('Connecting to PTV', Settings.option('server_url') || DEFAULT_SERVER_URL);
+console.log('YarraTrak starting...');
+showLoadingScreen('Connecting to PTV', getConfiguredServerUrl());
 connectWebSocket();
