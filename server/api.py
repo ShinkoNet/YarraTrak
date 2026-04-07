@@ -447,14 +447,26 @@ def _bus_replacement_label_for_trip(
     route_type: int,
 ) -> str | None:
     disruption_id = disruption.get("disruption_id")
-    candidate_departures = [
-        departure
-        for departure in departures
-        if disruption_id in (departure.get("disruption_ids") or [])
-    ] or departures
+    candidate_departures: dict[tuple[int | None, int | None], dict] = {}
+    for departure in departures:
+        dep_pair = (departure.get("route_id"), departure.get("direction_id"))
+        if dep_pair not in candidate_departures:
+            candidate_departures[dep_pair] = departure
 
-    parsed_any_range = False
-    for departure in candidate_departures:
+    if not candidate_departures:
+        return None
+
+    best_label: str | None = None
+    label_priority = {
+        "Bus Replacements Here": 0,
+        "Bus Replacements Ahead": 1,
+        "Bus Replacements": 2,
+    }
+
+    for departure in candidate_departures.values():
+        if disruption_id not in (departure.get("disruption_ids") or []):
+            return None
+
         affected_range = _extract_disruption_station_range(
             disruption,
             departure.get("route_id"),
@@ -462,25 +474,73 @@ def _bus_replacement_label_for_trip(
             route_type,
         )
         if affected_range is None:
+            label = "Bus Replacements"
+        else:
+            scope = _journey_disruption_scope(
+                stop_id,
+                dest_id,
+                departure.get("route_id"),
+                departure.get("direction_id"),
+                route_type,
+                affected_range,
+            )
+            if scope == "Here":
+                label = "Bus Replacements Here"
+            elif scope == "Ahead":
+                label = "Bus Replacements Ahead"
+            else:
+                return None
+
+        if best_label is None or label_priority[label] < label_priority[best_label]:
+            best_label = label
+
+    return best_label
+
+
+def _build_departure_summary(
+    departure: dict,
+    now_utc: datetime,
+    route_type: int,
+) -> dict | None:
+    dep_str = departure.get("estimated_departure_utc") or departure.get("scheduled_departure_utc")
+    if not dep_str:
+        return None
+
+    dep_time = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
+    if dep_time <= now_utc:
+        return None
+
+    minutes = int((dep_time - now_utc).total_seconds() / 60)
+    minutes = max(0, min(720, minutes))
+    platform = departure.get("platform_number")
+    run_ref = departure.get("run_ref") or departure.get("run_id")
+
+    return {
+        "minutes": minutes,
+        "platform": str(platform) if platform else None,
+        "departure_time": dep_time.isoformat(),
+        "run_ref": run_ref,
+        "route_id": departure.get("route_id"),
+        "direction_id": departure.get("direction_id"),
+        "route_type": route_type,
+    }
+
+
+def _collect_departure_summaries(
+    departures: list[dict],
+    now_utc: datetime,
+    route_type: int,
+    max_departures: int,
+) -> list[dict]:
+    collected = []
+    for departure in departures:
+        summary = _build_departure_summary(departure, now_utc, route_type)
+        if not summary:
             continue
-        parsed_any_range = True
-        scope = _journey_disruption_scope(
-            stop_id,
-            dest_id,
-            departure.get("route_id"),
-            departure.get("direction_id"),
-            route_type,
-            affected_range,
-        )
-        if scope == "Here":
-            return "Bus Replacements Here"
-        if scope == "Ahead":
-            return "Bus Replacements Ahead"
-
-    if not parsed_any_range:
-        return "Bus Replacements"
-    return None
-
+        collected.append(summary)
+        if len(collected) >= max_departures:
+            break
+    return collected
 
 def _planned_bus_replacement_label_for_trip(
     disruption: dict,
@@ -2029,59 +2089,11 @@ async def fetch_departure_for_button(
                 continue
             else:
                 filtered_departures.append(d)
-            
-            dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
-            if not dep_str:
-                continue
-            
-            dep_time = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
-            if dep_time > now_utc:
-                minutes = int((dep_time - now_utc).total_seconds() / 60)
-                minutes = max(0, min(720, minutes))
-                platform = d.get("platform_number")
-                run_ref = d.get("run_ref") or d.get("run_id")
-                
-                collected.append({
-                    "minutes": minutes,
-                    "platform": str(platform) if platform else None,
-                    "departure_time": dep_time.isoformat(),
-                    "run_ref": run_ref,
-                    "route_id": d.get("route_id"),
-                    "direction_id": d.get("direction_id"),
-                    "route_type": route_type,
-                })
-                
-                if len(collected) >= max_departures:
-                    break
 
         if allowed_trip_pairs is not None and not filtered_departures and fallback_departures:
             filtered_departures = fallback_departures
-            collected = []
-
-            for d in fallback_departures:
-                dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
-                if not dep_str:
-                    continue
-
-                dep_time = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
-                if dep_time > now_utc:
-                    minutes = int((dep_time - now_utc).total_seconds() / 60)
-                    minutes = max(0, min(720, minutes))
-                    platform = d.get("platform_number")
-                    run_ref = d.get("run_ref") or d.get("run_id")
-
-                    collected.append({
-                        "minutes": minutes,
-                        "platform": str(platform) if platform else None,
-                        "departure_time": dep_time.isoformat(),
-                        "run_ref": run_ref,
-                        "route_id": d.get("route_id"),
-                        "direction_id": d.get("direction_id"),
-                        "route_type": route_type,
-                    })
-
-                    if len(collected) >= max_departures:
-                        break
+        
+        collected = _collect_departure_summaries(filtered_departures, now_utc, route_type, max_departures)
         
         disruption_labels = _collect_favourite_disruption_labels(
             filtered_departures,
