@@ -344,6 +344,13 @@ def _station_aliases(stop_name: str) -> set[str]:
     return aliases
 
 
+def _get_station_record(stop_id: int, route_type: int) -> dict | None:
+    for station in tools._load_station_db(route_type):
+        if station.get("stop_id") == stop_id:
+            return station
+    return None
+
+
 def _match_station_sequence(fragment: str, route_stops: list[dict]) -> int | None:
     fragment_normalized = _normalize_station_reference(fragment)
     if not fragment_normalized:
@@ -403,6 +410,81 @@ def _extract_disruption_station_range(
     return None
 
 
+def _destination_direction_matches_departure(
+    dest_id: int | None,
+    departure_route_id: int | None,
+    departure_direction_id: int | None,
+    disruption_route_id: int | None,
+    route_type: int,
+) -> bool:
+    if dest_id is None or departure_route_id is None or departure_direction_id is None or disruption_route_id is None:
+        return False
+
+    destination_station = _get_station_record(dest_id, route_type)
+    if not destination_station:
+        return False
+
+    departure_route = (destination_station.get("routes") or {}).get(str(departure_route_id))
+    disruption_route = (destination_station.get("routes") or {}).get(str(disruption_route_id))
+    if not departure_route or not disruption_route:
+        return False
+
+    departure_seq = (departure_route.get("dirs") or {}).get(str(departure_direction_id), {}).get("seq")
+    if departure_seq is None:
+        return False
+
+    for disruption_dir in (disruption_route.get("dirs") or {}).values():
+        if disruption_dir.get("seq") == departure_seq:
+            return True
+    return False
+
+
+def _departure_matches_disruption(
+    departure: dict,
+    disruption: dict,
+    stop_id: int,
+    dest_id: int | None,
+    route_type: int,
+) -> bool:
+    disruption_id = disruption.get("disruption_id")
+    if disruption_id in (departure.get("disruption_ids") or []):
+        return True
+
+    if route_type != RouteType.TRAIN or dest_id is None:
+        return False
+
+    affected_range = _extract_disruption_station_range(
+        disruption,
+        departure.get("route_id"),
+        departure.get("direction_id"),
+        route_type,
+    )
+    if affected_range is None:
+        return False
+
+    scope = _journey_disruption_scope(
+        stop_id,
+        dest_id,
+        departure.get("route_id"),
+        departure.get("direction_id"),
+        route_type,
+        affected_range,
+    )
+    if scope is None:
+        return False
+
+    for route in disruption.get("routes", []):
+        if _destination_direction_matches_departure(
+            dest_id,
+            departure.get("route_id"),
+            departure.get("direction_id"),
+            route.get("route_id"),
+            route_type,
+        ):
+            return True
+    return False
+
+
 def _journey_disruption_scope(
     start_stop_id: int,
     dest_id: int | None,
@@ -446,7 +528,6 @@ def _bus_replacement_label_for_trip(
     dest_id: int | None,
     route_type: int,
 ) -> str | None:
-    disruption_id = disruption.get("disruption_id")
     candidate_departures: dict[tuple[int | None, int | None], dict] = {}
     for departure in departures:
         dep_pair = (departure.get("route_id"), departure.get("direction_id"))
@@ -464,7 +545,7 @@ def _bus_replacement_label_for_trip(
     }
 
     for departure in candidate_departures.values():
-        if disruption_id not in (departure.get("disruption_ids") or []):
+        if not _departure_matches_disruption(departure, disruption, stop_id, dest_id, route_type):
             return None
 
         affected_range = _extract_disruption_station_range(
@@ -599,6 +680,36 @@ def _resolve_disruption_label(
     return label
 
 
+def _disruption_matches_favourite(
+    disruption: dict,
+    departures: list[dict],
+    stop_id: int,
+    dest_id: int | None,
+    route_type: int,
+    relevant_route_ids: set[int | None],
+    relevant_disruption_ids: set[int],
+) -> bool:
+    disruption_id = disruption.get("disruption_id")
+    if disruption_id in relevant_disruption_ids:
+        return True
+
+    affected_route_ids = {
+        route.get("route_id")
+        for route in disruption.get("routes", [])
+        if route.get("route_id") is not None
+    }
+    if affected_route_ids.intersection(relevant_route_ids):
+        return True
+
+    if _classify_disruption_label(disruption) != "Bus Replacements":
+        return False
+
+    return any(
+        _departure_matches_disruption(departure, disruption, stop_id, dest_id, route_type)
+        for departure in departures
+    )
+
+
 def _label_priority(label: str) -> int:
     if label.startswith("Major Delays"):
         return _DISRUPTION_PRIORITY["Major Delays"]
@@ -655,15 +766,14 @@ def _collect_favourite_disruption_labels(
     seen_labels: set[str] = set()
 
     for disruption in disruptions.values():
-        disruption_id = disruption.get("disruption_id")
-        affected_route_ids = {
-            route.get("route_id")
-            for route in disruption.get("routes", [])
-            if route.get("route_id") is not None
-        }
-        if (
-            disruption_id not in relevant_disruption_ids
-            and not affected_route_ids.intersection(relevant_route_ids)
+        if not _disruption_matches_favourite(
+            disruption,
+            departures,
+            stop_id,
+            dest_id,
+            route_type,
+            relevant_route_ids,
+            relevant_disruption_ids,
         ):
             continue
 
