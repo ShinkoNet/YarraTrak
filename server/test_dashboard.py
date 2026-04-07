@@ -442,6 +442,24 @@ def test_summarize_favourite_disruption_surfaces_today_planned_replacements_with
     assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements 10:30pm"
 
 
+def test_summarize_favourite_disruption_ignores_planned_station_access_changes(reset_state):
+    departures = [{"route_id": 11, "direction_id": 1, "disruption_ids": [305]}]
+    disruptions = {
+        "305": {
+            "disruption_id": 305,
+            "disruption_status": "Planned",
+            "disruption_type": "Planned Works",
+            "title": "Southern Cross Station: From 8:30pm there will be changes to the way you access the station",
+            "description": "Access arrangements will change from 8:30pm until last service.",
+            "from_date": "2026-04-07T20:30:00+10:00",
+            "routes": [{"route_id": 11}],
+        },
+    }
+
+    assert api._classify_disruption_label(disruptions["305"]) is None
+    assert api._summarize_favourite_disruption(departures, disruptions, 1153, 1235, 0) is None
+
+
 def test_summarize_favourite_disruption_ignores_unrelated_disruptions(reset_state):
     departures = [{"route_id": 11, "disruption_ids": []}]
     disruptions = {
