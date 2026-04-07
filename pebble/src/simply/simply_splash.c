@@ -25,7 +25,7 @@ void layer_update_callback(Layer *layer, GContext *ctx) {
 
 #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_FLINT)
   graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, "PTV Notify",
+  graphics_draw_text(ctx, "YarraTrak",
                      fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
                      GRect(0, 58, frame.size.w, 32),
                      GTextOverflowModeTrailingEllipsis,

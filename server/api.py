@@ -1,5 +1,5 @@
 """
-PTV Notify API - FastAPI server for public transport queries.
+YarraTrak API - FastAPI server for public transport queries.
 
 Open-data architecture: departure/station endpoints are unauthenticated.
 Agent (LLM) endpoints use Bring-Your-Own-Key (BYOK) via legacy provider API key.
@@ -46,7 +46,7 @@ from .config import (
     WS_QUERY_RATE_LIMIT,
 )
 
-app = FastAPI(title="PTV Notify", version="1.0.0")
+app = FastAPI(title="YarraTrak", version="1.0.0")
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -2370,7 +2370,7 @@ async def public_health():
     return JSONResponse(
         content={
             "ok": True,
-            "service": "ptv-notify",
+            "service": "yarratrak",
             "timestamp": _utc_isoformat(),
         },
         headers={"Cache-Control": "no-store"},
