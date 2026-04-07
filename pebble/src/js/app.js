@@ -327,6 +327,22 @@ function getCurrentDisruptionLabels(buttonIndex) {
     return cache.disruptionLabels;
 }
 
+function getMenuDisruptionLabel(label) {
+    if (!label) {
+        return null;
+    }
+    if (label.indexOf('Bus Replacements') === 0) {
+        return 'Bus Replcmnt';
+    }
+    if (label.indexOf('Major Delays') === 0) {
+        return 'Major Delays';
+    }
+    if (label.indexOf('Minor Delays') === 0) {
+        return 'Minor Delays';
+    }
+    return label;
+}
+
 // Generate simple UUID
 function generateUUID() {
     var chars = 'abcdef0123456789';
@@ -790,6 +806,7 @@ function buildMenuItems() {
             // Use live departure data if available, otherwise show "Waiting..."
             var dep = getCurrentDeparture(i);
             var disruptionLabel = getCurrentDisruptionLabel(i);
+            var menuDisruptionLabel = getMenuDisruptionLabel(disruptionLabel);
             var subtitle = 'Waiting...';
             if (dep) {
                 var roundedMinutes = dep.minutes;
@@ -819,8 +836,8 @@ function buildMenuItems() {
                         subtitle = roundedMinutes + ' min';
                     }
                 }
-                if (disruptionLabel) {
-                    subtitle += ' • ' + disruptionLabel;
+                if (menuDisruptionLabel) {
+                    subtitle += ' • ' + menuDisruptionLabel;
                 } else {
                     var routeType = parseInt(Settings.option('entry' + i + '_route_type') || Settings.option('btn' + i + '_route_type') || 0);
 
@@ -839,8 +856,8 @@ function buildMenuItems() {
                         }
                     }
                 }
-            } else if (disruptionLabel) {
-                subtitle = disruptionLabel;
+            } else if (menuDisruptionLabel) {
+                subtitle = menuDisruptionLabel;
             }
             var item = { title: title, subtitle: subtitle, data: { favourite: i } };
             if (disruptionLabel) {
