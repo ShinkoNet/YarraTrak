@@ -154,6 +154,8 @@ _BUS_REPLACEMENT_RANGE_PATTERNS = (
 )
 _DISRUPTION_PRIORITY = {
     "Bus Replacements": 0,
+    "Bus Replacements Here": 0,
+    "Bus Replacements Ahead": 0,
     "Major Delays": 1,
     "Minor Delays": 2,
 }
@@ -310,25 +312,25 @@ def _extract_disruption_station_range(
     return None
 
 
-def _journey_overlaps_disruption_range(
+def _journey_disruption_scope(
     start_stop_id: int,
     dest_id: int | None,
     route_id: int | None,
     direction_id: int | None,
     route_type: int,
     affected_range: tuple[int, int],
-) -> bool:
+) -> str | None:
     if route_id is None or direction_id is None:
-        return True
+        return None
 
     route_stops = tools.get_route_direction_stops(route_id, direction_id, route_type)
     if not route_stops:
-        return True
+        return None
 
     seq_by_stop_id = {stop["stop_id"]: stop["seq"] for stop in route_stops if stop.get("stop_id") is not None}
     start_seq = seq_by_stop_id.get(start_stop_id)
     if start_seq is None:
-        return True
+        return None
 
     if dest_id is None:
         trip_start, trip_end = start_seq, start_seq
@@ -339,16 +341,20 @@ def _journey_overlaps_disruption_range(
         trip_start, trip_end = sorted((start_seq, dest_seq))
 
     affected_start, affected_end = affected_range
-    return not (trip_end < affected_start or trip_start > affected_end)
+    if trip_end < affected_start or trip_start > affected_end:
+        return None
+    if affected_start <= start_seq <= affected_end:
+        return "Here"
+    return "Ahead"
 
 
-def _bus_replacement_affects_trip(
+def _bus_replacement_label_for_trip(
     disruption: dict,
     departures: list[dict],
     stop_id: int,
     dest_id: int | None,
     route_type: int,
-) -> bool:
+) -> str | None:
     disruption_id = disruption.get("disruption_id")
     candidate_departures = [
         departure
@@ -367,17 +373,22 @@ def _bus_replacement_affects_trip(
         if affected_range is None:
             continue
         parsed_any_range = True
-        if _journey_overlaps_disruption_range(
+        scope = _journey_disruption_scope(
             stop_id,
             dest_id,
             departure.get("route_id"),
             departure.get("direction_id"),
             route_type,
             affected_range,
-        ):
-            return True
+        )
+        if scope == "Here":
+            return "Bus Replacements Here"
+        if scope == "Ahead":
+            return "Bus Replacements Ahead"
 
-    return True if not parsed_any_range else False
+    if not parsed_any_range:
+        return "Bus Replacements"
+    return None
 
 
 def _summarize_favourite_disruption(
@@ -430,14 +441,16 @@ def _summarize_favourite_disruption(
         label = _classify_disruption_label(disruption)
         if not label:
             continue
-        if label == "Bus Replacements" and not _bus_replacement_affects_trip(
-            disruption,
-            departures,
-            stop_id,
-            dest_id,
-            route_type,
-        ):
-            continue
+        if label == "Bus Replacements":
+            label = _bus_replacement_label_for_trip(
+                disruption,
+                departures,
+                stop_id,
+                dest_id,
+                route_type,
+            )
+            if not label:
+                continue
 
         priority = _DISRUPTION_PRIORITY[label]
         if priority < best_priority:
