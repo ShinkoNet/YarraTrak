@@ -512,6 +512,34 @@ def test_bus_replacement_range_keeps_affected_trip_segment(reset_state):
     assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements Ahead"
 
 
+def test_bus_replacement_ignores_when_another_route_still_reaches_destination(reset_state, monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = datetime(2026, 4, 7, 15, 7, 0, tzinfo=api._MELBOURNE_TZ)
+            return current if tz is not None else current.replace(tzinfo=None)
+
+    monkeypatch.setattr(api, "datetime", FixedDateTime)
+
+    departures = [
+        {"route_id": 15, "direction_id": 15, "disruption_ids": [406]},
+        {"route_id": 3, "direction_id": 4, "disruption_ids": []},
+    ]
+    disruptions = {
+        "406": {
+            "disruption_id": 406,
+            "disruption_status": "Planned",
+            "disruption_type": "Planned Works",
+            "title": "Upfield Line: Buses replace trains from 8:30pm to last service each night",
+            "description": "From 8:30pm to last service each night.",
+            "from_date": "2026-04-07T20:30:00+10:00",
+            "routes": [{"route_id": 15}],
+        }
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1068, 1120, 0) is None
+
+
 def test_collect_favourite_disruption_labels_orders_all_active_labels(reset_state, monkeypatch):
     class FixedDateTime(datetime):
         @classmethod
@@ -522,7 +550,7 @@ def test_collect_favourite_disruption_labels_orders_all_active_labels(reset_stat
     monkeypatch.setattr(api, "datetime", FixedDateTime)
 
     departures = [
-        {"route_id": 11, "direction_id": 1, "disruption_ids": [601, 602, 603]},
+        {"route_id": 11, "direction_id": 1, "disruption_ids": [601, 602, 603, 604, 605]},
     ]
     disruptions = {
         "601": {
@@ -657,6 +685,82 @@ async def test_fetch_departure_for_button_allows_through_routed_train_match(rese
     assert result["departures"][0]["route_id"] == 11
     assert result["disruption_label"] == "Bus Replacements Ahead"
     assert result["disruption_labels"] == ["Bus Replacements Ahead"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_departure_for_button_scans_beyond_visible_departures_for_alternate_route(reset_state, monkeypatch):
+    async def fake_get_departures(route_type, stop_id, max_results=10, expand=None):
+        return {
+            "departures": [
+                {
+                    "route_id": 15,
+                    "direction_id": 15,
+                    "run_ref": "955700",
+                    "disruption_ids": [701],
+                    "estimated_departure_utc": _future_iso(2),
+                    "platform_number": "3",
+                },
+                {
+                    "route_id": 15,
+                    "direction_id": 15,
+                    "run_ref": "955701",
+                    "disruption_ids": [701],
+                    "estimated_departure_utc": _future_iso(6),
+                    "platform_number": "3",
+                },
+                {
+                    "route_id": 15,
+                    "direction_id": 15,
+                    "run_ref": "955702",
+                    "disruption_ids": [701],
+                    "estimated_departure_utc": _future_iso(10),
+                    "platform_number": "3",
+                },
+                {
+                    "route_id": 3,
+                    "direction_id": 4,
+                    "run_ref": "955703",
+                    "disruption_ids": [],
+                    "estimated_departure_utc": _future_iso(14),
+                    "platform_number": "4",
+                },
+            ],
+            "disruptions": {
+                "701": {
+                    "disruption_id": 701,
+                    "disruption_status": "Planned",
+                    "disruption_type": "Planned Works",
+                    "title": "Upfield Line: Buses replace trains from 8:30pm to last service each night",
+                    "description": "From 8:30pm to last service each night.",
+                    "from_date": "2026-04-07T20:30:00+10:00",
+                    "routes": [{"route_id": 15}],
+                }
+            },
+        }
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = datetime(2026, 4, 7, 15, 7, 0, tzinfo=api._MELBOURNE_TZ)
+            return current if tz is not None else current.replace(tzinfo=None)
+
+    monkeypatch.setattr(api, "datetime", FixedDateTime)
+    monkeypatch.setattr(api.ptv_client, "get_departures", fake_get_departures)
+    monkeypatch.setattr(
+        api.tools,
+        "resolve_trip_patterns",
+        lambda start_stop_id, dest_stop_id, route_type=0: [
+            {"route_id": 15, "direction_id": 15, "route_name": "Upfield", "direction_name": "Upfield"},
+            {"route_id": 3, "direction_id": 4, "route_name": "Craigieburn", "direction_name": "Craigieburn"},
+        ],
+    )
+
+    result = await api.fetch_departure_for_button(1068, 0, None, dest_id=1120)
+
+    assert result["departures"]
+    assert [departure["route_id"] for departure in result["departures"]] == [15, 15, 15]
+    assert result["disruption_label"] is None
+    assert result["disruption_labels"] == []
 
 
 @pytest.mark.asyncio
