@@ -161,7 +161,6 @@ _DISRUPTION_PRIORITY = {
     "Major Delays": 1,
     "Minor Delays": 2,
     "Bus Replacements Tomorrow": 3,
-    "Scheduled Replacements": 3,
 }
 _DISRUPTION_SORT_ORDER = {
     "Bus Replacements Here": 0,
@@ -170,7 +169,6 @@ _DISRUPTION_SORT_ORDER = {
     "Major Delays": 3,
     "Minor Delays": 4,
     "Bus Replacements Tomorrow": 5,
-    "Scheduled Replacements": 6,
 }
 _MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 
@@ -453,7 +451,7 @@ def _planned_bus_replacement_label_for_trip(
         melbourne_today = datetime.now(_MELBOURNE_TZ).date()
         if from_dt.date() == melbourne_today + timedelta(days=1):
             return "Bus Replacements Tomorrow"
-    return "Scheduled Replacements"
+    return None
 
 
 def _resolve_disruption_label(
@@ -487,8 +485,6 @@ def _label_priority(label: str) -> int:
         return _DISRUPTION_PRIORITY["Minor Delays"]
     if label == "Bus Replacements Tomorrow":
         return _DISRUPTION_PRIORITY["Bus Replacements Tomorrow"]
-    if label == "Scheduled Replacements":
-        return _DISRUPTION_PRIORITY["Scheduled Replacements"]
     return _DISRUPTION_PRIORITY.get(label, len(_DISRUPTION_PRIORITY))
 
 
