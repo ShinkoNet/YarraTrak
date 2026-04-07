@@ -372,9 +372,11 @@ def test_summarize_favourite_disruption_distinguishes_major_and_minor(reset_stat
 
     assert api._classify_disruption_label(disruptions["201"]) == "Major Delays"
     assert api._classify_disruption_label(disruptions["202"]) == "Minor Delays"
+    assert api._format_delay_label("Major Delays", {"title": "Delays up to 25 minutes due to congestion."}) == "Major Delays 25m"
+    assert api._format_delay_label("Minor Delays", {"description": "Minor delays of 7 minutes."}) == "Minor Delays 7m"
 
 
-def test_summarize_favourite_disruption_ignores_planned_and_unrelated(reset_state):
+def test_summarize_favourite_disruption_surfaces_scheduled_replacements(reset_state):
     departures = [{"route_id": 11, "disruption_ids": [301]}]
     disruptions = {
         "301": {
@@ -385,6 +387,22 @@ def test_summarize_favourite_disruption_ignores_planned_and_unrelated(reset_stat
             "description": "",
             "routes": [{"route_id": 11}],
         },
+        "302": {
+            "disruption_id": 302,
+            "disruption_status": "Current",
+            "disruption_type": "Major Delays",
+            "title": "Major delays elsewhere",
+            "description": "",
+            "routes": [{"route_id": 14}],
+        },
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1153, 1235, 0) == "Scheduled Replacements"
+
+
+def test_summarize_favourite_disruption_ignores_unrelated_disruptions(reset_state):
+    departures = [{"route_id": 11, "disruption_ids": []}]
+    disruptions = {
         "302": {
             "disruption_id": 302,
             "disruption_status": "Current",
@@ -434,6 +452,56 @@ def test_bus_replacement_range_keeps_affected_trip_segment(reset_state):
     assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements Ahead"
 
 
+def test_collect_favourite_disruption_labels_orders_all_active_labels(reset_state):
+    departures = [
+        {"route_id": 11, "direction_id": 1, "disruption_ids": [601, 602, 603]},
+    ]
+    disruptions = {
+        "601": {
+            "disruption_id": 601,
+            "disruption_status": "Current",
+            "disruption_type": "Part Suspended",
+            "title": "Cranbourne and Pakenham lines: Buses replacing trains on Tuesday 7 April 2026",
+            "description": "Passengers are advised that buses are currently replacing train services between Oakleigh and Westall Stations.",
+            "routes": [{"route_id": 11}],
+        },
+        "602": {
+            "disruption_id": 602,
+            "disruption_status": "Current",
+            "disruption_type": "Major Delays",
+            "title": "Delays up to 25 minutes due to network congestion.",
+            "description": "",
+            "routes": [{"route_id": 11}],
+        },
+        "603": {
+            "disruption_id": 603,
+            "disruption_status": "Current",
+            "disruption_type": "Minor Delays",
+            "title": "Minor delays up to 10 minutes due to an equipment fault.",
+            "description": "",
+            "routes": [{"route_id": 11}],
+        },
+        "604": {
+            "disruption_id": 604,
+            "disruption_status": "Planned",
+            "disruption_type": "Planned Works",
+            "title": "Pakenham Line: Buses replace trains from first service tomorrow",
+            "description": "Buses replace trains between Oakleigh and Westall tomorrow.",
+            "from_date": (datetime.now(api._MELBOURNE_TZ) + timedelta(days=1)).replace(hour=5, minute=0, second=0, microsecond=0).isoformat(),
+            "routes": [{"route_id": 11}],
+        },
+    }
+
+    labels = api._collect_favourite_disruption_labels(departures, disruptions, 1230, 1232, 0)
+
+    assert labels == [
+        "Bus Replacements Ahead",
+        "Major Delays 25m",
+        "Minor Delays 10m",
+        "Bus Replacements Tomorrow",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_fetch_departure_for_button_returns_disruption_label(reset_state, monkeypatch):
     async def fake_get_departures(route_type, stop_id, max_results=10, expand=None):
@@ -466,6 +534,7 @@ async def test_fetch_departure_for_button_returns_disruption_label(reset_state, 
 
     assert result["departures"]
     assert result["disruption_label"] == "Bus Replacements"
+    assert result["disruption_labels"] == ["Bus Replacements"]
 
 
 @pytest.mark.asyncio
@@ -509,6 +578,7 @@ async def test_fetch_departure_for_button_allows_through_routed_train_match(rese
     assert result["departures"]
     assert result["departures"][0]["route_id"] == 11
     assert result["disruption_label"] == "Bus Replacements Ahead"
+    assert result["disruption_labels"] == ["Bus Replacements Ahead"]
 
 
 @pytest.mark.asyncio
@@ -522,6 +592,7 @@ async def test_send_favourite_updates_includes_disruption_label(reset_state):
                 "button_id": 1,
                 "departures": [{"minutes": 5}],
                 "disruption_label": "Major Delays",
+                "disruption_labels": ["Major Delays", "Minor Delays 7m"],
             }
         ],
     )
@@ -534,6 +605,7 @@ async def test_send_favourite_updates_includes_disruption_label(reset_state):
                     "button_id": 1,
                     "departures": [{"minutes": 5}],
                     "disruption_label": "Major Delays",
+                    "disruption_labels": ["Major Delays", "Minor Delays 7m"],
                 }
             ],
         }
