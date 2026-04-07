@@ -376,7 +376,7 @@ def test_summarize_favourite_disruption_distinguishes_major_and_minor(reset_stat
     assert api._format_delay_label("Minor Delays", {"description": "Minor delays of 7 minutes."}) == "Minor Delays 7m"
 
 
-def test_summarize_favourite_disruption_surfaces_scheduled_replacements(reset_state):
+def test_summarize_favourite_disruption_ignores_non_tomorrow_planned_replacements(reset_state):
     departures = [{"route_id": 11, "disruption_ids": [301]}]
     disruptions = {
         "301": {
@@ -397,7 +397,24 @@ def test_summarize_favourite_disruption_surfaces_scheduled_replacements(reset_st
         },
     }
 
-    assert api._summarize_favourite_disruption(departures, disruptions, 1153, 1235, 0) == "Scheduled Replacements"
+    assert api._summarize_favourite_disruption(departures, disruptions, 1153, 1235, 0) is None
+
+
+def test_summarize_favourite_disruption_surfaces_tomorrow_planned_replacements(reset_state):
+    departures = [{"route_id": 11, "direction_id": 1, "disruption_ids": [303]}]
+    disruptions = {
+        "303": {
+            "disruption_id": 303,
+            "disruption_status": "Planned",
+            "disruption_type": "Planned Works",
+            "title": "Buses replacing trains from first service tomorrow",
+            "description": "Buses replace trains between Oakleigh and Westall tomorrow.",
+            "from_date": (datetime.now(api._MELBOURNE_TZ) + timedelta(days=1)).replace(hour=5, minute=0, second=0, microsecond=0).isoformat(),
+            "routes": [{"route_id": 11}],
+        },
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements Tomorrow"
 
 
 def test_summarize_favourite_disruption_ignores_unrelated_disruptions(reset_state):
