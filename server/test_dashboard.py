@@ -56,6 +56,7 @@ def _metric_point(index: int) -> dict[str, int | float | str]:
 @pytest.fixture
 def reset_state():
     api._favourite_subscriptions.clear()
+    api._departure_cache.clear()
     api._watch_tasks.clear()
     api._ws_connections_by_scope.clear()
     api._ws_client_ips.clear()
@@ -112,6 +113,11 @@ class FakeWebSocket:
 
     async def receive_text(self):
         raise WebSocketDisconnect()
+
+
+def _future_iso(minutes: int = 5) -> str:
+    value = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    return value.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 @pytest.mark.asyncio
@@ -307,3 +313,192 @@ async def test_same_ip_different_client_ids_can_connect_without_eviction(reset_s
     assert first_websocket.close_calls == []
     assert second_websocket.sent[0]["type"] == "connected"
     assert first_scope in api._ws_connections_by_scope
+
+
+def test_summarize_favourite_disruption_respects_priority_order(reset_state):
+    departures = [
+        {"route_id": 11, "disruption_ids": [101, 102, 103]},
+    ]
+    disruptions = {
+        "101": {
+            "disruption_id": 101,
+            "disruption_status": "Current",
+            "disruption_type": "Minor Delays",
+            "title": "Minor delays on the line",
+            "description": "",
+            "routes": [{"route_id": 11}],
+        },
+        "102": {
+            "disruption_id": 102,
+            "disruption_status": "Current",
+            "disruption_type": "Major Delays",
+            "title": "Major delays on the line",
+            "description": "",
+            "routes": [{"route_id": 11}],
+        },
+        "103": {
+            "disruption_id": 103,
+            "disruption_status": "Current",
+            "disruption_type": "Part Suspended",
+            "title": "Buses replacing trains today",
+            "description": "Replacement buses are operating",
+            "routes": [{"route_id": 11}],
+        },
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions) == "Bus Replacements"
+
+
+def test_summarize_favourite_disruption_distinguishes_major_and_minor(reset_state):
+    departures = [{"route_id": 11, "disruption_ids": [201, 202]}]
+    disruptions = {
+        "201": {
+            "disruption_id": 201,
+            "disruption_status": "Current",
+            "disruption_type": "Major Delays",
+            "title": "Congestion on the line",
+            "description": "",
+            "routes": [{"route_id": 11}],
+        },
+        "202": {
+            "disruption_id": 202,
+            "disruption_status": "Current",
+            "disruption_type": "Minor Delays",
+            "title": "Minor delays on the line",
+            "description": "",
+            "routes": [{"route_id": 11}],
+        },
+    }
+
+    assert api._classify_disruption_label(disruptions["201"]) == "Major Delays"
+    assert api._classify_disruption_label(disruptions["202"]) == "Minor Delays"
+
+
+def test_summarize_favourite_disruption_ignores_planned_and_unrelated(reset_state):
+    departures = [{"route_id": 11, "disruption_ids": [301]}]
+    disruptions = {
+        "301": {
+            "disruption_id": 301,
+            "disruption_status": "Planned",
+            "disruption_type": "Planned Works",
+            "title": "Buses replacing trains later tonight",
+            "description": "",
+            "routes": [{"route_id": 11}],
+        },
+        "302": {
+            "disruption_id": 302,
+            "disruption_status": "Current",
+            "disruption_type": "Major Delays",
+            "title": "Major delays elsewhere",
+            "description": "",
+            "routes": [{"route_id": 14}],
+        },
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions) is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_departure_for_button_returns_disruption_label(reset_state, monkeypatch):
+    async def fake_get_departures(route_type, stop_id, max_results=10, expand=None):
+        return {
+            "departures": [
+                {
+                    "route_id": 11,
+                    "direction_id": 1,
+                    "run_ref": "955602",
+                    "disruption_ids": [401],
+                    "estimated_departure_utc": _future_iso(6),
+                    "platform_number": "1",
+                }
+            ],
+            "disruptions": {
+                "401": {
+                    "disruption_id": 401,
+                    "disruption_status": "Current",
+                    "disruption_type": "Part Suspended",
+                    "title": "Cranbourne and Pakenham lines: Buses replacing trains",
+                    "description": "Passengers should use replacement buses.",
+                    "routes": [{"route_id": 11}],
+                }
+            },
+        }
+
+    monkeypatch.setattr(api.ptv_client, "get_departures", fake_get_departures)
+
+    result = await api.fetch_departure_for_button(1034, 0, 1)
+
+    assert result["departures"]
+    assert result["disruption_label"] == "Bus Replacements"
+
+
+@pytest.mark.asyncio
+async def test_fetch_departure_for_button_allows_through_routed_train_match(reset_state, monkeypatch):
+    async def fake_get_departures(route_type, stop_id, max_results=10, expand=None):
+        return {
+            "departures": [
+                {
+                    "route_id": 11,
+                    "direction_id": 1,
+                    "run_ref": "955603",
+                    "disruption_ids": [501],
+                    "estimated_departure_utc": _future_iso(8),
+                    "platform_number": "2",
+                    "departure_note": "via Metro Tunnel",
+                }
+            ],
+            "disruptions": {
+                "501": {
+                    "disruption_id": 501,
+                    "disruption_status": "Current",
+                    "disruption_type": "Part Suspended",
+                    "title": "Cranbourne and Pakenham lines: Buses replacing trains",
+                    "description": "Passengers should use replacement buses.",
+                    "routes": [{"route_id": 11}],
+                }
+            },
+        }
+
+    monkeypatch.setattr(api.ptv_client, "get_departures", fake_get_departures)
+    monkeypatch.setattr(
+        api.tools,
+        "resolve_trip_patterns",
+        lambda start_stop_id, dest_stop_id, route_type=0: [
+            {"route_id": 14, "direction_id": 1, "route_name": "Sunbury", "direction_name": "City"}
+        ],
+    )
+
+    result = await api.fetch_departure_for_button(1230, 0, None, dest_id=1232)
+
+    assert result["departures"]
+    assert result["departures"][0]["route_id"] == 11
+    assert result["disruption_label"] == "Bus Replacements"
+
+
+@pytest.mark.asyncio
+async def test_send_favourite_updates_includes_disruption_label(reset_state):
+    fake_websocket = FakeWebSocket()
+
+    await api._send_favourite_updates(
+        fake_websocket,
+        [
+            {
+                "button_id": 1,
+                "departures": [{"minutes": 5}],
+                "disruption_label": "Major Delays",
+            }
+        ],
+    )
+
+    assert fake_websocket.sent == [
+        {
+            "type": "favourite_update",
+            "updates": [
+                {
+                    "button_id": 1,
+                    "departures": [{"minutes": 5}],
+                    "disruption_label": "Major Delays",
+                }
+            ],
+        }
+    ]
