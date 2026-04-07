@@ -464,7 +464,7 @@ var cautionTextColor = Feature.color('yellow', 'white');
 
 function getDisruptionTextColor(label) {
     if (!label) return secondaryTextColor;
-    if (label.indexOf('Minor Delays') === 0 || label === 'Bus Replacements Tomorrow') {
+    if (label.indexOf('Minor Delays') === 0 || label === 'Bus Replacements Tomorrow' || /^Bus Replacements \d/.test(label)) {
         return cautionTextColor;
     }
     return warningTextColor;

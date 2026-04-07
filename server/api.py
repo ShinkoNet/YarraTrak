@@ -154,6 +154,7 @@ _BUS_REPLACEMENT_RANGE_PATTERNS = (
     re.compile(r"\bbetween\s+(?P<start>.+?)\s*-\s*(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
 )
 _DELAY_MINUTES_PATTERN = re.compile(r"\b(?:up to\s+)?(\d{1,3})\s*minutes?\b", re.IGNORECASE)
+_PLANNED_TIME_PATTERN = re.compile(r"\b(?P<hour>\d{1,2}):(?P<minute>\d{2})\s*(?P<ampm>a\.?m\.?|p\.?m\.?)?\b", re.IGNORECASE)
 _DISRUPTION_PRIORITY = {
     "Bus Replacements": 0,
     "Bus Replacements Here": 0,
@@ -168,7 +169,8 @@ _DISRUPTION_SORT_ORDER = {
     "Bus Replacements": 2,
     "Major Delays": 3,
     "Minor Delays": 4,
-    "Bus Replacements Tomorrow": 5,
+    "Bus Replacements Today": 5,
+    "Bus Replacements Tomorrow": 6,
 }
 _MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 
@@ -276,6 +278,48 @@ def _parse_melbourne_datetime(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(_MELBOURNE_TZ)
     except ValueError:
         return None
+
+
+def _format_compact_time(hour: int, minute: int) -> str | None:
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    meridiem = "am" if hour < 12 else "pm"
+    display_hour = hour % 12 or 12
+    return f"{display_hour}:{minute:02d}{meridiem}"
+
+
+def _extract_planned_time_label(disruption: dict) -> str | None:
+    text = " ".join(
+        part.strip()
+        for part in (disruption.get("title") or "", disruption.get("description") or "")
+        if part
+    )
+    if not text:
+        return None
+
+    match = _PLANNED_TIME_PATTERN.search(text)
+    if not match:
+        return None
+
+    try:
+        hour = int(match.group("hour"))
+        minute = int(match.group("minute"))
+    except (TypeError, ValueError):
+        return None
+
+    ampm = match.group("ampm")
+    if ampm:
+        normalized_ampm = ampm.lower().replace(".", "")
+        if hour < 1 or hour > 12:
+            return None
+        if normalized_ampm == "am":
+            hour = 0 if hour == 12 else hour
+        elif normalized_ampm == "pm":
+            hour = hour if hour == 12 else hour + 12
+        else:
+            return None
+
+    return _format_compact_time(hour, minute)
 
 
 def _normalize_station_reference(text: str) -> str:
@@ -447,10 +491,24 @@ def _planned_bus_replacement_label_for_trip(
         return None
 
     from_dt = _parse_melbourne_datetime(disruption.get("from_date"))
+    melbourne_now = datetime.now(_MELBOURNE_TZ)
     if from_dt is not None:
-        melbourne_today = datetime.now(_MELBOURNE_TZ).date()
+        melbourne_today = melbourne_now.date()
         if from_dt.date() == melbourne_today + timedelta(days=1):
             return "Bus Replacements Tomorrow"
+        if from_dt.date() == melbourne_today and from_dt > melbourne_now:
+            time_label = _format_compact_time(from_dt.hour, from_dt.minute)
+            return f"Bus Replacements {time_label}" if time_label else None
+
+    searchable_text = " ".join(
+        part.strip().lower()
+        for part in (disruption.get("title") or "", disruption.get("description") or "")
+        if part
+    )
+    if any(keyword in searchable_text for keyword in ("today", "tonight")):
+        time_label = _extract_planned_time_label(disruption)
+        if time_label:
+            return f"Bus Replacements {time_label}"
     return None
 
 
@@ -485,6 +543,8 @@ def _label_priority(label: str) -> int:
         return _DISRUPTION_PRIORITY["Minor Delays"]
     if label == "Bus Replacements Tomorrow":
         return _DISRUPTION_PRIORITY["Bus Replacements Tomorrow"]
+    if label.startswith("Bus Replacements ") and label not in {"Bus Replacements Here", "Bus Replacements Ahead"}:
+        return _DISRUPTION_PRIORITY["Bus Replacements Tomorrow"]
     return _DISRUPTION_PRIORITY.get(label, len(_DISRUPTION_PRIORITY))
 
 
@@ -493,6 +553,10 @@ def _label_sort_order(label: str) -> int:
         return _DISRUPTION_SORT_ORDER["Major Delays"]
     if label.startswith("Minor Delays"):
         return _DISRUPTION_SORT_ORDER["Minor Delays"]
+    if label.startswith("Bus Replacements ") and label not in {"Bus Replacements Here", "Bus Replacements Ahead", "Bus Replacements Tomorrow"}:
+        return _DISRUPTION_SORT_ORDER["Bus Replacements Today"]
+    if label.startswith("Bus Replacements ") and label not in {"Bus Replacements Here", "Bus Replacements Ahead"}:
+        return _DISRUPTION_SORT_ORDER["Bus Replacements Tomorrow"]
     return _DISRUPTION_SORT_ORDER.get(label, len(_DISRUPTION_SORT_ORDER))
 
 
