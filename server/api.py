@@ -17,6 +17,7 @@ import hashlib
 import logging
 import os
 import asyncio
+import re
 import time
 import uuid
 from starlette.websockets import WebSocketState
@@ -146,6 +147,11 @@ _BUS_REPLACEMENT_PHRASES = (
     "bus replacements",
     "replacement buses",
 )
+_BUS_REPLACEMENT_RANGE_PATTERNS = (
+    re.compile(r"\bbetween\s+(?P<start>.+?)\s+and\s+(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
+    re.compile(r"\bfrom\s+(?P<start>.+?)\s+to\s+(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
+    re.compile(r"\bbetween\s+(?P<start>.+?)\s*-\s*(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
+)
 _DISRUPTION_PRIORITY = {
     "Bus Replacements": 0,
     "Major Delays": 1,
@@ -226,9 +232,160 @@ def _classify_disruption_label(disruption: dict) -> str | None:
     return None
 
 
+def _normalize_station_reference(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9 ]+", " ", text.lower())
+    normalized = re.sub(r"\b(railway|train)\s+station\b", "", normalized)
+    normalized = re.sub(r"\bstations?\b", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _station_aliases(stop_name: str) -> set[str]:
+    aliases = set()
+    normalized = _normalize_station_reference(stop_name)
+    if normalized:
+        aliases.add(normalized)
+    base = normalized.removesuffix(" station").strip()
+    if base:
+        aliases.add(base)
+    return aliases
+
+
+def _match_station_sequence(fragment: str, route_stops: list[dict]) -> int | None:
+    fragment_normalized = _normalize_station_reference(fragment)
+    if not fragment_normalized:
+        return None
+
+    best_match: tuple[int, int] | None = None
+    for stop in route_stops:
+        for alias in _station_aliases(stop.get("stop_name", "")):
+            if not alias:
+                continue
+            if fragment_normalized == alias or alias in fragment_normalized or fragment_normalized in alias:
+                score = len(alias)
+                if best_match is None or score > best_match[0]:
+                    best_match = (score, stop["seq"])
+    return best_match[1] if best_match else None
+
+
+def _extract_disruption_station_range(
+    disruption: dict,
+    route_id: int | None,
+    direction_id: int | None,
+    route_type: int,
+) -> tuple[int, int] | None:
+    if route_id is None or direction_id is None:
+        return None
+
+    route_stops = tools.get_route_direction_stops(route_id, direction_id, route_type)
+    if not route_stops:
+        return None
+
+    seq_by_stop_id = {stop["stop_id"]: stop["seq"] for stop in route_stops if stop.get("stop_id") is not None}
+    stop_seqs = [
+        seq_by_stop_id.get(stop.get("stop_id"))
+        for stop in disruption.get("stops", [])
+        if stop.get("stop_id") in seq_by_stop_id
+    ]
+    stop_seqs = [seq for seq in stop_seqs if seq is not None]
+    if len(stop_seqs) >= 2:
+        return min(stop_seqs), max(stop_seqs)
+
+    text = " ".join(
+        part.strip()
+        for part in (disruption.get("title") or "", disruption.get("description") or "")
+        if part
+    )
+    if not text:
+        return None
+
+    for pattern in _BUS_REPLACEMENT_RANGE_PATTERNS:
+        for match in pattern.finditer(text):
+            start_seq = _match_station_sequence(match.group("start"), route_stops)
+            end_seq = _match_station_sequence(match.group("end"), route_stops)
+            if start_seq is None or end_seq is None or start_seq == end_seq:
+                continue
+            return min(start_seq, end_seq), max(start_seq, end_seq)
+
+    return None
+
+
+def _journey_overlaps_disruption_range(
+    start_stop_id: int,
+    dest_id: int | None,
+    route_id: int | None,
+    direction_id: int | None,
+    route_type: int,
+    affected_range: tuple[int, int],
+) -> bool:
+    if route_id is None or direction_id is None:
+        return True
+
+    route_stops = tools.get_route_direction_stops(route_id, direction_id, route_type)
+    if not route_stops:
+        return True
+
+    seq_by_stop_id = {stop["stop_id"]: stop["seq"] for stop in route_stops if stop.get("stop_id") is not None}
+    start_seq = seq_by_stop_id.get(start_stop_id)
+    if start_seq is None:
+        return True
+
+    if dest_id is None:
+        trip_start, trip_end = start_seq, start_seq
+    else:
+        dest_seq = seq_by_stop_id.get(dest_id)
+        if dest_seq is None:
+            dest_seq = route_stops[-1]["seq"] if start_seq <= route_stops[-1]["seq"] else route_stops[0]["seq"]
+        trip_start, trip_end = sorted((start_seq, dest_seq))
+
+    affected_start, affected_end = affected_range
+    return not (trip_end < affected_start or trip_start > affected_end)
+
+
+def _bus_replacement_affects_trip(
+    disruption: dict,
+    departures: list[dict],
+    stop_id: int,
+    dest_id: int | None,
+    route_type: int,
+) -> bool:
+    disruption_id = disruption.get("disruption_id")
+    candidate_departures = [
+        departure
+        for departure in departures
+        if disruption_id in (departure.get("disruption_ids") or [])
+    ] or departures
+
+    parsed_any_range = False
+    for departure in candidate_departures:
+        affected_range = _extract_disruption_station_range(
+            disruption,
+            departure.get("route_id"),
+            departure.get("direction_id"),
+            route_type,
+        )
+        if affected_range is None:
+            continue
+        parsed_any_range = True
+        if _journey_overlaps_disruption_range(
+            stop_id,
+            dest_id,
+            departure.get("route_id"),
+            departure.get("direction_id"),
+            route_type,
+            affected_range,
+        ):
+            return True
+
+    return True if not parsed_any_range else False
+
+
 def _summarize_favourite_disruption(
     departures: list[dict],
     disruptions: dict,
+    stop_id: int,
+    dest_id: int | None,
+    route_type: int,
     allowed_trip_pairs: set[tuple[int | None, int | None]] | None = None,
 ) -> str | None:
     if not disruptions:
@@ -272,6 +429,14 @@ def _summarize_favourite_disruption(
 
         label = _classify_disruption_label(disruption)
         if not label:
+            continue
+        if label == "Bus Replacements" and not _bus_replacement_affects_trip(
+            disruption,
+            departures,
+            stop_id,
+            dest_id,
+            route_type,
+        ):
             continue
 
         priority = _DISRUPTION_PRIORITY[label]
@@ -1733,7 +1898,14 @@ async def fetch_departure_for_button(
         
         result = {
             "departures": collected,
-            "disruption_label": _summarize_favourite_disruption(filtered_departures, disruptions, allowed_trip_pairs),
+            "disruption_label": _summarize_favourite_disruption(
+                filtered_departures,
+                disruptions,
+                stop_id,
+                dest_id,
+                route_type,
+                allowed_trip_pairs,
+            ),
             "fetched_at": now,
         }
         _departure_cache[cache_key] = result
