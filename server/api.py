@@ -12,7 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 import json
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
 import os
@@ -21,6 +21,7 @@ import re
 import time
 import uuid
 from starlette.websockets import WebSocketState
+from zoneinfo import ZoneInfo
 
 from .enums import RouteType
 from . import agent_engine
@@ -152,13 +153,26 @@ _BUS_REPLACEMENT_RANGE_PATTERNS = (
     re.compile(r"\bfrom\s+(?P<start>.+?)\s+to\s+(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
     re.compile(r"\bbetween\s+(?P<start>.+?)\s*-\s*(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
 )
+_DELAY_MINUTES_PATTERN = re.compile(r"\b(?:up to\s+)?(\d{1,3})\s*minutes?\b", re.IGNORECASE)
 _DISRUPTION_PRIORITY = {
     "Bus Replacements": 0,
     "Bus Replacements Here": 0,
     "Bus Replacements Ahead": 0,
     "Major Delays": 1,
     "Minor Delays": 2,
+    "Bus Replacements Tomorrow": 3,
+    "Scheduled Replacements": 3,
 }
+_DISRUPTION_SORT_ORDER = {
+    "Bus Replacements Here": 0,
+    "Bus Replacements Ahead": 1,
+    "Bus Replacements": 2,
+    "Major Delays": 3,
+    "Minor Delays": 4,
+    "Bus Replacements Tomorrow": 5,
+    "Scheduled Replacements": 6,
+}
+_MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 
 
 def _utc_now() -> datetime:
@@ -232,6 +246,38 @@ def _classify_disruption_label(disruption: dict) -> str | None:
     if disruption_type == "Minor Delays" or "minor delays" in searchable_text or "minor delay" in searchable_text:
         return "Minor Delays"
     return None
+
+
+def _extract_delay_minutes(disruption: dict) -> int | None:
+    text = " ".join(
+        part.strip()
+        for part in (disruption.get("title") or "", disruption.get("description") or "")
+        if part
+    )
+    if not text:
+        return None
+    match = _DELAY_MINUTES_PATTERN.search(text)
+    if not match:
+        return None
+    try:
+        minutes = int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+    return minutes if 0 < minutes <= 180 else None
+
+
+def _format_delay_label(base_label: str, disruption: dict) -> str:
+    delay_minutes = _extract_delay_minutes(disruption)
+    return f"{base_label} {delay_minutes}m" if delay_minutes is not None else base_label
+
+
+def _parse_melbourne_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(_MELBOURNE_TZ)
+    except ValueError:
+        return None
 
 
 def _normalize_station_reference(text: str) -> str:
@@ -391,16 +437,79 @@ def _bus_replacement_label_for_trip(
     return None
 
 
-def _summarize_favourite_disruption(
+def _planned_bus_replacement_label_for_trip(
+    disruption: dict,
+    departures: list[dict],
+    stop_id: int,
+    dest_id: int | None,
+    route_type: int,
+) -> str | None:
+    current_label = _bus_replacement_label_for_trip(disruption, departures, stop_id, dest_id, route_type)
+    if current_label is None:
+        return None
+
+    from_dt = _parse_melbourne_datetime(disruption.get("from_date"))
+    if from_dt is not None:
+        melbourne_today = datetime.now(_MELBOURNE_TZ).date()
+        if from_dt.date() == melbourne_today + timedelta(days=1):
+            return "Bus Replacements Tomorrow"
+    return "Scheduled Replacements"
+
+
+def _resolve_disruption_label(
+    disruption: dict,
+    departures: list[dict],
+    stop_id: int,
+    dest_id: int | None,
+    route_type: int,
+) -> str | None:
+    label = _classify_disruption_label(disruption)
+    if not label:
+        return None
+
+    disruption_status = disruption.get("disruption_status")
+    if label == "Bus Replacements":
+        if disruption_status == "Current":
+            return _bus_replacement_label_for_trip(disruption, departures, stop_id, dest_id, route_type)
+        return _planned_bus_replacement_label_for_trip(disruption, departures, stop_id, dest_id, route_type)
+
+    if disruption_status != "Current":
+        return None
+    if label in {"Major Delays", "Minor Delays"}:
+        return _format_delay_label(label, disruption)
+    return label
+
+
+def _label_priority(label: str) -> int:
+    if label.startswith("Major Delays"):
+        return _DISRUPTION_PRIORITY["Major Delays"]
+    if label.startswith("Minor Delays"):
+        return _DISRUPTION_PRIORITY["Minor Delays"]
+    if label == "Bus Replacements Tomorrow":
+        return _DISRUPTION_PRIORITY["Bus Replacements Tomorrow"]
+    if label == "Scheduled Replacements":
+        return _DISRUPTION_PRIORITY["Scheduled Replacements"]
+    return _DISRUPTION_PRIORITY.get(label, len(_DISRUPTION_PRIORITY))
+
+
+def _label_sort_order(label: str) -> int:
+    if label.startswith("Major Delays"):
+        return _DISRUPTION_SORT_ORDER["Major Delays"]
+    if label.startswith("Minor Delays"):
+        return _DISRUPTION_SORT_ORDER["Minor Delays"]
+    return _DISRUPTION_SORT_ORDER.get(label, len(_DISRUPTION_SORT_ORDER))
+
+
+def _collect_favourite_disruption_labels(
     departures: list[dict],
     disruptions: dict,
     stop_id: int,
     dest_id: int | None,
     route_type: int,
     allowed_trip_pairs: set[tuple[int | None, int | None]] | None = None,
-) -> str | None:
+) -> list[str]:
     if not disruptions:
-        return None
+        return []
 
     relevant_route_ids = {
         departure.get("route_id")
@@ -419,13 +528,10 @@ def _summarize_favourite_disruption(
         if disruption_id is not None
     }
 
-    best_label: str | None = None
-    best_priority = len(_DISRUPTION_PRIORITY)
+    labels: list[str] = []
+    seen_labels: set[str] = set()
 
-    for disruption_key, disruption in disruptions.items():
-        if disruption.get("disruption_status") != "Current":
-            continue
-
+    for disruption in disruptions.values():
         disruption_id = disruption.get("disruption_id")
         affected_route_ids = {
             route.get("route_id")
@@ -438,28 +544,33 @@ def _summarize_favourite_disruption(
         ):
             continue
 
-        label = _classify_disruption_label(disruption)
-        if not label:
+        label = _resolve_disruption_label(disruption, departures, stop_id, dest_id, route_type)
+        if not label or label in seen_labels:
             continue
-        if label == "Bus Replacements":
-            label = _bus_replacement_label_for_trip(
-                disruption,
-                departures,
-                stop_id,
-                dest_id,
-                route_type,
-            )
-            if not label:
-                continue
+        seen_labels.add(label)
+        labels.append(label)
 
-        priority = _DISRUPTION_PRIORITY[label]
-        if priority < best_priority:
-            best_label = label
-            best_priority = priority
-            if priority == 0:
-                break
+    labels.sort(key=lambda label: (_label_priority(label), _label_sort_order(label), label))
+    return labels
 
-    return best_label
+
+def _summarize_favourite_disruption(
+    departures: list[dict],
+    disruptions: dict,
+    stop_id: int,
+    dest_id: int | None,
+    route_type: int,
+    allowed_trip_pairs: set[tuple[int | None, int | None]] | None = None,
+) -> str | None:
+    labels = _collect_favourite_disruption_labels(
+        departures,
+        disruptions,
+        stop_id,
+        dest_id,
+        route_type,
+        allowed_trip_pairs,
+    )
+    return labels[0] if labels else None
 
 
 _latest_metrics_snapshot: dict[str, int | float | str] = _empty_metrics_snapshot()
@@ -1801,7 +1912,7 @@ async def fetch_departure_for_button(
 ) -> dict:
     """
     Fetch next departures for a stop/destination selection, using cache if fresh.
-    Returns {departures: [{minutes, platform, departure_time}, ...], disruption_label, fetched_at} or error dict.
+    Returns {departures: [{minutes, platform, departure_time}, ...], disruption_label, disruption_labels, fetched_at} or error dict.
     Client can switch between cached departures as trains pass, reducing API calls.
     """
     cache_key = (stop_id, route_type, direction_id, dest_id)
@@ -1827,7 +1938,7 @@ async def fetch_departure_for_button(
         disruptions = data.get("disruptions", {})
         
         if not departures:
-            result = {"departures": [], "disruption_label": None, "fetched_at": now}
+            result = {"departures": [], "disruption_label": None, "disruption_labels": [], "fetched_at": now}
             _departure_cache[cache_key] = result
             return result
         
@@ -1838,7 +1949,7 @@ async def fetch_departure_for_button(
         allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
 
         if dest_id is not None and not allowed_trip_pairs:
-            result = {"departures": [], "disruption_label": None, "fetched_at": now}
+            result = {"departures": [], "disruption_label": None, "disruption_labels": [], "fetched_at": now}
             _departure_cache[cache_key] = result
             return result
         
@@ -1909,16 +2020,18 @@ async def fetch_departure_for_button(
                     if len(collected) >= max_departures:
                         break
         
+        disruption_labels = _collect_favourite_disruption_labels(
+            filtered_departures,
+            disruptions,
+            stop_id,
+            dest_id,
+            route_type,
+            allowed_trip_pairs,
+        )
         result = {
             "departures": collected,
-            "disruption_label": _summarize_favourite_disruption(
-                filtered_departures,
-                disruptions,
-                stop_id,
-                dest_id,
-                route_type,
-                allowed_trip_pairs,
-            ),
+            "disruption_label": disruption_labels[0] if disruption_labels else None,
+            "disruption_labels": disruption_labels,
             "fetched_at": now,
         }
         _departure_cache[cache_key] = result
@@ -1926,7 +2039,7 @@ async def fetch_departure_for_button(
         
     except Exception as e:
         logger.warning("Favourite fetch error: %s", e)
-        return {"departures": [], "disruption_label": None, "fetched_at": now}
+        return {"departures": [], "disruption_label": None, "disruption_labels": [], "fetched_at": now}
 
 
 async def broadcast_favourite_updates():
@@ -1993,6 +2106,7 @@ async def broadcast_favourite_updates():
             result = fetch_results.get(cache_key, {"departures": []})
             departures = result.get("departures", [])
             disruption_label = result.get("disruption_label")
+            disruption_labels = result.get("disruption_labels", [])
             for ws, button_id in clients:
                 if ws not in client_updates:
                     client_updates[ws] = []
@@ -2000,6 +2114,7 @@ async def broadcast_favourite_updates():
                     "button_id": button_id,
                     "departures": departures,  # Array of {minutes, platform, departure_time}
                     "disruption_label": disruption_label,
+                    "disruption_labels": disruption_labels,
                 })
         
         # Broadcast to each connected client
@@ -2397,11 +2512,12 @@ async def websocket_endpoint(
                         initial_updates = []
                         for btn, result in zip(parsed_buttons, results):
                             if isinstance(result, Exception):
-                                result = {"departures": [], "disruption_label": None}
+                                result = {"departures": [], "disruption_label": None, "disruption_labels": []}
                             initial_updates.append({
                                 "button_id": btn["button_id"],
                                 "departures": result.get("departures", []),
                                 "disruption_label": result.get("disruption_label"),
+                                "disruption_labels": result.get("disruption_labels", []),
                             })
                         
                         sent = await _send_favourite_updates_if_active(websocket, initial_updates)
@@ -2748,11 +2864,12 @@ async def websocket_endpoint(
                             initial_updates = []
                             for btn, result in zip(valid_buttons, results):
                                 if isinstance(result, Exception):
-                                    result = {"departures": [], "disruption_label": None}
+                                    result = {"departures": [], "disruption_label": None, "disruption_labels": []}
                                 initial_updates.append({
                                     "button_id": btn["button_id"],
                                     "departures": result.get("departures", []),
                                     "disruption_label": result.get("disruption_label"),
+                                    "disruption_labels": result.get("disruption_labels", []),
                                 })
                             
                             sent = await _send_favourite_updates_if_active(websocket, initial_updates)

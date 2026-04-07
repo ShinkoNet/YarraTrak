@@ -272,7 +272,7 @@ function getPatternDuration(pattern) {
 }
 
 // Live departure data from server broadcasts:
-// {1: {departures: [{minutes, platform, departure_time}, ...], disruptionLabel: 'Bus Replacements'}, ...}
+// {1: {departures: [...], disruptionLabel: 'Bus Replacements', disruptionLabels: ['Bus Replacements', 'Major Delays 25m']}, ...}
 var buttonDepartures = {};
 
 // Station watching mode - keep panel open and vibrate on minute changes
@@ -325,6 +325,15 @@ function getCurrentDisruptionLabel(buttonIndex) {
         return null;
     }
     return cache.disruptionLabel;
+}
+
+function getCurrentDisruptionLabels(buttonIndex) {
+    var cache = buttonDepartures[buttonIndex];
+    if (!cache || !cache.disruptionLabels || cache.disruptionLabels.length === 0) {
+        var fallback = getCurrentDisruptionLabel(buttonIndex);
+        return fallback ? [fallback] : [];
+    }
+    return cache.disruptionLabels;
 }
 
 // Generate simple UUID
@@ -451,6 +460,24 @@ var useTextOnlySplash = Feature.platform({ aplite: true, flint: true }, true, fa
 var appBackgroundColor = Feature.color('#291381', 'black');
 var secondaryTextColor = Feature.color('lightGray', 'white');
 var warningTextColor = Feature.color('red', 'white');
+var cautionTextColor = Feature.color('yellow', 'white');
+
+function getDisruptionTextColor(label) {
+    if (!label) return secondaryTextColor;
+    if (label.indexOf('Minor Delays') === 0 || label === 'Bus Replacements Tomorrow' || label === 'Scheduled Replacements') {
+        return cautionTextColor;
+    }
+    return warningTextColor;
+}
+
+function getWatchDisruptionLabel(buttonIndex) {
+    var labels = getCurrentDisruptionLabels(buttonIndex);
+    if (labels.length === 0) {
+        return null;
+    }
+    var rotationIndex = Math.floor(Date.now() / 3000) % labels.length;
+    return labels[rotationIndex];
+}
 
 var loadingCard = new Window({
     backgroundColor: appBackgroundColor
@@ -831,7 +858,7 @@ function buildMenuItems() {
             }
             var item = { title: title, subtitle: subtitle, data: { favourite: i } };
             if (disruptionLabel) {
-                item.textColor = warningTextColor;
+                item.textColor = getDisruptionTextColor(disruptionLabel);
             }
             items.push(item);
         }
@@ -1236,8 +1263,8 @@ function runFavouriteQuery(buttonIndex) {
 // Update the watching display with current departure info
 // Uses custom watchingWindow with separate Text elements
 function updateWatchingDisplay(dep, route) {
-    var disruptionLabel = watchingButtonIndex !== null ? getCurrentDisruptionLabel(watchingButtonIndex) : null;
-    routeText.color(disruptionLabel ? warningTextColor : secondaryTextColor);
+    var disruptionLabel = watchingButtonIndex !== null ? getWatchDisruptionLabel(watchingButtonIndex) : null;
+    routeText.color(disruptionLabel ? getDisruptionTextColor(disruptionLabel) : secondaryTextColor);
 
     if (!dep) {
         clearWatchTimerAnimation();
@@ -1623,7 +1650,8 @@ function connectWebSocket() {
                     // Store full departures array for smart switching
                     buttonDepartures[u.button_id] = {
                         departures: u.departures || [],  // Array of {minutes, platform, departure_time}
-                        disruptionLabel: u.disruption_label || null
+                        disruptionLabel: u.disruption_label || null,
+                        disruptionLabels: u.disruption_labels || (u.disruption_label ? [u.disruption_label] : [])
                     };
 
                     // Station watching mode: vibrate when minutes change
