@@ -148,11 +148,70 @@ _BUS_REPLACEMENT_PHRASES = (
     "bus replacements",
     "replacement buses",
 )
+_SERVICE_CHANGE_PHRASES = (
+    "altered route",
+    "service changes",
+    "changes to your service",
+    "change trains",
+    "start at",
+    "starts at",
+    "start from",
+    "starts from",
+    "originate at",
+    "originates at",
+    "originate from",
+    "originates from",
+    "commence at",
+    "commences at",
+    "terminate at",
+    "terminates at",
+    "end at",
+    "ends at",
+    "stopping pattern",
+)
 _BUS_KEYWORD_PATTERN = re.compile(r"\bbus(?:es)?\b", re.IGNORECASE)
 _BUS_REPLACEMENT_RANGE_PATTERNS = (
     re.compile(r"\bbetween\s+(?P<start>.+?)\s+and\s+(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
     re.compile(r"\bfrom\s+(?P<start>.+?)\s+to\s+(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
     re.compile(r"\bbetween\s+(?P<start>.+?)\s*-\s*(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
+)
+_SERVICE_CHANGE_STATION_PATTERNS = (
+    (
+        re.compile(
+            r"\b(?:all\s+trains(?:\s+[^.,;:]+?)?\s+|train\s+services\s+)?(?:will\s+)?"
+            r"(?:start|starts|starting|originate|originates|originating|commence|commences|commencing)\s+"
+            r"and\s+"
+            r"(?:end|ends|ending|terminate|terminates|terminating)\s+"
+            r"(?:at|from)\s+(?P<station>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)",
+            re.IGNORECASE,
+        ),
+        "Starts/Ends {station}",
+    ),
+    (
+        re.compile(
+            r"\b(?:all\s+trains(?:\s+[^.,;:]+?)?\s+)?(?:will\s+)?"
+            r"(?:start|starts|starting|originate|originates|originating|commence|commences|commencing)\s+"
+            r"(?:at|from)\s+(?P<station>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)",
+            re.IGNORECASE,
+        ),
+        "Starts {station}",
+    ),
+    (
+        re.compile(
+            r"\b(?:all\s+trains(?:\s+[^.,;:]+?)?\s+)?(?:will\s+)?"
+            r"(?:end|ends|ending|terminate|terminates|terminating)\s+"
+            r"(?:at|from)\s+(?P<station>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)",
+            re.IGNORECASE,
+        ),
+        "Ends {station}",
+    ),
+    (
+        re.compile(
+            r"\bchange\s+trains?\s+at\s+(?P<station>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)",
+            re.IGNORECASE,
+        ),
+        "Change at {station}",
+    ),
 )
 _DELAY_MINUTES_PATTERN = re.compile(r"\b(?:up to\s+)?(\d{1,3})\s*minutes?\b", re.IGNORECASE)
 _PLANNED_TIME_PATTERN = re.compile(r"\b(?P<hour>\d{1,2}):(?P<minute>\d{2})\s*(?P<ampm>a\.?m\.?|p\.?m\.?)?\b", re.IGNORECASE)
@@ -160,18 +219,20 @@ _DISRUPTION_PRIORITY = {
     "Bus Replacements": 0,
     "Bus Replacements Here": 0,
     "Bus Replacements Ahead": 0,
-    "Major Delays": 1,
-    "Minor Delays": 2,
-    "Bus Replacements Tomorrow": 3,
+    "Service Changes": 1,
+    "Major Delays": 2,
+    "Minor Delays": 3,
+    "Bus Replacements Tomorrow": 4,
 }
 _DISRUPTION_SORT_ORDER = {
     "Bus Replacements Here": 0,
     "Bus Replacements Ahead": 1,
     "Bus Replacements": 2,
-    "Major Delays": 3,
-    "Minor Delays": 4,
-    "Bus Replacements Today": 5,
-    "Bus Replacements Tomorrow": 6,
+    "Service Changes": 3,
+    "Major Delays": 4,
+    "Minor Delays": 5,
+    "Bus Replacements Today": 6,
+    "Bus Replacements Tomorrow": 7,
 }
 _MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 
@@ -248,6 +309,10 @@ def _classify_disruption_label(disruption: dict) -> str | None:
         return "Major Delays"
     if disruption_type == "Minor Delays" or "minor delays" in searchable_text or "minor delay" in searchable_text:
         return "Minor Delays"
+    if disruption_type == "Planned Works" and any(phrase in searchable_text for phrase in _SERVICE_CHANGE_PHRASES):
+        return "Service Changes"
+    if any(phrase in searchable_text for phrase in _SERVICE_CHANGE_PHRASES):
+        return "Service Changes"
     return None
 
 
@@ -344,6 +409,27 @@ def _station_aliases(stop_name: str) -> set[str]:
     return aliases
 
 
+def _compact_station_name(stop_name: str | None) -> str | None:
+    if not stop_name:
+        return None
+    compact = re.sub(r"\s+(Railway|Train)\s+Station$", "", stop_name, flags=re.IGNORECASE)
+    compact = re.sub(r"\s+Station$", "", compact, flags=re.IGNORECASE)
+    compact = re.sub(r"\s+", " ", compact).strip()
+    return compact or None
+
+
+def _clean_station_fragment(fragment: str) -> str:
+    cleaned = re.sub(
+        r"\s+from\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?.*$",
+        "",
+        fragment,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\s+to\s+last\s+service.*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+each\s+night.*$", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
 def _get_station_record(stop_id: int, route_type: int) -> dict | None:
     for station in tools._load_station_db(route_type):
         if station.get("stop_id") == stop_id:
@@ -365,6 +451,26 @@ def _match_station_sequence(fragment: str, route_stops: list[dict]) -> int | Non
                 score = len(alias)
                 if best_match is None or score > best_match[0]:
                     best_match = (score, stop["seq"])
+    return best_match[1] if best_match else None
+
+
+def _match_station_name(fragment: str, stop_names: list[str]) -> str | None:
+    fragment_normalized = _normalize_station_reference(fragment)
+    if not fragment_normalized:
+        return None
+
+    best_match: tuple[int, str] | None = None
+    for stop_name in stop_names:
+        compact_name = _compact_station_name(stop_name)
+        if not compact_name:
+            continue
+        for alias in _station_aliases(stop_name):
+            if not alias:
+                continue
+            if fragment_normalized == alias or alias in fragment_normalized or fragment_normalized in alias:
+                score = len(alias)
+                if best_match is None or score > best_match[0]:
+                    best_match = (score, compact_name)
     return best_match[1] if best_match else None
 
 
@@ -406,6 +512,53 @@ def _extract_disruption_station_range(
             if start_seq is None or end_seq is None or start_seq == end_seq:
                 continue
             return min(start_seq, end_seq), max(start_seq, end_seq)
+
+    return None
+
+
+def _extract_service_change_station_label(
+    disruption: dict,
+    route_id: int | None,
+    direction_id: int | None,
+    route_type: int,
+) -> str | None:
+    if route_id is None or direction_id is None:
+        return None
+
+    route_stops = tools.get_route_direction_stops(route_id, direction_id, route_type)
+    if not route_stops:
+        return None
+
+    seq_to_name = {
+        stop["seq"]: _compact_station_name(stop.get("stop_name"))
+        for stop in route_stops
+        if stop.get("seq") is not None
+    }
+    text = ". ".join(
+        part.strip()
+        for part in (disruption.get("title") or "", disruption.get("description") or "")
+        if part
+    )
+    if not text:
+        return None
+
+    for pattern, template in _SERVICE_CHANGE_STATION_PATTERNS:
+        for match in pattern.finditer(text):
+            station_fragment = _clean_station_fragment(match.group("station"))
+            station_seq = _match_station_sequence(station_fragment, route_stops)
+            station_name = seq_to_name.get(station_seq) if station_seq is not None else None
+            if not station_name:
+                station_name = _match_station_name(
+                    station_fragment,
+                    [
+                        station.get("name")
+                        for station in tools._load_station_db(route_type)
+                        if station.get("name")
+                    ],
+                )
+            if not station_name:
+                continue
+            return template.format(station=station_name)
 
     return None
 
@@ -623,6 +776,7 @@ def _collect_departure_summaries(
             break
     return collected
 
+
 def _planned_bus_replacement_label_for_trip(
     disruption: dict,
     departures: list[dict],
@@ -656,6 +810,30 @@ def _planned_bus_replacement_label_for_trip(
     return None
 
 
+def _service_change_label_for_trip(
+    disruption: dict,
+    departures: list[dict],
+    route_type: int,
+) -> str | None:
+    candidate_departures: dict[tuple[int | None, int | None], dict] = {}
+    for departure in departures:
+        dep_pair = (departure.get("route_id"), departure.get("direction_id"))
+        if dep_pair not in candidate_departures:
+            candidate_departures[dep_pair] = departure
+
+    for departure in candidate_departures.values():
+        label = _extract_service_change_station_label(
+            disruption,
+            departure.get("route_id"),
+            departure.get("direction_id"),
+            route_type,
+        )
+        if label:
+            return label
+
+    return "Service Changes"
+
+
 def _resolve_disruption_label(
     disruption: dict,
     departures: list[dict],
@@ -672,6 +850,23 @@ def _resolve_disruption_label(
         if disruption_status == "Current":
             return _bus_replacement_label_for_trip(disruption, departures, stop_id, dest_id, route_type)
         return _planned_bus_replacement_label_for_trip(disruption, departures, stop_id, dest_id, route_type)
+    if label == "Service Changes":
+        if disruption_status == "Current":
+            return _service_change_label_for_trip(disruption, departures, route_type)
+        from_dt = _parse_melbourne_datetime(disruption.get("from_date"))
+        melbourne_now = datetime.now(_MELBOURNE_TZ)
+        if from_dt is not None:
+            melbourne_today = melbourne_now.date()
+            if from_dt.date() in {melbourne_today, melbourne_today + timedelta(days=1)}:
+                return _service_change_label_for_trip(disruption, departures, route_type)
+        searchable_text = " ".join(
+            part.strip().lower()
+            for part in (disruption.get("title") or "", disruption.get("description") or "")
+            if part
+        )
+        if any(keyword in searchable_text for keyword in ("today", "tonight", "tomorrow")):
+            return _service_change_label_for_trip(disruption, departures, route_type)
+        return None
 
     if disruption_status != "Current":
         return None
@@ -711,6 +906,13 @@ def _disruption_matches_favourite(
 
 
 def _label_priority(label: str) -> int:
+    if (
+        label == "Service Changes"
+        or label.startswith("Starts ")
+        or label.startswith("Ends ")
+        or label.startswith("Change at ")
+    ):
+        return _DISRUPTION_PRIORITY["Service Changes"]
     if label.startswith("Major Delays"):
         return _DISRUPTION_PRIORITY["Major Delays"]
     if label.startswith("Minor Delays"):
@@ -723,6 +925,13 @@ def _label_priority(label: str) -> int:
 
 
 def _label_sort_order(label: str) -> int:
+    if (
+        label == "Service Changes"
+        or label.startswith("Starts ")
+        or label.startswith("Ends ")
+        or label.startswith("Change at ")
+    ):
+        return _DISRUPTION_SORT_ORDER["Service Changes"]
     if label.startswith("Major Delays"):
         return _DISRUPTION_SORT_ORDER["Major Delays"]
     if label.startswith("Minor Delays"):

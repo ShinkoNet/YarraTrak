@@ -526,6 +526,10 @@ var VibeCustomPacket = new struct([
   ['data', 'durations'],
 ]);
 
+var VibeCancelPacket = new struct([
+  [Packet, 'packet'],
+]);
+
 var LightPacket = new struct([
   [Packet, 'packet'],
   ['uint8', 'type', LightType],
@@ -782,6 +786,7 @@ var CommandPackets = [
   CardStylePacket,
   VibePacket,
   VibeCustomPacket,
+  VibeCancelPacket,
   LightPacket,
   AccelPeekPacket,
   AccelConfigPacket,
@@ -1134,6 +1139,10 @@ SimplyPebble.vibeCustom = function (pattern) {
     .count(pattern.length)
     .durations(buffer);
   SimplyPebble.sendPacket(VibeCustomPacket);
+};
+
+SimplyPebble.vibeCancel = function () {
+  SimplyPebble.sendPacket(VibeCancelPacket);
 };
 
 SimplyPebble.light = function (type) {

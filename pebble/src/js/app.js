@@ -39,6 +39,10 @@ function isVibrationDisabled() {
     return getBooleanOption('disable_vibration');
 }
 
+if (typeof window !== 'undefined') {
+    window.__yarratrakIsVibrationDisabled = isVibrationDisabled;
+}
+
 function isRippleVfxDisabled() {
     return getBooleanOption('disable_ripple_vfx');
 }
@@ -60,8 +64,15 @@ function getConfiguredServerUrl() {
 // Pattern format: [vibe_ms, pause_ms, vibe_ms, pause_ms, ...]
 var vibeTimer = null;
 
+function cancelActiveVibration() {
+    if (typeof Vibe.cancel === 'function') {
+        Vibe.cancel();
+    }
+}
+
 function playVibrationPattern(pattern) {
     if (isVibrationDisabled()) {
+        cancelActiveVibration();
         return;
     }
 
@@ -89,6 +100,7 @@ function playVibrationPattern(pattern) {
 
 function playShortVibration() {
     if (isVibrationDisabled()) {
+        cancelActiveVibration();
         return;
     }
 
@@ -533,6 +545,10 @@ Settings.config({
     },
     function (e) {
         console.log('Config closed');
+
+        if (isVibrationDisabled()) {
+            cancelActiveVibration();
+        }
 
         // Clear stale departure cache - button configs may have changed
         buttonDepartures = {};

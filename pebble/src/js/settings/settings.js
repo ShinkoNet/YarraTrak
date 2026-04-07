@@ -14,6 +14,57 @@ var parseJson = function(data) {
   }
 };
 
+var tryParseJson = function(data) {
+  try {
+    return JSON.parse(data);
+  } catch (e) {}
+};
+
+var parseConfigResponse = function(response) {
+  if (!response) {
+    return {};
+  }
+
+  var decoded = decodeURIComponent(response);
+  var candidates = [decoded];
+
+  if (decoded[0] === '#' || decoded[0] === '?') {
+    candidates.push(decoded.substring(1));
+  }
+
+  var fragmentIndex = decoded.indexOf('#');
+  if (fragmentIndex !== -1 && fragmentIndex + 1 < decoded.length) {
+    candidates.push(decoded.substring(fragmentIndex + 1));
+  }
+
+  for (var i = 0; i < candidates.length; ++i) {
+    var candidate = candidates[i];
+    var options = tryParseJson(candidate);
+    if (typeof options === 'object' && options !== null) {
+      return {
+        options: options,
+        format: 'json',
+      };
+    }
+  }
+
+  for (var j = 0; j < candidates.length; ++j) {
+    var formCandidate = candidates[j];
+    if (!formCandidate || !formCandidate.match(/(&|=)/)) {
+      continue;
+    }
+    var formOptions = ajax.deformify(formCandidate);
+    if (util2.count(formOptions) > 0) {
+      return {
+        options: formOptions,
+        format: 'form',
+      };
+    }
+  }
+
+  return {};
+};
+
 var state;
 
 Settings.settingsUrl = 'http://meiguro.com/simplyjs/settings.html';
@@ -183,16 +234,9 @@ Settings.onCloseConfig = function(e) {
   var options = {};
   var format;
   if (e.response) {
-    options = parseJson(decodeURIComponent(e.response));
-    if (typeof options === 'object' && options !== null) {
-      format = 'json';
-    }
-    if (!format && e.response.match(/(&|=)/)) {
-      options = ajax.deformify(e.response);
-      if (util2.count(options) > 0) {
-        format = 'form';
-      }
-    }
+    var parsedResponse = parseConfigResponse(e.response);
+    options = parsedResponse.options || {};
+    format = parsedResponse.format;
   }
   if (listener) {
     e = {

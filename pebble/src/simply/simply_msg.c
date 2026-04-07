@@ -192,6 +192,12 @@ static void handle_vibe_custom_packet(Simply *simply, Packet *data) {
   free(durations);
 }
 
+static void handle_vibe_cancel_packet(Simply *simply, Packet *data) {
+  (void) simply;
+  (void) data;
+  vibes_cancel();
+}
+
 static void handle_light_packet(Simply *simply, Packet *data) {
   LightPacket *packet = (LightPacket*) data;
   switch (packet->type) {
@@ -214,6 +220,9 @@ static bool simply_base_handle_packet(Simply *simply, Packet *packet) {
       return true;
     case CommandVibeCustom:
       handle_vibe_custom_packet(simply, packet);
+      return true;
+    case CommandVibeCancel:
+      handle_vibe_cancel_packet(simply, packet);
       return true;
     case CommandLight:
       handle_light_packet(simply, packet);
