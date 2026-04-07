@@ -74,6 +74,8 @@ struct SimplyMenuItem {
   SimplyMenuCommonMember;
   char *subtitle;
   uint32_t icon;
+  GColor8 background_color;
+  GColor8 text_color;
   uint16_t item;
 };
 

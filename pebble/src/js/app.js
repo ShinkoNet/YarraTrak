@@ -271,7 +271,8 @@ function getPatternDuration(pattern) {
     return total;
 }
 
-// Live departure data from server broadcasts: {1: {departures: [{minutes, platform, departure_time}, ...]}, ...}
+// Live departure data from server broadcasts:
+// {1: {departures: [{minutes, platform, departure_time}, ...], disruptionLabel: 'Bus Replacements'}, ...}
 var buttonDepartures = {};
 
 // Station watching mode - keep panel open and vibrate on minute changes
@@ -282,10 +283,13 @@ var watchingRouteText = null;    // Current route text for display (stored globa
 var watchingDistanceKm = null;   // Latest distance to stop (km)
 var watchingVehicleDesc = null;  // Latest vehicle descriptor
 var watchingRunRef = null;       // Current watched run_ref
-var watchingSelectedRunRef = null; // Selected departure identity for watch page
-var watchingSelectedDepartureTime = null; // Selected departure time for watch page
+var watchingSelectedRunRef = null; // Selected departure identity for service-after tracking
+var watchingSelectedDepartureTime = null; // Selected departure time for service-after tracking
 var watchingStopId = null;       // Current watched stop_id
 var watchingDistanceRunRef = null; // Run_ref associated with distance
+var lastRenderedWatchTimerValue = null; // Last timer string shown on the watch page
+var lastRenderedWatchTimerMetric = null; // Last comparable countdown value for watch page
+var watchTimerAnimationTimers = []; // Active timer text animation timeouts
 
 // Get the current valid departure from the cached array
 // Auto-switches to next departure when first train has passed
@@ -313,6 +317,14 @@ function getCurrentDeparture(buttonIndex) {
     }
     // All departures have passed
     return null;
+}
+
+function getCurrentDisruptionLabel(buttonIndex) {
+    var cache = buttonDepartures[buttonIndex];
+    if (!cache || !cache.disruptionLabel) {
+        return null;
+    }
+    return cache.disruptionLabel;
 }
 
 // Generate simple UUID
@@ -437,6 +449,8 @@ var screenWidth = Feature.resolution().x;  // 144 for Aplite
 var screenHeight = Feature.resolution().y; // 168 for Aplite
 var useTextOnlySplash = Feature.platform({ aplite: true, flint: true }, true, false);
 var appBackgroundColor = Feature.color('#291381', 'black');
+var secondaryTextColor = Feature.color('lightGray', 'white');
+var warningTextColor = Feature.color('red', 'white');
 
 var loadingCard = new Window({
     backgroundColor: appBackgroundColor
@@ -582,7 +596,7 @@ var routeText = new Text({
     position: new Vector2(5, 123),
     size: new Vector2(screenWidth - 10, 35),
     font: 'gothic-18',
-    color: 'lightGray',
+    color: secondaryTextColor,
     textAlign: 'center',
     text: ''
 });
@@ -617,6 +631,61 @@ var progressBar = new Rect({
 });
 watchingWindow.add(progressBar);
 
+function clearWatchTimerAnimation() {
+    while (watchTimerAnimationTimers.length) {
+        clearTimeout(watchTimerAnimationTimers.pop());
+    }
+}
+
+function resetWatchTimerAnimationState() {
+    clearWatchTimerAnimation();
+    lastRenderedWatchTimerValue = null;
+    lastRenderedWatchTimerMetric = null;
+}
+
+function clearWatchedSelection() {
+    watchingSelectedRunRef = null;
+    watchingSelectedDepartureTime = null;
+}
+
+function setWatchedSelection(dep) {
+    if (!dep) {
+        clearWatchedSelection();
+        return;
+    }
+
+    watchingSelectedRunRef = dep.run_ref || null;
+    watchingSelectedDepartureTime = dep.departure_time || null;
+}
+
+function queueWatchTimerPosition(delayMs, x, y) {
+    var timerId = setTimeout(function () {
+        timerText.position(new Vector2(x, y));
+        for (var i = watchTimerAnimationTimers.length - 1; i >= 0; i--) {
+            if (watchTimerAnimationTimers[i] === timerId) {
+                watchTimerAnimationTimers.splice(i, 1);
+                break;
+            }
+        }
+    }, delayMs);
+    watchTimerAnimationTimers.push(timerId);
+}
+
+function animateWatchTimerBounce(baseX, baseY) {
+    clearWatchTimerAnimation();
+    timerText.position(new Vector2(baseX, baseY + 1));
+    queueWatchTimerPosition(70, baseX, baseY);
+}
+
+function animateWatchTimerShake(baseX, baseY) {
+    clearWatchTimerAnimation();
+    timerText.position(new Vector2(baseX - 2, baseY));
+    queueWatchTimerPosition(45, baseX + 2, baseY);
+    queueWatchTimerPosition(90, baseX - 1, baseY);
+    queueWatchTimerPosition(135, baseX + 1, baseY);
+    queueWatchTimerPosition(180, baseX, baseY);
+}
+
 // Back button handler for watching window
 watchingWindow.on('click', 'back', function () {
     stopWatching();
@@ -626,9 +695,10 @@ watchingWindow.on('click', 'back', function () {
 watchingWindow.on('click', 'up', function () {
     if (watchingDepartureOffset !== 0) {
         watchingDepartureOffset = 0;
+        clearWatchedSelection();
+        resetWatchTimerAnimationState();
         // Update display immediately
         var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
-        setWatchedSelection(currentDep);
         updateWatchingDisplay(currentDep, watchingRouteText);
         sendWatchStart(currentDep, watchingStopId);
     }
@@ -638,6 +708,7 @@ watchingWindow.on('click', 'up', function () {
 watchingWindow.on('click', 'down', function () {
     if (watchingDepartureOffset !== 1) {
         watchingDepartureOffset = 1;
+        resetWatchTimerAnimationState();
         // Update display immediately
         var currentDep = getDepartureByOffset(watchingButtonIndex, watchingDepartureOffset);
         setWatchedSelection(currentDep);
@@ -705,6 +776,7 @@ function buildMenuItems() {
             var title = abbreviateStation(startName) + '>' + abbreviateStation(destName || '?');
             // Use live departure data if available, otherwise show "Waiting..."
             var dep = getCurrentDeparture(i);
+            var disruptionLabel = getCurrentDisruptionLabel(i);
             var subtitle = 'Waiting...';
             if (dep) {
                 var roundedMinutes = dep.minutes;
@@ -734,24 +806,34 @@ function buildMenuItems() {
                         subtitle = roundedMinutes + ' min';
                     }
                 }
-                var routeType = parseInt(Settings.option('entry' + i + '_route_type') || Settings.option('btn' + i + '_route_type') || 0);
-
-                if (dep.platform) {
-                    subtitle += ' • P' + dep.platform;
-                    if (routeType === 1) {
-                        subtitle += ' • Tram';
-                    }
+                if (disruptionLabel) {
+                    subtitle += ' • ' + disruptionLabel;
                 } else {
-                    if (routeType === 1) {
-                        subtitle += ' • Tram';
-                    } else if (routeType === 3) {
-                        subtitle += ' • V/Line';
+                    var routeType = parseInt(Settings.option('entry' + i + '_route_type') || Settings.option('btn' + i + '_route_type') || 0);
+
+                    if (dep.platform) {
+                        subtitle += ' • P' + dep.platform;
+                        if (routeType === 1) {
+                            subtitle += ' • Tram';
+                        }
                     } else {
-                        subtitle += ' • Train';
+                        if (routeType === 1) {
+                            subtitle += ' • Tram';
+                        } else if (routeType === 3) {
+                            subtitle += ' • V/Line';
+                        } else {
+                            subtitle += ' • Train';
+                        }
                     }
                 }
+            } else if (disruptionLabel) {
+                subtitle = disruptionLabel;
             }
-            items.push({ title: title, subtitle: subtitle, data: { favourite: i } });
+            var item = { title: title, subtitle: subtitle, data: { favourite: i } };
+            if (disruptionLabel) {
+                item.textColor = warningTextColor;
+            }
+            items.push(item);
         }
     }
 
@@ -894,17 +976,6 @@ function getDepartureByOffset(buttonIndex, offset) {
     return null;
 }
 
-function setWatchedSelection(dep) {
-    if (!dep) {
-        watchingSelectedRunRef = null;
-        watchingSelectedDepartureTime = null;
-        return;
-    }
-
-    watchingSelectedRunRef = dep.run_ref || null;
-    watchingSelectedDepartureTime = dep.departure_time || null;
-}
-
 function getWatchedDeparture(buttonIndex) {
     var cache = buttonDepartures[buttonIndex];
     if (!cache || !cache.departures || cache.departures.length === 0) {
@@ -914,6 +985,11 @@ function getWatchedDeparture(buttonIndex) {
     var baseIndex = getCurrentBaseIndex(buttonIndex);
     if (baseIndex === -1) {
         return null;
+    }
+
+    if (watchingDepartureOffset === 0) {
+        clearWatchedSelection();
+        return getDepartureByOffset(buttonIndex, 0);
     }
 
     var trackedIndex = -1;
@@ -935,7 +1011,14 @@ function getWatchedDeparture(buttonIndex) {
             console.log('[Watch] Normalizing offset ' + watchingDepartureOffset + ' -> ' + normalizedOffset);
             watchingDepartureOffset = normalizedOffset;
         }
-        return cache.departures[trackedIndex];
+
+        var trackedDep = cache.departures[trackedIndex];
+        if (watchingDepartureOffset === 0) {
+            clearWatchedSelection();
+        } else {
+            setWatchedSelection(trackedDep);
+        }
+        return trackedDep;
     }
 
     var dep = getDepartureByOffset(buttonIndex, watchingDepartureOffset);
@@ -944,9 +1027,10 @@ function getWatchedDeparture(buttonIndex) {
         if (dep) {
             console.log('[Watch] Service after became next service');
             watchingDepartureOffset = 0;
+            clearWatchedSelection();
         }
     }
-    if (dep) {
+    if (dep && watchingDepartureOffset > 0) {
         setWatchedSelection(dep);
     }
     return dep;
@@ -1032,12 +1116,11 @@ function runFavouriteQuery(buttonIndex) {
     watchingDistanceKm = null;
     watchingVehicleDesc = null;
     watchingRunRef = null;
-    watchingSelectedRunRef = null;
-    watchingSelectedDepartureTime = null;
+    clearWatchedSelection();
+    resetWatchTimerAnimationState();
 
     // Use cached live departure data - auto-switches between departures
     var dep = getDepartureByOffset(buttonIndex, watchingDepartureOffset);
-    setWatchedSelection(dep);
 
     // Clean station names for watching window (must fit ~2 lines)
     // Names are pre-cleaned by settings.html, we just ensure they're short enough
@@ -1135,7 +1218,6 @@ function runFavouriteQuery(buttonIndex) {
         } else {
             lastVibratedMinutes = null;
             lastDepartureTime = null;
-            setWatchedSelection(null);
             Vibe.vibrate('short');
         }
     } else {
@@ -1144,7 +1226,6 @@ function runFavouriteQuery(buttonIndex) {
         routeText.text(watchingRouteText);
         lastVibratedMinutes = null;
         lastDepartureTime = null;
-        setWatchedSelection(null);
         Vibe.vibrate('short');
     }
 
@@ -1155,24 +1236,35 @@ function runFavouriteQuery(buttonIndex) {
 // Update the watching display with current departure info
 // Uses custom watchingWindow with separate Text elements
 function updateWatchingDisplay(dep, route) {
+    var disruptionLabel = watchingButtonIndex !== null ? getCurrentDisruptionLabel(watchingButtonIndex) : null;
+    routeText.color(disruptionLabel ? warningTextColor : secondaryTextColor);
+
     if (!dep) {
+        clearWatchTimerAnimation();
+        timerText.position(new Vector2(0, 18));
         timerText.text('...');
         platformText.text('');
         distanceText.text('');
-        routeText.text(route || '');
+        routeText.text(disruptionLabel || route || '');
         progressBar.size(new Vector2(screenWidth, 4));  // Full bar when waiting
+        lastRenderedWatchTimerValue = null;
+        lastRenderedWatchTimerMetric = null;
         return;
     }
 
     var timerValue = '';
     var timerFont = 'leco-42-numbers';  // Default: monospace numbers
     var progressWidth = screenWidth;  // Default full width
+    var timerMetric = null;
+    var timerBaseY = 18;
+    var timerBaseX = 0;
 
     if (dep.departure_time) {
         var timeStr = dep.departure_time.replace(/\+00:00$/, 'Z');
         var depTime = new Date(timeStr);
         var now = new Date();
         var diffSec = Math.floor((depTime.getTime() - now.getTime()) / 1000);
+        timerMetric = Math.max(0, diffSec);
 
         if (diffSec <= 0) {
             timerValue = 'NOW!';
@@ -1220,6 +1312,7 @@ function updateWatchingDisplay(dep, route) {
                 timerValue = dep.minutes + ' min';
             }
         }
+        timerMetric = dep.minutes * 60;
         progressWidth = dep.minutes === 0 ? 0 : screenWidth;
     } else {
         timerValue = '...';
@@ -1234,19 +1327,20 @@ function updateWatchingDisplay(dep, route) {
     }
 
     if (distText) {
-        timerText.position(new Vector2(0, 18));
+        timerBaseY = 18;
         distanceText.text(distText);
     } else {
         // Recenter the timer whenever there is no usable distance text to show
-        timerText.position(new Vector2(0, 50));
+        timerBaseY = 50;
         distanceText.text('');
     }
+    timerText.position(new Vector2(timerBaseX, timerBaseY));
 
     platformText.text(dep.platform ? 'Platform ' + dep.platform : '');
 
     // Service name alternates with train model for metro trains
-    var bottomText = route || '';
-    if (dep.route_type === 0 && watchingVehicleDesc) {
+    var bottomText = disruptionLabel || route || '';
+    if (!disruptionLabel && dep.route_type === 0 && watchingVehicleDesc) {
         var nowSec = Math.floor(Date.now() / 1000);
         var showAlt = (nowSec % 6) >= 3;
         if (showAlt) {
@@ -1272,6 +1366,18 @@ function updateWatchingDisplay(dep, route) {
     }
 
     progressBar.size(new Vector2(progressWidth, 4));
+
+    if (lastRenderedWatchTimerValue !== null && timerValue !== lastRenderedWatchTimerValue &&
+            lastRenderedWatchTimerMetric !== null && timerMetric !== null) {
+        if (timerMetric < lastRenderedWatchTimerMetric) {
+            animateWatchTimerBounce(timerBaseX, timerBaseY);
+        } else if (timerMetric > lastRenderedWatchTimerMetric) {
+            animateWatchTimerShake(timerBaseX, timerBaseY);
+        }
+    }
+
+    lastRenderedWatchTimerValue = timerValue;
+    lastRenderedWatchTimerMetric = timerMetric;
 }
 
 // Stop station watching mode
@@ -1284,10 +1390,10 @@ function stopWatching() {
     watchingDistanceKm = null;
     watchingVehicleDesc = null;
     watchingRunRef = null;
-    watchingSelectedRunRef = null;
-    watchingSelectedDepartureTime = null;
+    clearWatchedSelection();
     watchingStopId = null;
     watchingDistanceRunRef = null;
+    resetWatchTimerAnimationState();
     if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
@@ -1516,7 +1622,8 @@ function connectWebSocket() {
                     var u = updates[i];
                     // Store full departures array for smart switching
                     buttonDepartures[u.button_id] = {
-                        departures: u.departures || []  // Array of {minutes, platform, departure_time}
+                        departures: u.departures || [],  // Array of {minutes, platform, departure_time}
+                        disruptionLabel: u.disruption_label || null
                     };
 
                     // Station watching mode: vibrate when minutes change

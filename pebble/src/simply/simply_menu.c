@@ -74,6 +74,8 @@ struct __attribute__((__packed__)) MenuItemPacket {
   uint16_t section;
   uint16_t item;
   uint32_t icon;
+  GColor8 background_color;
+  GColor8 text_color;
   uint16_t title_length;
   uint16_t subtitle_length;
   char buffer[];
@@ -454,52 +456,21 @@ static GColor prv_menu_highlight_fill_color(void) {
 
 static void prv_menu_draw_background_callback(GContext *ctx, const Layer *bg_layer,
                                               bool highlight, void *data) {
-  SimplyMenu *self = data;
   GRect bounds = layer_get_bounds(bg_layer);
-
-  if (highlight) {
-    graphics_context_set_fill_color(ctx, prv_menu_highlight_fill_color());
-    graphics_fill_rect(ctx, bounds, 0, GCornerNone);
-    return;
-  }
 
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
-
-  if (!self->menu_layer.menu_layer || !PBL_IF_RECT_ELSE(true, false)) {
-    return;
-  }
-
-  SimplyMenuSection *section = prv_get_menu_section(self, 0);
-  if (!section || !section->num_items) {
-    return;
-  }
-
-  const int16_t row_height = MENU_CELL_BASIC_CELL_HEIGHT;
-  const int16_t top_content_y = -scroll_layer_get_content_offset(
-      menu_layer_get_scroll_layer(self->menu_layer.menu_layer)).y;
-
-  for (uint16_t row = 0; row < section->num_items; ++row) {
-    const int16_t y = row * row_height - top_content_y;
-    if (y >= bounds.size.h) {
-      break;
-    }
-    if (y + row_height <= 0) {
-      continue;
-    }
-
-    graphics_context_set_fill_color(ctx, prv_menu_row_fill_color(row, section->num_items));
-    graphics_fill_rect(ctx,
-                       GRect(0, y, bounds.size.w, row_height),
-                       0, GCornerNone);
-  }
 }
 
 static void prv_menu_draw_row_chrome(GContext *ctx, const Layer *cell_layer,
                                      MenuIndex *cell_index, SimplyMenu *self,
-                                     SimplyMenuSection *section) {
+                                     SimplyMenuSection *section, SimplyMenuItem *item) {
   GRect bounds = layer_get_bounds(cell_layer);
   const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
+  const GColor row_color =
+      gcolor8_get_or(gcolor8_equal(item->background_color, GColor8Clear) ? GColor8Clear :
+                                                                      item->background_color,
+                     GColorClear);
 
   if (is_highlighted) {
     graphics_context_set_fill_color(ctx, gcolor8_get_or(self->menu_layer.highlight_background,
@@ -507,15 +478,22 @@ static void prv_menu_draw_row_chrome(GContext *ctx, const Layer *cell_layer,
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
     return;
   }
+
+  graphics_context_set_fill_color(ctx, gcolor_equal(row_color, GColorClear) ?
+                                       prv_menu_row_fill_color(cell_index->row, section->num_items) :
+                                       row_color);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 }
 
 static void prv_menu_draw_row_text(GContext *ctx, const Layer *cell_layer,
                                    SimplyMenu *self, SimplyMenuItem *item) {
   GRect bounds = layer_get_bounds(cell_layer);
   const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
+  const GColor8 preferred_text_color =
+      gcolor8_equal(item->text_color, GColor8Clear) ? self->menu_layer.normal_foreground :
+                                                      item->text_color;
   const GColor text_color =
-      gcolor8_get_or(is_highlighted ? self->menu_layer.highlight_foreground :
-                                      self->menu_layer.normal_foreground,
+      gcolor8_get_or(is_highlighted ? self->menu_layer.highlight_foreground : preferred_text_color,
                      GColorWhite);
   const GFont title_font = fonts_get_system_font(item->subtitle ? FONT_KEY_GOTHIC_24_BOLD :
                                                                  FONT_KEY_GOTHIC_28_BOLD);
@@ -552,7 +530,7 @@ static void prv_menu_draw_row_callback(GContext *ctx, const Layer *cell_layer,
   }
 
 #if defined(PBL_COLOR)
-  prv_menu_draw_row_chrome(ctx, cell_layer, cell_index, self, section);
+  prv_menu_draw_row_chrome(ctx, cell_layer, cell_index, self, section, item);
 #endif
 
   if (item->title == NULL) {
@@ -753,6 +731,8 @@ static void prv_handle_menu_item_packet(Simply *simply, Packet *data) {
     .title = packet->title_length ? strdup2(packet->buffer) : NULL,
     .subtitle = packet->subtitle_length ? strdup2(packet->buffer + packet->title_length + 1) : NULL,
     .icon = packet->icon,
+    .background_color = packet->background_color,
+    .text_color = packet->text_color,
   };
   simply_menu_add_item(simply->menu, item);
 }

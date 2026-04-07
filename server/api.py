@@ -139,6 +139,18 @@ _metrics_history: deque[dict[str, int | float | str]] = deque(
     maxlen=max(1, METRICS_HISTORY_MAX_POINTS)
 )
 _dashboard_local_hosts = {"localhost", "127.0.0.1", "[::1]", "::1"}
+_BUS_REPLACEMENT_PHRASES = (
+    "buses replacing trains",
+    "buses replace trains",
+    "buses are replacing",
+    "bus replacements",
+    "replacement buses",
+)
+_DISRUPTION_PRIORITY = {
+    "Bus Replacements": 0,
+    "Major Delays": 1,
+    "Minor Delays": 2,
+}
 
 
 def _utc_now() -> datetime:
@@ -191,6 +203,85 @@ def _empty_metrics_snapshot(timestamp: datetime | None = None) -> dict[str, int 
         "ptv_directions": 0,
         "ptv_search": 0,
     }
+
+
+def _classify_disruption_label(disruption: dict) -> str | None:
+    disruption_type = (disruption.get("disruption_type") or "").strip()
+    searchable_text = " ".join(
+        part.strip().lower()
+        for part in (
+            disruption.get("title") or "",
+            disruption.get("description") or "",
+            disruption_type,
+        )
+        if part
+    )
+
+    if any(phrase in searchable_text for phrase in _BUS_REPLACEMENT_PHRASES):
+        return "Bus Replacements"
+    if disruption_type == "Major Delays" or "major delays" in searchable_text or "major delay" in searchable_text:
+        return "Major Delays"
+    if disruption_type == "Minor Delays" or "minor delays" in searchable_text or "minor delay" in searchable_text:
+        return "Minor Delays"
+    return None
+
+
+def _summarize_favourite_disruption(
+    departures: list[dict],
+    disruptions: dict,
+    allowed_trip_pairs: set[tuple[int | None, int | None]] | None = None,
+) -> str | None:
+    if not disruptions:
+        return None
+
+    relevant_route_ids = {
+        departure.get("route_id")
+        for departure in departures
+        if departure.get("route_id") is not None
+    }
+    if allowed_trip_pairs:
+        relevant_route_ids.update(
+            route_id for route_id, _direction_id in allowed_trip_pairs if route_id is not None
+        )
+
+    relevant_disruption_ids = {
+        disruption_id
+        for departure in departures
+        for disruption_id in (departure.get("disruption_ids") or [])
+        if disruption_id is not None
+    }
+
+    best_label: str | None = None
+    best_priority = len(_DISRUPTION_PRIORITY)
+
+    for disruption_key, disruption in disruptions.items():
+        if disruption.get("disruption_status") != "Current":
+            continue
+
+        disruption_id = disruption.get("disruption_id")
+        affected_route_ids = {
+            route.get("route_id")
+            for route in disruption.get("routes", [])
+            if route.get("route_id") is not None
+        }
+        if (
+            disruption_id not in relevant_disruption_ids
+            and not affected_route_ids.intersection(relevant_route_ids)
+        ):
+            continue
+
+        label = _classify_disruption_label(disruption)
+        if not label:
+            continue
+
+        priority = _DISRUPTION_PRIORITY[label]
+        if priority < best_priority:
+            best_label = label
+            best_priority = priority
+            if priority == 0:
+                break
+
+    return best_label
 
 
 _latest_metrics_snapshot: dict[str, int | float | str] = _empty_metrics_snapshot()
@@ -1353,6 +1444,23 @@ def _resolve_allowed_trip_pairs(stop_id: int, dest_id: int | None, route_type: i
     return set((p["route_id"], p["direction_id"]) for p in patterns)
 
 
+def _fallback_direction_match(
+    departure: dict,
+    allowed_trip_pairs: set[tuple[int | None, int | None]] | None,
+    route_type: int,
+) -> bool:
+    """Allow through-routed metro services when the live route_id differs from the saved destination route."""
+    if route_type != RouteType.TRAIN or not allowed_trip_pairs:
+        return False
+
+    direction_id = departure.get("direction_id")
+    if direction_id is None:
+        return False
+
+    allowed_direction_ids = {allowed_direction_id for _route_id, allowed_direction_id in allowed_trip_pairs}
+    return direction_id in allowed_direction_ids
+
+
 def _extract_vehicle_position(run_data: dict) -> tuple[float, float] | None:
     """Extract vehicle position from PTV run response."""
     if not isinstance(run_data, dict):
@@ -1515,7 +1623,7 @@ async def fetch_departure_for_button(
 ) -> dict:
     """
     Fetch next departures for a stop/destination selection, using cache if fresh.
-    Returns {departures: [{minutes, platform, departure_time}, ...], fetched_at} or error dict.
+    Returns {departures: [{minutes, platform, departure_time}, ...], disruption_label, fetched_at} or error dict.
     Client can switch between cached departures as trains pass, reducing API calls.
     """
     cache_key = (stop_id, route_type, direction_id, dest_id)
@@ -1535,31 +1643,40 @@ async def fetch_departure_for_button(
                 route_type,
                 stop_id,
                 max_results=10,
-                expand=["Direction", "Run"],
+                expand=["Direction", "Run", "Disruption"],
             )
         departures = data.get("departures", [])
+        disruptions = data.get("disruptions", {})
         
         if not departures:
-            result = {"departures": [], "fetched_at": now}
+            result = {"departures": [], "disruption_label": None, "fetched_at": now}
             _departure_cache[cache_key] = result
             return result
         
         now_utc = datetime.now(timezone.utc)
         collected = []
+        filtered_departures = []
+        fallback_departures = []
         allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
 
         if dest_id is not None and not allowed_trip_pairs:
-            result = {"departures": [], "fetched_at": now}
+            result = {"departures": [], "disruption_label": None, "fetched_at": now}
             _departure_cache[cache_key] = result
             return result
         
         for d in departures:
             if allowed_trip_pairs is not None:
                 dep_pair = (d.get("route_id"), d.get("direction_id"))
-                if dep_pair not in allowed_trip_pairs:
+                if dep_pair in allowed_trip_pairs:
+                    filtered_departures.append(d)
+                elif _fallback_direction_match(d, allowed_trip_pairs, route_type):
+                    fallback_departures.append(d)
+                else:
                     continue
             elif direction_id is not None and d.get("direction_id") != direction_id:
                 continue
+            else:
+                filtered_departures.append(d)
             
             dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
             if not dep_str:
@@ -1584,14 +1701,47 @@ async def fetch_departure_for_button(
                 
                 if len(collected) >= max_departures:
                     break
+
+        if allowed_trip_pairs is not None and not filtered_departures and fallback_departures:
+            filtered_departures = fallback_departures
+            collected = []
+
+            for d in fallback_departures:
+                dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
+                if not dep_str:
+                    continue
+
+                dep_time = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
+                if dep_time > now_utc:
+                    minutes = int((dep_time - now_utc).total_seconds() / 60)
+                    minutes = max(0, min(720, minutes))
+                    platform = d.get("platform_number")
+                    run_ref = d.get("run_ref") or d.get("run_id")
+
+                    collected.append({
+                        "minutes": minutes,
+                        "platform": str(platform) if platform else None,
+                        "departure_time": dep_time.isoformat(),
+                        "run_ref": run_ref,
+                        "route_id": d.get("route_id"),
+                        "direction_id": d.get("direction_id"),
+                        "route_type": route_type,
+                    })
+
+                    if len(collected) >= max_departures:
+                        break
         
-        result = {"departures": collected, "fetched_at": now}
+        result = {
+            "departures": collected,
+            "disruption_label": _summarize_favourite_disruption(filtered_departures, disruptions, allowed_trip_pairs),
+            "fetched_at": now,
+        }
         _departure_cache[cache_key] = result
         return result
         
     except Exception as e:
         logger.warning("Favourite fetch error: %s", e)
-        return {"departures": [], "fetched_at": now}
+        return {"departures": [], "disruption_label": None, "fetched_at": now}
 
 
 async def broadcast_favourite_updates():
@@ -1657,12 +1807,14 @@ async def broadcast_favourite_updates():
         for cache_key, clients in all_buttons.items():
             result = fetch_results.get(cache_key, {"departures": []})
             departures = result.get("departures", [])
+            disruption_label = result.get("disruption_label")
             for ws, button_id in clients:
                 if ws not in client_updates:
                     client_updates[ws] = []
                 client_updates[ws].append({
                     "button_id": button_id,
-                    "departures": departures  # Array of {minutes, platform, departure_time}
+                    "departures": departures,  # Array of {minutes, platform, departure_time}
+                    "disruption_label": disruption_label,
                 })
         
         # Broadcast to each connected client
@@ -2060,10 +2212,11 @@ async def websocket_endpoint(
                         initial_updates = []
                         for btn, result in zip(parsed_buttons, results):
                             if isinstance(result, Exception):
-                                result = {"departures": []}
+                                result = {"departures": [], "disruption_label": None}
                             initial_updates.append({
                                 "button_id": btn["button_id"],
-                                "departures": result.get("departures", [])
+                                "departures": result.get("departures", []),
+                                "disruption_label": result.get("disruption_label"),
                             })
                         
                         sent = await _send_favourite_updates_if_active(websocket, initial_updates)
@@ -2410,10 +2563,11 @@ async def websocket_endpoint(
                             initial_updates = []
                             for btn, result in zip(valid_buttons, results):
                                 if isinstance(result, Exception):
-                                    result = {"departures": []}
+                                    result = {"departures": [], "disruption_label": None}
                                 initial_updates.append({
                                     "button_id": btn["button_id"],
-                                    "departures": result.get("departures", [])
+                                    "departures": result.get("departures", []),
+                                    "disruption_label": result.get("disruption_label"),
                                 })
                             
                             sent = await _send_favourite_updates_if_active(websocket, initial_updates)

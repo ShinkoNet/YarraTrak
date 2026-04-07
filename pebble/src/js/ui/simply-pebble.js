@@ -600,6 +600,8 @@ var MenuItemPacket = new struct([
   ['uint16', 'section'],
   ['uint16', 'item'],
   ['uint32', 'icon', ImageType],
+  ['uint8', 'backgroundColor', ColorType],
+  ['uint8', 'textColor', ColorType],
   ['uint16', 'titleLength', StringLengthType],
   ['uint16', 'subtitleLength', StringLengthType],
   ['cstring', 'title', StringType],
@@ -1226,6 +1228,8 @@ SimplyPebble.menuItem = function (section, item, def) {
     .section(section)
     .item(item)
     .icon(def.icon)
+    .backgroundColor(def.backgroundColor || 'clear')
+    .textColor(def.textColor || 'clear')
     .titleLength(def.title)
     .subtitleLength(def.subtitle)
     .title(def.title)
