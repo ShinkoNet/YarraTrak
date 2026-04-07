@@ -148,6 +148,7 @@ _BUS_REPLACEMENT_PHRASES = (
     "bus replacements",
     "replacement buses",
 )
+_BUS_KEYWORD_PATTERN = re.compile(r"\bbus(?:es)?\b", re.IGNORECASE)
 _BUS_REPLACEMENT_RANGE_PATTERNS = (
     re.compile(r"\bbetween\s+(?P<start>.+?)\s+and\s+(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
     re.compile(r"\bfrom\s+(?P<start>.+?)\s+to\s+(?P<end>.+?)(?:\bstation(?:s)?\b|[.,;:]|$)", re.IGNORECASE),
@@ -239,7 +240,9 @@ def _classify_disruption_label(disruption: dict) -> str | None:
         if part
     )
 
-    if any(phrase in searchable_text for phrase in _BUS_REPLACEMENT_PHRASES):
+    has_bus_keyword = bool(_BUS_KEYWORD_PATTERN.search(searchable_text))
+
+    if has_bus_keyword and any(phrase in searchable_text for phrase in _BUS_REPLACEMENT_PHRASES):
         return "Bus Replacements"
     if disruption_type == "Major Delays" or "major delays" in searchable_text or "major delay" in searchable_text:
         return "Major Delays"
