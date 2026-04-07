@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-PTV Notify is a voice-enabled public transport assistant for Melbourne, Australia. It provides real-time departure information for trains, trams, and buses using the PTV (Public Transport Victoria) API. The app features an LLM-powered conversational agent with speech-to-text (Groq Whisper) and text-to-speech (Azure Speech) capabilities.
+YarraTrak is a voice-enabled public transport assistant for Melbourne, Australia. It provides real-time departure information for trains, trams, and buses using the PTV (Public Transport Victoria) API. The app features an LLM-powered conversational agent with speech-to-text (Groq Whisper) and text-to-speech (Azure Speech) capabilities.
 
 ## Commands
 
@@ -31,7 +31,7 @@ pip install -r server/requirements.txt
 ### Deploy server code to Production
 ```bash
 #git commit and push first!
-ssh root@web01.waifu.trash "cd /srv/http/ptv-notify && git pull && systemctl restart netcavy-ptv"
+ssh root@web01.waifu.trash "cd /srv/http/yarratrak && git pull && systemctl restart netcavy-yarratrak"
 ```
 
 ### Test Pebble changes after each feature

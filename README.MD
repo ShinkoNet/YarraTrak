@@ -1,12 +1,12 @@
-# PTV Notify
+# YarraTrak
 
 <p align="center">
-  <img src="pebble/resources/images/ptvnotify-transparent-full.png" alt="PTV Notify" width="240">
+  <img src="pebble/resources/images/yarratrak-transparent-full.png" alt="YarraTrak" width="240">
 </p>
 
 **Real-time Melbourne public transport departures on your Pebble smartwatch.**
 
-PTV Notify shows live train, tram, and V/Line departure times directly on your wrist. Configure your favourite stations and get instant, glanceable info — with vibration patterns that encode the wait time, so you know when to leave without looking at the screen.
+YarraTrak shows live train, tram, and V/Line departure times directly on your wrist. Configure your favourite stations and get instant, glanceable info — with vibration patterns that encode the wait time, so you know when to leave without looking at the screen.
 
 ## Features
 
@@ -22,7 +22,7 @@ PTV Notify shows live train, tram, and V/Line departure times directly on your w
 
 ### For Users (Rebble Appstore)
 
-1. Install PTV Notify from the Rebble Appstore
+1. Install YarraTrak from the Rebble Appstore
 2. The app comes pre-loaded with 4 demo entries — open it and you'll see live departures immediately
 3. Open Settings on your phone to customise your favourite stations
 4. (Optional) Add an Anthropic API key in Settings to enable the voice/text AI assistant
@@ -100,7 +100,7 @@ The server collects anonymous metrics about query and request volumes so perform
 
 ## How Vibrations Work
 
-PTV Notify's vibration patterns encode the wait time haptically:
+YarraTrak's vibration patterns encode the wait time haptically:
 
 | Component | Duration | Example |
 |---|---|---|

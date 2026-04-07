@@ -1,5 +1,5 @@
 """
-PTV Notify API - FastAPI server for public transport queries.
+YarraTrak API - FastAPI server for public transport queries.
 
 Open-data architecture: departure/station endpoints are unauthenticated.
 Agent (LLM) endpoints use Bring-Your-Own-Key (BYOK) via Anthropic API key.
@@ -46,7 +46,7 @@ from .config import (
     WS_QUERY_RATE_LIMIT,
 )
 
-app = FastAPI(title="PTV Notify", version="1.0.0")
+app = FastAPI(title="YarraTrak", version="1.0.0")
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -1383,8 +1383,8 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
 <body>
   <main class="shell">
     <section class="hero">
-      <div class="eyebrow">PTV Notify Internal Ops</div>
-      <h1>PTV Notify Realtime Metrics</h1>
+      <div class="eyebrow">YarraTrak Internal Ops</div>
+      <h1>YarraTrak Realtime Metrics</h1>
       <p>The dashboard polls the in-process metrics snapshot directly from FastAPI, refreshes automatically every 15 seconds, and keeps a rolling in-memory history buffer that caps at one week.</p>
       <div class="hero-note">Auto-refresh is always on. History resets when the service restarts.</div>
     </section>
@@ -2436,7 +2436,7 @@ async def public_health():
     return JSONResponse(
         content={
             "ok": True,
-            "service": "ptv-notify",
+            "service": "yarratrak",
             "timestamp": _utc_isoformat(),
         },
         headers={"Cache-Control": "no-store"},

@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>PTV Notify Settings</title>
+    <title>YarraTrak Settings</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * {
@@ -43,7 +43,8 @@
             color: #aaa;
         }
 
-        input[type="text"] {
+        input[type="text"],
+        input[type="password"] {
             width: 100%;
             padding: 12px;
             font-size: 16px;
@@ -207,6 +208,45 @@
             margin-bottom: 15px;
         }
 
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 0;
+            margin-bottom: 0;
+            color: #fff;
+        }
+
+        .toggle-copy {
+            flex: 1;
+        }
+
+        .toggle-title {
+            display: block;
+            font-size: 15px;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .toggle-hint {
+            font-size: 12px;
+            color: #888;
+            line-height: 1.4;
+        }
+
+        input[type="checkbox"] {
+            width: 22px;
+            height: 22px;
+            accent-color: #ff6b00;
+            flex-shrink: 0;
+        }
+
+        .divider {
+            height: 1px;
+            background: #333;
+        }
+
         select {
             width: 100%;
             padding: 12px;
@@ -231,24 +271,28 @@
 
 <body>
     <div class="header-row">
-        <h1>🚆 PTV Notify</h1>
+        <h1>🚆 YarraTrak</h1>
         <span id="save_status" style="color: #4CAF50; font-size: 14px;"></span>
     </div>
 
-    <h2>Server</h2>
-    <div class="form-group">
-        <label>Server URL</label>
-        <input type="text" id="server_url" placeholder="https://ptv.netcavy.net">
-        <div class="hint">Default: https://ptv.netcavy.net</div>
+    <div id="server_settings_group">
+        <h2>Server</h2>
+        <div class="form-group">
+            <label>Server URL</label>
+            <input type="text" id="server_url" placeholder="https://ptv.netcavy.net">
+            <div class="hint">Default: https://ptv.netcavy.net</div>
+        </div>
     </div>
 
-    <h2>AI Agent (Optional)</h2>
-    <div class="form-group">
-        <label>Anthropic API Key</label>
-        <div style="display: flex; gap: 10px;">
-            <input type="password" id="llm_api_key" placeholder="sk-ant-..." style="flex-grow: 1;">
+    <div id="ai_settings_group">
+        <h2>AI Agent (Optional)</h2>
+        <div class="form-group">
+            <label>Anthropic API Key</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="password" id="llm_api_key" placeholder="sk-ant-..." style="flex-grow: 1;">
+            </div>
+            <div class="hint">Optional — enables voice/text queries via Claude. Get a key at <a href="https://console.anthropic.com" style="color: #ff6b00;">console.anthropic.com</a></div>
         </div>
-        <div class="hint">Optional — enables voice/text queries via Claude. Get a key at <a href="https://console.anthropic.com" style="color: #ff6b00;">console.anthropic.com</a></div>
     </div>
 
     <h2>Favourite Entries</h2>
@@ -266,6 +310,53 @@
     <details style="margin-top: 30px;">
         <summary style="color: #888; cursor: pointer; font-size: 14px;">Extra Settings</summary>
         <div style="padding: 15px; background: #222; border-radius: 8px; margin-top: 10px;">
+            <label class="toggle-row" for="use_24hr_time">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Use 24-hour time</span>
+                    <span class="toggle-hint">Shows planned bus replacement times as 16:30 instead of 4:30pm.</span>
+                </span>
+                <input type="checkbox" id="use_24hr_time">
+            </label>
+            <div class="divider"></div>
+            <label class="toggle-row" for="disable_ai_assistant">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Disable AI assistant</span>
+                    <span class="toggle-hint">Hides the Ask menu option and the API key field on this page.</span>
+                </span>
+                <input type="checkbox" id="disable_ai_assistant">
+            </label>
+            <div class="divider"></div>
+            <label class="toggle-row" for="enable_third_party_endpoint">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Enable 3rd-Party endpoint</span>
+                    <span class="toggle-hint">Shows the endpoint form. When off, YarraTrak always uses ptv.netcavy.net.</span>
+                </span>
+                <input type="checkbox" id="enable_third_party_endpoint">
+            </label>
+            <div class="divider"></div>
+            <label class="toggle-row" for="disable_vibration">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Disable vibration</span>
+                    <span class="toggle-hint">Turns off all haptics, including countdown and confirmation vibrations.</span>
+                </span>
+                <input type="checkbox" id="disable_vibration">
+            </label>
+            <div class="divider"></div>
+            <label class="toggle-row" for="disable_ripple_vfx">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Disable ripple VFX</span>
+                    <span class="toggle-hint">Uses a plain black watch page background instead of the animated ripple.</span>
+                </span>
+                <input type="checkbox" id="disable_ripple_vfx">
+            </label>
+            <div class="divider"></div>
+            <label class="toggle-row" for="disable_timer_shake">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Disable timer shake</span>
+                    <span class="toggle-hint">Stops the watch timer bump and shake animations while it updates.</span>
+                </span>
+                <input type="checkbox" id="disable_timer_shake">
+            </label>
             <button id="reset_defaults" style="background: #4CAF50; margin-top: 0; margin-bottom: 0;">Reset to Default</button>
         </div>
     </details>
@@ -285,15 +376,42 @@
             return {};
         }
 
+        function isTruthyOption(value) {
+            return value === true || value === 'true' || value === 1 || value === '1';
+        }
+
         var options = getOptions();
 
         // Init UI
         var serverUrlEl = document.getElementById('server_url');
         var llmKeyEl = document.getElementById('llm_api_key');
+        var use24hrTimeEl = document.getElementById('use_24hr_time');
+        var disableAiAssistantEl = document.getElementById('disable_ai_assistant');
+        var enableThirdPartyEndpointEl = document.getElementById('enable_third_party_endpoint');
+        var disableVibrationEl = document.getElementById('disable_vibration');
+        var disableRippleVfxEl = document.getElementById('disable_ripple_vfx');
+        var disableTimerShakeEl = document.getElementById('disable_timer_shake');
+        var serverSettingsGroupEl = document.getElementById('server_settings_group');
+        var aiSettingsGroupEl = document.getElementById('ai_settings_group');
         serverUrlEl.value = options.server_url || serverBase;
         if (options.llm_api_key) {
             llmKeyEl.value = options.llm_api_key;
         }
+        use24hrTimeEl.checked = isTruthyOption(options.use_24hr_time);
+        disableAiAssistantEl.checked = isTruthyOption(options.disable_ai_assistant);
+        enableThirdPartyEndpointEl.checked = isTruthyOption(options.enable_third_party_endpoint);
+        disableVibrationEl.checked = isTruthyOption(options.disable_vibration);
+        disableRippleVfxEl.checked = isTruthyOption(options.disable_ripple_vfx);
+        disableTimerShakeEl.checked = isTruthyOption(options.disable_timer_shake);
+
+        function updateSectionVisibility() {
+            serverSettingsGroupEl.style.display = enableThirdPartyEndpointEl.checked ? 'block' : 'none';
+            aiSettingsGroupEl.style.display = disableAiAssistantEl.checked ? 'none' : 'block';
+        }
+
+        disableAiAssistantEl.addEventListener('change', updateSectionVisibility);
+        enableThirdPartyEndpointEl.addEventListener('change', updateSectionVisibility);
+        updateSectionVisibility();
 
         // Dynamic Entry Management
         var MAX_ENTRIES = 10;
@@ -570,11 +688,28 @@
             return match && decodeURIComponent(match[1].replace(/\+/g, ' '));
         }
 
+        function getSelectedServerBase() {
+            if (!enableThirdPartyEndpointEl.checked) {
+                return serverBase;
+            }
+            return serverUrlEl.value.trim() || serverBase;
+        }
+
         document.getElementById('save').addEventListener('click', function () {
             var llmKey = llmKeyEl.value.trim();
             var serverUrl = serverUrlEl.value.trim() || serverBase;
 
-            var newOptions = { server_url: serverUrl, llm_api_key: llmKey, entry_count: entryCount };
+            var newOptions = {
+                server_url: serverUrl,
+                llm_api_key: llmKey,
+                entry_count: entryCount,
+                use_24hr_time: use24hrTimeEl.checked,
+                disable_ai_assistant: disableAiAssistantEl.checked,
+                enable_third_party_endpoint: enableThirdPartyEndpointEl.checked,
+                disable_vibration: disableVibrationEl.checked,
+                disable_ripple_vfx: disableRippleVfxEl.checked,
+                disable_timer_shake: disableTimerShakeEl.checked
+            };
             for (var i = 1; i <= entryCount; i++) {
                 var startIdEl = document.getElementById('entry' + i + '_start_id');
                 var destIdEl = document.getElementById('entry' + i + '_dest_id');
@@ -906,7 +1041,7 @@
 
 
         async function loadStationData(routeType) {
-            var base = serverUrlEl.value.trim() || serverBase;
+            var base = getSelectedServerBase();
             if (base.endsWith('/')) base = base.slice(0, -1);
 
             // Map route_type to API type param
@@ -947,6 +1082,15 @@
             if (!loadedTypes[0]) {
                 await loadStationData(0);
             }
+
+            use24hrTimeEl.checked = false;
+            disableAiAssistantEl.checked = false;
+            enableThirdPartyEndpointEl.checked = false;
+            disableVibrationEl.checked = false;
+            disableRippleVfxEl.checked = false;
+            disableTimerShakeEl.checked = false;
+            serverUrlEl.value = serverBase;
+            updateSectionVisibility();
 
             // First, clear all entries
             while (entryCount > 0) removeEntry();
