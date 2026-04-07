@@ -417,6 +417,31 @@ def test_summarize_favourite_disruption_surfaces_tomorrow_planned_replacements(r
     assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements Tomorrow"
 
 
+def test_summarize_favourite_disruption_surfaces_today_planned_replacements_with_time(reset_state, monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = datetime(2026, 4, 7, 15, 7, 0, tzinfo=api._MELBOURNE_TZ)
+            return current if tz is not None else current.replace(tzinfo=None)
+
+    monkeypatch.setattr(api, "datetime", FixedDateTime)
+
+    departures = [{"route_id": 11, "direction_id": 1, "disruption_ids": [304]}]
+    disruptions = {
+        "304": {
+            "disruption_id": 304,
+            "disruption_status": "Planned",
+            "disruption_type": "Planned Works",
+            "title": "Buses replacing trains from 22:30 tonight",
+            "description": "Buses replace trains between Oakleigh and Westall from 22:30 until last service.",
+            "from_date": "2026-04-07T22:30:00+10:00",
+            "routes": [{"route_id": 11}],
+        },
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements 10:30pm"
+
+
 def test_summarize_favourite_disruption_ignores_unrelated_disruptions(reset_state):
     departures = [{"route_id": 11, "disruption_ids": []}]
     disruptions = {
@@ -469,7 +494,15 @@ def test_bus_replacement_range_keeps_affected_trip_segment(reset_state):
     assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements Ahead"
 
 
-def test_collect_favourite_disruption_labels_orders_all_active_labels(reset_state):
+def test_collect_favourite_disruption_labels_orders_all_active_labels(reset_state, monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = datetime(2026, 4, 7, 15, 7, 0, tzinfo=api._MELBOURNE_TZ)
+            return current if tz is not None else current.replace(tzinfo=None)
+
+    monkeypatch.setattr(api, "datetime", FixedDateTime)
+
     departures = [
         {"route_id": 11, "direction_id": 1, "disruption_ids": [601, 602, 603]},
     ]
@@ -504,7 +537,16 @@ def test_collect_favourite_disruption_labels_orders_all_active_labels(reset_stat
             "disruption_type": "Planned Works",
             "title": "Pakenham Line: Buses replace trains from first service tomorrow",
             "description": "Buses replace trains between Oakleigh and Westall tomorrow.",
-            "from_date": (datetime.now(api._MELBOURNE_TZ) + timedelta(days=1)).replace(hour=5, minute=0, second=0, microsecond=0).isoformat(),
+            "from_date": "2026-04-08T05:00:00+10:00",
+            "routes": [{"route_id": 11}],
+        },
+        "605": {
+            "disruption_id": 605,
+            "disruption_status": "Planned",
+            "disruption_type": "Planned Works",
+            "title": "Pakenham Line: Buses replace trains from 22:30 tonight",
+            "description": "Buses replace trains between Oakleigh and Westall from 22:30 until last service.",
+            "from_date": "2026-04-07T22:30:00+10:00",
             "routes": [{"route_id": 11}],
         },
     }
@@ -515,6 +557,7 @@ def test_collect_favourite_disruption_labels_orders_all_active_labels(reset_stat
         "Bus Replacements Ahead",
         "Major Delays 25m",
         "Minor Delays 10m",
+        "Bus Replacements 10:30pm",
         "Bus Replacements Tomorrow",
     ]
 
