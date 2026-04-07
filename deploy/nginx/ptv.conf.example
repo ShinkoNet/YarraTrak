@@ -10,7 +10,7 @@ upstream ptv_fastapi {
 
 server {
     listen 443 ssl http2;
-    server_name ptv.waifu.trash;
+    server_name ptv.yourinternal.domain;
 
     ssl_certificate     /etc/nginx/ssl/waifu.trash.crt;
     ssl_certificate_key /etc/nginx/ssl/waifu.trash.key;
