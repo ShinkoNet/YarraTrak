@@ -429,7 +429,7 @@ function isUpcomingServiceChangeLabel(label) {
     if (!/^(Service Changes|Starts |Ends |Change at |Starts\/Ends )/.test(label)) {
         return false;
     }
-    return / Tomorrow$/i.test(label) || / \d{1,2}:\d{2}(am|pm)$/i.test(label);
+    return / Tomorrow$/i.test(label) || / \d{1,2}:\d{2}(?:am|pm)?$/i.test(label);
 }
 
 function getMenuDisruptionLabel(label) {
