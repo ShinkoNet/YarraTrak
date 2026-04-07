@@ -1,5 +1,8 @@
-# Documentation
+# Documentation and local instructions
 docs/
+CLAUDE.md
+AGENTS.md
+agents.md
 
 # Python
 __pycache__/
@@ -60,6 +63,7 @@ node_modules/
 # Temporary files
 *.tmp
 *.temp
+.pytest_cache/
 tools/
 .claude/
 .codex/
@@ -69,6 +73,6 @@ tools/
 pebble/build/
 pebble/.lock-waf*
 
-# Reference projects
+# Legacy top-level reference checkouts
 pebble-hass-reference/
 pebblejs-reference/
