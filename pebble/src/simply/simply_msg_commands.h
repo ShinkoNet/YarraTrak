@@ -27,6 +27,7 @@ enum Command {
   CommandCardStyle,
   CommandVibe,
   CommandVibeCustom,
+  CommandVibeCancel,
   CommandLight,
   CommandAccelPeek,
   CommandAccelConfig,
