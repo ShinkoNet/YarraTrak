@@ -431,7 +431,7 @@ def test_bus_replacement_range_keeps_affected_trip_segment(reset_state):
         }
     }
 
-    assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements"
+    assert api._summarize_favourite_disruption(departures, disruptions, 1230, 1232, 0) == "Bus Replacements Ahead"
 
 
 @pytest.mark.asyncio
@@ -488,8 +488,8 @@ async def test_fetch_departure_for_button_allows_through_routed_train_match(rese
                     "disruption_id": 501,
                     "disruption_status": "Current",
                     "disruption_type": "Part Suspended",
-                    "title": "Cranbourne and Pakenham lines: Buses replacing trains",
-                    "description": "Passengers should use replacement buses.",
+                    "title": "Cranbourne and Pakenham lines: Buses replacing trains on Tuesday 7 April 2026",
+                    "description": "Passengers are advised that buses are currently replacing train services between Oakleigh and Westall Stations.",
                     "routes": [{"route_id": 11}],
                 }
             },
@@ -508,7 +508,7 @@ async def test_fetch_departure_for_button_allows_through_routed_train_match(rese
 
     assert result["departures"]
     assert result["departures"][0]["route_id"] == 11
-    assert result["disruption_label"] == "Bus Replacements"
+    assert result["disruption_label"] == "Bus Replacements Ahead"
 
 
 @pytest.mark.asyncio
