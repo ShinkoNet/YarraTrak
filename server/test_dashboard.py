@@ -540,6 +540,60 @@ def test_bus_replacement_ignores_when_another_route_still_reaches_destination(re
     assert api._summarize_favourite_disruption(departures, disruptions, 1068, 1120, 0) is None
 
 
+def test_bus_replacement_uses_downstream_branch_when_through_routed_departure_omits_disruption(reset_state):
+    departures = [
+        {"route_id": 14, "direction_id": 14, "disruption_ids": []},
+    ]
+    disruptions = {
+        "407": {
+            "disruption_id": 407,
+            "disruption_status": "Current",
+            "disruption_type": "Part Suspended",
+            "title": "Cranbourne and Pakenham lines: Buses replacing trains on Tuesday 7 April 2026",
+            "description": "Passengers are advised that buses are currently replacing Cranbourne and Pakenham train services between Oakleigh and Westall Stations.",
+            "routes": [{"route_id": 11}],
+        }
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1233, 1139, 0) == "Bus Replacements Ahead"
+
+
+def test_bus_replacement_uses_cranbourne_branch_when_through_routed_departure_omits_disruption(reset_state):
+    departures = [
+        {"route_id": 14, "direction_id": 14, "disruption_ids": []},
+    ]
+    disruptions = {
+        "408": {
+            "disruption_id": 408,
+            "disruption_status": "Current",
+            "disruption_type": "Part Suspended",
+            "title": "Cranbourne and Pakenham lines: Buses replacing trains on Tuesday 7 April 2026",
+            "description": "Passengers are advised that buses are currently replacing Cranbourne and Pakenham train services between Oakleigh and Westall Stations.",
+            "routes": [{"route_id": 4}],
+        }
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1233, 1045, 0) == "Bus Replacements Ahead"
+
+
+def test_bus_replacement_uses_cranbourne_branch_towards_anzac(reset_state):
+    departures = [
+        {"route_id": 14, "direction_id": 1, "disruption_ids": []},
+    ]
+    disruptions = {
+        "409": {
+            "disruption_id": 409,
+            "disruption_status": "Current",
+            "disruption_type": "Part Suspended",
+            "title": "Cranbourne and Pakenham lines: Buses replacing trains on Tuesday 7 April 2026",
+            "description": "Passengers are advised that buses are currently replacing Cranbourne and Pakenham train services between Oakleigh and Westall Stations.",
+            "routes": [{"route_id": 4}],
+        }
+    }
+
+    assert api._summarize_favourite_disruption(departures, disruptions, 1045, 1236, 0) == "Bus Replacements Ahead"
+
+
 def test_collect_favourite_disruption_labels_orders_all_active_labels(reset_state, monkeypatch):
     class FixedDateTime(datetime):
         @classmethod
