@@ -11,6 +11,9 @@ if ! qemu-pebble --version >/dev/null 2>&1; then
   fi
 fi
 
+echo "=== Bundling PKJS sources ==="
+python3 tools/build_pkjs_bundle.py src/pkjs_src appinfo.json src/pkjs/bundle.js
+
 echo "=== Building Pebble App ==="
 pebble build
 
