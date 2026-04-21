@@ -2,7 +2,7 @@
 
 #include <pebble.h>
 
-#include "simply/simply.h"
+#include "../simply/simply.h"
 
 #ifdef PBL_SDK_2
 

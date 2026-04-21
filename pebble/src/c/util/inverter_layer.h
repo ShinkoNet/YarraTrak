@@ -2,7 +2,7 @@
 
 #include <pebble.h>
 
-#include "util/math.h"
+#include "math.h"
 
 #ifdef PBL_SDK_3
 
