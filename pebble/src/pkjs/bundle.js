@@ -2557,7 +2557,309 @@ Emitter.prototype.emit = function(type, subtype, e) {
 module.exports = Emitter;
 
 });
-__loader.define("lib/myutil.js", 2560, function(exports, module, require) {
+__loader.define("lib/image.js", 2560, function(exports, module, require) {
+var PNG = require('vendor/png');
+
+var PNGEncoder = require('lib/png-encoder');
+
+var image = {};
+
+var getPos = function(width, x, y) {
+  return y * width * 4 + x * 4;
+};
+
+//! Convert an RGB pixel array into a single grey color
+var getPixelGrey = function(pixels, pos) {
+  return ((pixels[pos] + pixels[pos + 1] + pixels[pos + 2]) / 3) & 0xFF;
+};
+
+//! Convert an RGB pixel array into a single uint8 2 bitdepth per channel color
+var getPixelColorUint8 = function(pixels, pos) {
+  var r = Math.min(Math.max(parseInt(pixels[pos    ] / 64 + 0.5), 0), 3);
+  var g = Math.min(Math.max(parseInt(pixels[pos + 1] / 64 + 0.5), 0), 3);
+  var b = Math.min(Math.max(parseInt(pixels[pos + 2] / 64 + 0.5), 0), 3);
+  return (0x3 << 6) | (r << 4) | (g << 2) | b;
+};
+
+//! Get an RGB vector from an RGB pixel array
+var getPixelColorRGB8 = function(pixels, pos) {
+  return [pixels[pos], pixels[pos + 1], pixels[pos + 2]];
+};
+
+//! Normalize the color channels to be identical
+image.greyscale = function(pixels, width, height, converter) {
+  converter = converter || getPixelGrey;
+  for (var y = 0, yy = height; y < yy; ++y) {
+    for (var x = 0, xx = width; x < xx; ++x) {
+      var pos = getPos(width, x, y);
+      var newColor = converter(pixels, pos);
+      for (var i = 0; i < 3; ++i) {
+        pixels[pos + i] = newColor;
+      }
+    }
+  }
+};
+
+//! Convert to an RGBA pixel array into a row major matrix raster
+image.toRaster = function(pixels, width, height, converter) {
+  converter = converter || getPixelColorRGB8;
+  var matrix = [];
+  for (var y = 0, yy = height; y < yy; ++y) {
+    var row = matrix[y] = [];
+    for (var x = 0, xx = width; x < xx; ++x) {
+      var pos = getPos(width, x, y);
+      row[x] = converter(pixels, pos);
+    }
+  }
+  return matrix;
+};
+
+image.dithers = {};
+
+image.dithers['floyd-steinberg'] = [
+  [ 1, 0, 7/16],
+  [-1, 1, 3/16],
+  [ 0, 1, 5/16],
+  [ 1, 1, 1/16]];
+
+image.dithers['jarvis-judice-ninke'] = [
+  [ 1, 0, 7/48],
+  [ 2, 0, 5/48],
+  [-2, 1, 3/48],
+  [-1, 1, 5/48],
+  [ 0, 1, 7/48],
+  [ 1, 1, 5/48],
+  [ 2, 1, 3/48],
+  [-2, 2, 1/48],
+  [-1, 2, 3/48],
+  [ 0, 2, 5/48],
+  [ 1, 2, 3/48],
+  [ 2, 2, 1/48]];
+
+image.dithers.sierra = [
+  [ 1, 0, 5/32],
+  [ 2, 0, 3/32],
+  [-2, 1, 2/32],
+  [-1, 1, 4/32],
+  [ 0, 1, 5/32],
+  [ 1, 1, 4/32],
+  [ 2, 1, 2/32],
+  [-1, 2, 2/32],
+  [ 0, 2, 3/32],
+  [ 1, 2, 2/32]];
+
+image.dithers['default'] = image.dithers.sierra;
+
+//! Get the nearest normalized grey color
+var getChannelGrey = function(color) {
+  return color >= 128 ? 255 : 0;
+};
+
+//! Get the nearest normalized 2 bitdepth color
+var getChannel2 = function(color) {
+  return Math.min(Math.max(parseInt(color / 64 + 0.5), 0) * 64, 255);
+};
+
+image.dither = function(pixels, width, height, dithers, converter) {
+  converter = converter || getChannel2;
+  dithers = dithers || image.dithers['default'];
+  var numDithers = dithers.length;
+  for (var y = 0, yy = height; y < yy; ++y) {
+    for (var x = 0, xx = width; x < xx; ++x) {
+      var pos = getPos(width, x, y);
+      for (var i = 0; i < 3; ++i) {
+        var oldColor = pixels[pos + i];
+        var newColor = converter(oldColor);
+        var error = oldColor - newColor;
+        pixels[pos + i] = newColor;
+        for (var j = 0; j < numDithers; ++j) {
+          var dither = dithers[j];
+          var x2 = x + dither[0], y2 = y + dither[1];
+          if (x2 >= 0 && x2 < width && y < height) {
+            pixels[getPos(width, x2, y2) + i] += parseInt(error * dither[2]);
+          }
+        }
+      }
+    }
+  }
+};
+
+//! Dither a pixel buffer by image properties
+image.ditherByProps = function(pixels, img, converter) {
+  if (img.dither) {
+    var dithers = image.dithers[img.dither];
+    image.dither(pixels, img.width, img.height, dithers, converter);
+  }
+};
+
+image.resizeNearest = function(pixels, width, height, newWidth, newHeight) {
+  var newPixels = new Array(newWidth * newHeight * 4);
+  var widthRatio = width / newWidth;
+  var heightRatio = height / newHeight;
+  for (var y = 0, yy = newHeight; y < yy; ++y) {
+    for (var x = 0, xx = newWidth; x < xx; ++x) {
+      var x2 = parseInt(x * widthRatio);
+      var y2 = parseInt(y * heightRatio);
+      var pos2 = getPos(width, x2, y2);
+      var pos = getPos(newWidth, x, y);
+      for (var i = 0; i < 4; ++i) {
+        newPixels[pos + i] = pixels[pos2 + i];
+      }
+    }
+  }
+  return newPixels;
+};
+
+image.resizeSample = function(pixels, width, height, newWidth, newHeight) {
+  var newPixels = new Array(newWidth * newHeight * 4);
+  var widthRatio = width / newWidth;
+  var heightRatio = height / newHeight;
+  for (var y = 0, yy = newHeight; y < yy; ++y) {
+    for (var x = 0, xx = newWidth; x < xx; ++x) {
+      var x2 = Math.min(parseInt(x * widthRatio), width - 1);
+      var y2 = Math.min(parseInt(y * heightRatio), height - 1);
+      var pos = getPos(newWidth, x, y);
+      for (var i = 0; i < 4; ++i) {
+        newPixels[pos + i] = ((pixels[getPos(width, x2  , y2  ) + i] +
+                               pixels[getPos(width, x2+1, y2  ) + i] +
+                               pixels[getPos(width, x2  , y2+1) + i] +
+                               pixels[getPos(width, x2+1, y2+1) + i]) / 4) & 0xFF;
+      }
+    }
+  }
+  return newPixels;
+};
+
+image.resize = function(pixels, width, height, newWidth, newHeight) {
+  if (newWidth < width || newHeight < height) {
+    return image.resizeSample(pixels, width, height, newWidth, newHeight);
+  } else {
+    return image.resizeNearest(pixels, width, height, newWidth, newHeight);
+  }
+};
+
+//! Resize a pixel buffer by image properties
+image.resizeByProps = function(pixels, img) {
+  if (img.width !== img.originalWidth || img.height !== img.originalHeight) {
+    return image.resize(pixels, img.originalWidth, img.originalHeight, img.width, img.height);
+  } else {
+    return pixels;
+  }
+};
+
+//! Convert to a GBitmap with bitdepth 1
+image.toGbitmap1 = function(pixels, width, height) {
+  var rowBytes = width * 4;
+
+  var gpixels = [];
+  var growBytes = Math.ceil(width / 32) * 4;
+  for (var i = 0, ii = height * growBytes; i < ii; ++i) {
+    gpixels[i] = 0;
+  }
+
+  for (var y = 0, yy = height; y < yy; ++y) {
+    for (var x = 0, xx = width; x < xx; ++x) {
+      var grey = 0;
+      var pos = getPos(width, x, y);
+      for (var j = 0; j < 3; ++j) {
+        grey += pixels[pos + j];
+      }
+      grey /= 3 * 255;
+      if (grey >= 0.5) {
+        var gbytePos = y * growBytes + parseInt(x / 8);
+        gpixels[gbytePos] += 1 << (x % 8);
+      }
+    }
+  }
+
+  var gbitmap = {
+    width: width,
+    height: height,
+    pixelsLength: gpixels.length,
+    pixels: gpixels,
+  };
+
+  return gbitmap;
+};
+
+//! Convert to a PNG with total color bitdepth 8
+image.toPng8 = function(pixels, width, height) {
+  var raster = image.toRaster(pixels, width, height, getPixelColorRGB8);
+
+  var palette = [];
+  var colorMap = {};
+  var numColors = 0;
+  for (var y = 0, yy = height; y < yy; ++y) {
+    var row = raster[y];
+    for (var x = 0, xx = width; x < xx; ++x) {
+      var color = row[x];
+      var hash = getPixelColorUint8(color, 0);
+      if (!(hash in colorMap)) {
+        colorMap[hash] = numColors;
+        palette[numColors++] = color;
+      }
+     row[x] = colorMap[hash];
+    }
+  }
+
+  var bitdepth = 8;
+  var colorType = 3; // 8-bit palette
+  var bytes = PNGEncoder.encode(raster, bitdepth, colorType, palette);
+
+  var png = {
+    width: width,
+    height: height,
+    pixelsLength: bytes.array.length,
+    pixels: bytes.array,
+  };
+
+  return png;
+};
+
+//! Set the size maintaining the aspect ratio
+image.setSizeAspect = function(img, width, height) {
+  img.originalWidth = width;
+  img.originalHeight = height;
+  if (img.width) {
+    if (!img.height) {
+      img.height = parseInt(height * (img.width / width));
+    }
+  } else if (img.height) {
+    if (!img.width) {
+      img.width = parseInt(width * (img.height / height));
+    }
+  } else {
+    img.width = width;
+    img.height = height;
+  }
+};
+
+image.load = function(img, bitdepth, callback) {
+  PNG.load(img.url, function(png) {
+    var pixels = png.decode();
+    if (bitdepth === 1) {
+      image.greyscale(pixels, png.width, png.height);
+    }
+    image.setSizeAspect(img, png.width, png.height);
+    pixels = image.resizeByProps(pixels, img);
+    image.ditherByProps(pixels, img,
+                        bitdepth === 1 ? getChannelGrey : getChannel2);
+    if (bitdepth === 8) {
+      img.image = image.toPng8(pixels, img.width, img.height);
+    } else if (bitdepth === 1) {
+      img.image = image.toGbitmap1(pixels, img.width, img.height);
+    }
+    if (callback) {
+      callback(img);
+    }
+  });
+  return img;
+};
+
+module.exports = image;
+
+});
+__loader.define("lib/myutil.js", 2862, function(exports, module, require) {
 var util2 = require('util2');
 
 var myutil = {};
@@ -2646,7 +2948,389 @@ myutil.toCConstantName = function(x) {
 module.exports = myutil;
 
 });
-__loader.define("lib/safe.js", 2649, function(exports, module, require) {
+__loader.define("lib/png-encoder.js", 2951, function(exports, module, require) {
+/**
+ * PNG Encoder from data-demo
+ * https://code.google.com/p/data-demo/
+ *
+ * @author mccalluc@yahoo.com
+ * @license MIT
+ */
+
+var Zlib = require('vendor/zlib');
+
+var png = {};
+
+png.Bytes = function(data, optional) {
+  var datum, i;
+  this.array = [];
+
+  if (!optional) {
+
+    if (data instanceof Array || data instanceof Uint8Array) {
+      for (i = 0; i < data.length; i++) {
+        datum = data[i];
+        if (datum !== null) { // nulls and undefineds are silently skipped.
+          if (typeof datum !== "number") {
+            throw new Error("Expected number, not "+(typeof datum));
+          } else if (Math.floor(datum) != datum) {
+            throw new Error("Expected integer, not "+datum);
+          } else if (datum < 0 || datum > 255) {
+            throw new Error("Expected integer in [0,255], not "+datum);
+          }
+          this.array.push(datum);
+        }
+      }
+    }
+
+    else if (typeof data == "string") {
+      for (i = 0; i < data.length; i++) {
+        datum = data.charCodeAt(i);
+        if (datum < 0 || datum > 255) {
+          throw new Error("Characters above 255 not allowed without explicit encoding: "+datum);
+        }
+        this.array.push(datum);
+      }
+    }
+
+    else if (data instanceof png.Bytes) {
+      this.array.push.apply(this.array, data.array);
+    }
+
+    else if (typeof data == "number") {
+        return new png.Bytes([data]);
+    }
+
+    else {
+      throw new Error("Unexpected data type: "+data);
+    }
+
+  }
+
+  else { // optional is defined.
+
+    // TODO: generalize when generalization is required.
+    if (typeof data == "number" &&
+        Math.floor(data) == data &&
+        data >= 0 &&
+        (optional.bytes in {4:1, 2:1}) &&
+        // don't change this last one to bit shifts: in JS, 0x100 << 24 == 0.
+        data < Math.pow(256, optional.bytes)) {
+      this.array = [
+        (data & 0xFF000000) >>> 24,
+        (data & 0x00FF0000) >>> 16,
+        (data & 0x0000FF00) >>> 8,
+        (data & 0x000000FF)
+      ].slice(-optional.bytes);
+    }
+
+    else throw new Error("Unexpected data/optional args combination: "+data);
+
+  }
+};
+
+png.Bytes.prototype.add = function(data, optional) {
+  // Takes the same arguments as the constructor,
+  // but appends the new data instead, and returns the modified object.
+  // (suitable for chaining.)
+  this.array.push.apply(this.array, new png.Bytes(data, optional).array);
+  return this;
+};
+
+png.Bytes.prototype.chunk = function(n) {
+  // Split the array into chunks of length n.
+  // Returns an array of arrays.
+  var buffer = [];
+  for (var i = 0; i < this.array.length; i += n) {
+    var slice = this.array.slice(i, i+n);
+    buffer.push(this.array.slice(i, i+n));
+  }
+  return buffer;
+};
+
+png.Bytes.prototype.toString = function(n) {
+  // one optional argument specifies line length in bytes.
+  // returns a hex dump of the Bytes object.
+  var chunks = this.chunk(n || 8);
+  var byte;
+  var lines = [];
+  var hex;
+  var chr;
+  for (var i = 0; i < chunks.length; i++) {
+    hex = [];
+    chr = [];
+    for (var j = 0; j < chunks[i].length; j++) {
+      byte = chunks[i][j];
+      hex.push(
+        ((byte < 16) ? "0" : "") +
+        byte.toString(16)
+      );
+      chr.push(
+        (byte >=32 && byte <= 126 ) ?
+          String.fromCharCode(byte)
+          : "_"
+      );
+    }
+    lines.push(hex.join(" ")+"  "+chr.join(""));
+  }
+  return lines.join("\n");
+};
+
+png.Bytes.prototype.serialize = function() {
+  // returns a string whose char codes correspond to the bytes of the array.
+  // TODO: get rid of this once transition is complete?
+  return String.fromCharCode.apply(null, this.array);
+};
+
+png.fromRaster = function(raster, optional_palette, optional_transparency) {
+  // Given a Raster object,
+  // and optionally a list of rgb triples,
+  // and optionally a corresponding list of transparency values (0: clear - 255: opaque)
+  // return the corresponding PNG as a Bytes object.
+
+  var signature = new png.Bytes([
+    137, 80 /* P */, 78 /* N */, 71 /* G */, 13, 10, 26, 10
+  ]);
+  var ihdr = new png.Chunk.IHDR(raster.width, raster.height, raster.bit_depth, raster.color_type);
+  var plte = (optional_palette instanceof Array) ?
+    new png.Chunk.PLTE(optional_palette) :
+    new png.Bytes([]);
+  var trns = (optional_transparency instanceof Array) ?
+    new png.Chunk.tRNS(optional_transparency) :
+    new png.Bytes([]);
+  var idat = new png.Chunk.IDAT(raster);
+  var iend = new png.Chunk.IEND(); // intentionally blank
+
+  // order matters.
+  return signature.add(ihdr).add(plte).add(trns).add(idat).add(iend);
+};
+
+png.encode = function(raster, bit_depth, color_type, optional_palette, optional_transparency) {
+  if (color_type === 0 || color_type === 3) {
+    raster = new png.Raster(bit_depth, color_type, raster);
+  } else if (color_type === 2 || color_type === 6) {
+    raster = new png.Raster_rgb(bit_depth, color_type, raster);
+  }
+  return png.fromRaster(raster, optional_palette, optional_transparency);
+};
+
+png.Chunk = function(type, data) {
+  // given a four character type, and Bytes,
+  // calculates the length and the checksum, and creates
+  // a Bytes object for that png chunk.
+
+  if (!type.match(/^[A-Za-z]{4}$/)) {
+    throw new Error("Creating PNG chunk: provided type should be four letters, not "+type);
+  }
+
+  if (!(data instanceof png.Bytes)) {
+    throw new Error("Creating PNG "+type+" chunk: provided data is not Bytes: "+data);
+  }
+
+    // CRC calculations are a literal translation of the C code at
+  // http://www.libpng.org/pub/png/spec/1.0/PNG-CRCAppendix.html
+  if (!png.crc_table) {
+    png.crc_table = []; // Table of CRCs of all 8-bit messages.
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) {
+        if (c & 1) {
+          c = 0xedb88320 ^ (c >>> 1); // C ">>" is JS ">>>"
+        } else {
+          c = c >>> 1; // C ">>" is JS ">>>"
+        }
+      }
+      png.crc_table[n] = c;
+    }
+  }
+
+  function update_crc(crc, buffer) {
+    // Update a running CRC with the buffer--the CRC
+    // should be initialized to all 1's, and the transmitted value
+    // is the 1's complement of the final running CRC
+    var c = crc;
+    var n;
+    for (n = 0; n < buffer.length; n++) {
+      c = png.crc_table[(c ^ buffer[n]) & 0xff] ^ (c >>> 8); // C ">>" is JS ">>>"
+    }
+    return c;
+  }
+
+  var type_and_data = new png.Bytes(type).add(data);
+  var crc = (update_crc(0xffffffff, type_and_data.array) ^ 0xffffffff)>>>0;
+  // >>>0 converts to unsigned, without changing the bits.
+
+  var length_type_data_checksum =
+    new png.Bytes(data.array.length,{bytes:4})
+    .add(type_and_data)
+    .add(crc,{bytes:4});
+
+  return length_type_data_checksum;
+};
+
+png.Chunk.IHDR = function(width, height, bit_depth, color_type) {
+  if (!(
+        // grayscale
+        (color_type === 0) && (bit_depth in {1:1, 2:1, 4:1, 8:1, 16:1}) ||
+        // rgb
+        (color_type === 2) && (bit_depth in {8:1, 16:1}) ||
+        // palette
+        (color_type === 3) && (bit_depth in {1:1, 2:1, 4:1, 8:1}) ||
+        // grayscale + alpha
+        (color_type === 4) && (bit_depth in {8:1, 16:1}) ||
+        // rgb + alpha
+        (color_type ===  6) && (bit_depth in {8:1, 16:1})
+        // http://www.libpng.org/pub/png/spec/1.0/PNG-Chunks.html#C.IHDR
+        )) {
+    throw new Error("Invalid color type ("+color_type+") / bit depth ("+bit_depth+") combo");
+  }
+  return new png.Chunk(
+    "IHDR",
+    new png.Bytes(width,{bytes:4})
+      .add(height,{bytes:4})
+      .add([
+        bit_depth,
+        color_type,
+        0, // compression method
+        0, // filter method
+        0  // interlace method
+      ])
+  );
+};
+
+png.Chunk.PLTE = function(rgb_list) {
+  // given a list of RGB triples,
+  // returns the corresponding PNG PLTE (palette) chunk.
+  for (var i = 0, ii = rgb_list.length; i < ii; i++) {
+    var triple = rgb_list[i];
+    if (triple.length !== 3) {
+      throw new Error("This is not a valid RGB triple: "+triple);
+    }
+  }
+  return new png.Chunk(
+    "PLTE",
+    new png.Bytes(Array.prototype.concat.apply([], rgb_list))
+  );
+};
+
+png.Chunk.tRNS = function(alpha_list) {
+  // given a list of alpha values corresponding to the palette entries,
+  // returns the corresponding PNG tRNS (transparency) chunk.
+  return new png.Chunk(
+    "tRNS",
+    new png.Bytes(alpha_list)
+  );
+};
+
+png.Raster = function(bit_depth, color_type, raster) {
+  // takes an array of arrays of greyscale or palette values.
+  // provides encode(), which returns bytes ready for a PNG IDAT chunk.
+
+  // validate depth and type
+  if (color_type !== 0 && color_type !== 3) throw new Error("Color type "+color_type+" is unsupported.");
+  if (bit_depth > 8) throw new Error("Bit depths greater than 8 are unsupported.");
+
+  this.bit_depth = bit_depth;
+  this.color_type = color_type;
+
+  // validate raster data.
+  var max_value = (1 << bit_depth) - 1;
+  var cols = raster[0].length;
+  for (var row = 0; row < raster.length; row++) {
+    if (raster[row].length != cols)
+      throw new Error("Row "+row+" does not have the expected "+cols+" columns.");
+    for (var col = 0; col < cols; col++) {
+      if (!(raster[row][col] >= 0 && raster[row][col] <= max_value))
+        throw new Error("Image data ("+raster[row][col]+") out of bounds at ("+row+","+col+")");
+    }
+  }
+
+  this.height = raster.length;
+  this.width = cols;
+
+  this.encode = function() {
+    // Returns the image data as a single array of bytes, using filter method 0.
+    var buffer = [];
+    for (var row = 0; row < raster.length; row++) {
+      buffer.push(0); // each row gets filter type 0.
+      for (var col = 0; col < cols; col += 8/bit_depth) {
+        var byte = 0;
+        for (var sub = 0; sub < 8/bit_depth; sub++) {
+          byte <<= bit_depth;
+          if (col + sub < cols) {
+            byte |= raster[row][col+sub];
+          }
+        }
+        if (byte & ~0xFF) throw new Error("Encoded raster byte out of bounds at ("+row+","+col+")");
+        buffer.push(byte);
+      }
+    }
+    return buffer;
+  };
+};
+
+png.Raster_rgb = function(bit_depth, color_type, raster) {
+  // takes an array of arrays of RGB triples.
+  // provides encode(), which returns bytes ready for a PNG IDAT chunk.
+
+  // validate depth and type
+  if (color_type != 2 && color_type != 6) throw new Error("Only color types 2 and 6 for RGB.");
+  if (bit_depth != 8) throw new Error("Bit depths other than 8 are unsupported for RGB.");
+
+  this.bit_depth = bit_depth;
+  this.color_type = color_type;
+
+  // validate raster data.
+  var cols = raster[0].length;
+  for (var row = 0; row < raster.length; row++) {
+    if (raster[row].length != cols) {
+      throw new Error("Row "+row+" does not have the expected "+cols+" columns.");
+    }
+    for (var col = 0; col < cols; col++) {
+      if (!(color_type == 2 && raster[row][col].length == 3) &&
+          !(color_type == 6 && raster[row][col].length == 4)) {
+        throw new Error("Not RGB[A] at ("+row+","+col+")");
+      }
+      for (var i = 0; i < (color_type == 2 ? 3 : 4); i++) {
+        if (raster[row][col][i]<0 || raster[row][col][i]>255) {
+          throw new Error("RGB out of range at ("+row+","+col+")");
+        }
+      }
+    }
+  }
+
+  this.height = raster.length;
+  this.width = cols;
+
+  this.encode = function() {
+    // Returns the image data as a single array of bytes, using filter method 0.
+    var buffer = [];
+    for (var row = 0; row < raster.length; row++) {
+      buffer.push(0); // each row gets filter type 0.
+      for (var col = 0; col < cols; col++) {
+        buffer.push.apply(buffer, raster[row][col]);
+      }
+    }
+    return buffer;
+  };
+};
+
+png.Chunk.IDAT = function(raster) {
+  var encoded = raster.encode();
+  var zipped = new Zlib.Deflate(encoded).compress();
+  return new png.Chunk("IDAT", new png.Bytes(zipped));
+};
+
+png.Chunk.IEND = function() {
+  return new png.Chunk("IEND", new png.Bytes([]));
+};
+
+if (typeof module !== 'undefined') {
+  module.exports = png;
+}
+
+});
+__loader.define("lib/safe.js", 3333, function(exports, module, require) {
 /* safe.js - Building a safer world for Pebble.JS Developers
  *
  * This library provides wrapper around all the asynchronous handlers that developers
@@ -2863,7 +3547,7 @@ if (ajax) {
 module.exports = safe;
 
 });
-__loader.define("lib/struct.js", 2866, function(exports, module, require) {
+__loader.define("lib/struct.js", 3550, function(exports, module, require) {
 /**
  * struct.js - chainable ArrayBuffer DataView wrapper
  *
@@ -3125,7 +3809,7 @@ module.exports = struct;
 
 
 });
-__loader.define("lib/util2.js", 3128, function(exports, module, require) {
+__loader.define("lib/util2.js", 3812, function(exports, module, require) {
 /*
  * util2.js by Meiguro - MIT License
  */
@@ -3235,7 +3919,7 @@ return util2;
 })();
 
 });
-__loader.define("lib/vector2.js", 3238, function(exports, module, require) {
+__loader.define("lib/vector2.js", 3922, function(exports, module, require) {
 /**
  * Vector2 from three.js
  * https://github.com/mrdoob/three.js
@@ -3412,7 +4096,7 @@ if (typeof module !== 'undefined') {
 }
 
 });
-__loader.define("main.js", 3415, function(exports, module, require) {
+__loader.define("main.js", 4099, function(exports, module, require) {
 /*
  * This is the main PebbleJS file. You do not need to modify this file unless
  * you want to change the way PebbleJS starts, the script it runs or the libraries
@@ -3457,7 +4141,7 @@ Pebble.addEventListener('ready', function(e) {
 });
 
 });
-__loader.define("platform/feature.js", 3460, function(exports, module, require) {
+__loader.define("platform/feature.js", 4144, function(exports, module, require) {
 var Vector2 = require('vector2');
 var Platform = require('platform');
 
@@ -3543,13 +4227,13 @@ Feature.statusBarHeight = function() {
 };
 
 });
-__loader.define("platform/index.js", 3546, function(exports, module, require) {
+__loader.define("platform/index.js", 4230, function(exports, module, require) {
 var Platform = require('./platform');
 
 module.exports = Platform;
 
 });
-__loader.define("platform/platform.js", 3552, function(exports, module, require) {
+__loader.define("platform/platform.js", 4236, function(exports, module, require) {
 var Platform = module.exports;
 
 Platform.version = function() {
@@ -3561,7 +4245,7 @@ Platform.version = function() {
 };
 
 });
-__loader.define("settings/index.js", 3564, function(exports, module, require) {
+__loader.define("settings/index.js", 4248, function(exports, module, require) {
 var Settings = require('./settings');
 
 Settings.init();
@@ -3569,7 +4253,7 @@ Settings.init();
 module.exports = Settings;
 
 });
-__loader.define("settings/settings.js", 3572, function(exports, module, require) {
+__loader.define("settings/settings.js", 4256, function(exports, module, require) {
 var util2 = require('lib/util2');
 var myutil = require('lib/myutil');
 var safe = require('lib/safe');
@@ -3832,7 +4516,7 @@ Settings.onCloseConfig = function(e) {
 };
 
 });
-__loader.define("simply/simply.js", 3835, function(exports, module, require) {
+__loader.define("simply/simply.js", 4519, function(exports, module, require) {
 /**
  * Simply.js
  *
@@ -3873,7 +4557,7 @@ simply.vibe = function(type) {
 module.exports = simply;
 
 });
-__loader.define("smartpackage/package-pebble.js", 3876, function(exports, module, require) {
+__loader.define("smartpackage/package-pebble.js", 4560, function(exports, module, require) {
 var myutil = require('myutil');
 var package = require('smartpackage/package');
 var simply = require('simply/simply');
@@ -3977,7 +4661,7 @@ packageImpl.loadPackage = function(pkg, loader) {
 
 
 });
-__loader.define("smartpackage/package.js", 3980, function(exports, module, require) {
+__loader.define("smartpackage/package.js", 4664, function(exports, module, require) {
 var ajax = require('ajax');
 var util2 = require('util2');
 var myutil = require('myutil');
@@ -4154,7 +4838,7 @@ package.require = function(path) {
 };
 
 });
-__loader.define("timeline/index.js", 4157, function(exports, module, require) {
+__loader.define("timeline/index.js", 4841, function(exports, module, require) {
 var Timeline = require('./timeline');
 
 Timeline.init();
@@ -4162,7 +4846,7 @@ Timeline.init();
 module.exports = Timeline;
 
 });
-__loader.define("timeline/timeline.js", 4165, function(exports, module, require) {
+__loader.define("timeline/timeline.js", 4849, function(exports, module, require) {
 var Timeline = module.exports;
 
 Timeline.init = function() {
@@ -4202,7 +4886,7 @@ Timeline.emitAction = function(args) {
 };
 
 });
-__loader.define("ui/accel.js", 4205, function(exports, module, require) {
+__loader.define("ui/accel.js", 4889, function(exports, module, require) {
 var Emitter = require('emitter');
 
 var Accel = new Emitter();
@@ -4362,7 +5046,7 @@ Accel.emitAccelData = function(accels, callback) {
 Accel.init();
 
 });
-__loader.define("ui/card.js", 4365, function(exports, module, require) {
+__loader.define("ui/card.js", 5049, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var Emitter = require('emitter');
@@ -4438,7 +5122,7 @@ Card.prototype._clear = function(flags_) {
 module.exports = Card;
 
 });
-__loader.define("ui/circle.js", 4441, function(exports, module, require) {
+__loader.define("ui/circle.js", 5125, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var Propable = require('ui/propable');
@@ -4466,7 +5150,7 @@ Propable.makeAccessors(accessorProps, Circle.prototype);
 module.exports = Circle;
 
 });
-__loader.define("ui/element.js", 4469, function(exports, module, require) {
+__loader.define("ui/element.js", 5153, function(exports, module, require) {
 var util2 = require('util2');
 var Vector2 = require('vector2');
 var myutil = require('myutil');
@@ -4596,7 +5280,7 @@ StageElement.emitAnimateDone = function(id) {
 module.exports = StageElement;
 
 });
-__loader.define("ui/image.js", 4599, function(exports, module, require) {
+__loader.define("ui/image.js", 5283, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var Propable = require('ui/propable');
@@ -4625,7 +5309,7 @@ Propable.makeAccessors(imageProps, ImageElement.prototype);
 module.exports = ImageElement;
 
 });
-__loader.define("ui/imageservice.js", 4628, function(exports, module, require) {
+__loader.define("ui/imageservice.js", 5312, function(exports, module, require) {
 var imagelib = require('lib/image');
 var myutil = require('myutil');
 var Feature = require('platform/feature');
@@ -4758,7 +5442,7 @@ ImageService.markAllUnloaded = function() {
 ImageService.init();
 
 });
-__loader.define("ui/index.js", 4761, function(exports, module, require) {
+__loader.define("ui/index.js", 5445, function(exports, module, require) {
 var UI = {};
 
 UI.Vector2 = require('vector2');
@@ -4779,7 +5463,7 @@ UI.Light = require('ui/light');
 module.exports = UI;
 
 });
-__loader.define("ui/inverter.js", 4782, function(exports, module, require) {
+__loader.define("ui/inverter.js", 5466, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var StageElement = require('ui/element');
@@ -4794,7 +5478,7 @@ util2.inherit(Inverter, StageElement);
 module.exports = Inverter;
 
 });
-__loader.define("ui/light.js", 4797, function(exports, module, require) {
+__loader.define("ui/light.js", 5481, function(exports, module, require) {
 var simply = require('ui/simply');
 
 var Light = module.exports;
@@ -4812,7 +5496,7 @@ Light.trigger = function() {
 };
 
 });
-__loader.define("ui/line.js", 4815, function(exports, module, require) {
+__loader.define("ui/line.js", 5499, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var Propable = require('ui/propable');
@@ -4841,7 +5525,7 @@ Propable.makeAccessors(accessorProps, Line.prototype);
 module.exports = Line;
 
 });
-__loader.define("ui/menu.js", 4844, function(exports, module, require) {
+__loader.define("ui/menu.js", 5528, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var Emitter = require('emitter');
@@ -5228,7 +5912,7 @@ Menu.emitSelect = function(type, sectionIndex, itemIndex) {
 module.exports = Menu;
 
 });
-__loader.define("ui/propable.js", 5231, function(exports, module, require) {
+__loader.define("ui/propable.js", 5915, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 
@@ -5338,7 +6022,7 @@ Propable.prototype.prop = function(field, value, clear) {
 module.exports = Propable;
 
 });
-__loader.define("ui/radial.js", 5341, function(exports, module, require) {
+__loader.define("ui/radial.js", 6025, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var safe = require('safe');
@@ -5392,7 +6076,7 @@ Radial.prototype._prop = function(def) {
 module.exports = Radial;
 
 });
-__loader.define("ui/rect.js", 5395, function(exports, module, require) {
+__loader.define("ui/rect.js", 6079, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var StageElement = require('ui/element');
@@ -5413,7 +6097,7 @@ util2.inherit(Rect, StageElement);
 module.exports = Rect;
 
 });
-__loader.define("ui/resource.js", 5416, function(exports, module, require) {
+__loader.define("ui/resource.js", 6100, function(exports, module, require) {
 var myutil = require('lib/myutil');
 var appinfo = require('appinfo');
 
@@ -5444,7 +6128,7 @@ Resource.getId = function(opt) {
 module.exports = Resource;
 
 });
-__loader.define("ui/simply-pebble.js", 5447, function(exports, module, require) {
+__loader.define("ui/simply-pebble.js", 6131, function(exports, module, require) {
 var Color = require('color');
 var struct = require('struct');
 var util2 = require('util2');
@@ -6980,7 +7664,7 @@ SimplyPebble.onAppMessage = function (e) {
 module.exports = SimplyPebble;
 
 });
-__loader.define("ui/simply.js", 6983, function(exports, module, require) {
+__loader.define("ui/simply.js", 7667, function(exports, module, require) {
 /**
  * This file provides an easy way to switch the actual implementation used by all the
  * ui objects.
@@ -6996,7 +7680,7 @@ simply.impl = undefined;
 module.exports = simply;
 
 });
-__loader.define("ui/stage.js", 6999, function(exports, module, require) {
+__loader.define("ui/stage.js", 7683, function(exports, module, require) {
 var util2 = require('util2');
 var Emitter = require('emitter');
 var WindowStack = require('ui/windowstack');
@@ -7079,7 +7763,7 @@ Stage.prototype.remove = function(element, broadcast) {
 module.exports = Stage;
 
 });
-__loader.define("ui/tests.js", 7082, function(exports, module, require) {
+__loader.define("ui/tests.js", 7766, function(exports, module, require) {
 
 var tests = {};
 
@@ -7121,7 +7805,7 @@ for (var test in tests) {
 }
 
 });
-__loader.define("ui/text.js", 7124, function(exports, module, require) {
+__loader.define("ui/text.js", 7808, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var Propable = require('ui/propable');
@@ -7156,7 +7840,7 @@ Propable.makeAccessors(textProps, Text.prototype);
 module.exports = Text;
 
 });
-__loader.define("ui/timetext.js", 7159, function(exports, module, require) {
+__loader.define("ui/timetext.js", 7843, function(exports, module, require) {
 var util2 = require('util2');
 var Text = require('ui/text');
 
@@ -7218,7 +7902,7 @@ TimeText.prototype.text = function(text) {
 module.exports = TimeText;
 
 });
-__loader.define("ui/vibe.js", 7221, function(exports, module, require) {
+__loader.define("ui/vibe.js", 7905, function(exports, module, require) {
 var simply = require('ui/simply');
 
 var Vibe = module.exports;
@@ -7250,7 +7934,7 @@ Vibe.cancel = function () {
 };
 
 });
-__loader.define("ui/voice.js", 7253, function(exports, module, require) {
+__loader.define("ui/voice.js", 7937, function(exports, module, require) {
 var simply = require('ui/simply');
 
 var Voice = {};
@@ -7277,7 +7961,7 @@ Voice.dictate = function(type, confirm, callback) {
 module.exports = Voice;
 
 });
-__loader.define("ui/window.js", 7280, function(exports, module, require) {
+__loader.define("ui/window.js", 7964, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var safe = require('safe');
@@ -7596,7 +8280,7 @@ Window.emitClick = function(type, button) {
 module.exports = Window;
 
 });
-__loader.define("ui/windowstack.js", 7599, function(exports, module, require) {
+__loader.define("ui/windowstack.js", 8283, function(exports, module, require) {
 var util2 = require('util2');
 var myutil = require('myutil');
 var Emitter = require('emitter');
@@ -7726,7 +8410,7 @@ WindowStack.prototype._toString = function() {
 module.exports = new WindowStack();
 
 });
-__loader.define("vendor/moment.js", 7729, function(exports, module, require) {
+__loader.define("vendor/moment.js", 8413, function(exports, module, require) {
 //! moment.js
 //! version : 2.9.0
 //! authors : Tim Wood, Iskren Chernev, Moment.js contributors
@@ -10772,7 +11456,7 @@ __loader.define("vendor/moment.js", 7729, function(exports, module, require) {
 }).call(this);
 
 });
-__loader.define("vendor/png.js", 10775, function(exports, module, require) {
+__loader.define("vendor/png.js", 11459, function(exports, module, require) {
 // Generated by CoffeeScript 1.4.0
 
 /*
@@ -11239,7 +11923,7 @@ if (typeof require !== 'undefined') {
 }).call(this);
 
 });
-__loader.define("vendor/zlib.js", 11242, function(exports, module, require) {
+__loader.define("vendor/zlib.js", 11926, function(exports, module, require) {
 /**
  * zlib.js Deflate + Inflate
  *
@@ -11291,13 +11975,13 @@ if (typeof module !== 'undefined') {
 }
 
 });
-__loader.define("wakeup/index.js", 11294, function(exports, module, require) {
+__loader.define("wakeup/index.js", 11978, function(exports, module, require) {
 var Wakeup = require('./wakeup');
 
 module.exports = Wakeup;
 
 });
-__loader.define("wakeup/wakeup.js", 11300, function(exports, module, require) {
+__loader.define("wakeup/wakeup.js", 11984, function(exports, module, require) {
 var util2 = require('util2');
 var Emitter = require('emitter');
 var Settings = require('settings');
@@ -11499,14 +12183,13 @@ Wakeup.prototype._emitWakeupLaunch = function(e) {
 module.exports = new Wakeup();
 
 });
-__loader.define("appinfo.json", 11502, function(exports, module, require) {
+__loader.define("appinfo.json", 12186, function(exports, module, require) {
 module.exports = {
   "appKeys": {},
   "capabilities": [
     "configurable"
   ],
   "companyName": "Netcavy Media",
-  "enableMultiJS": true,
   "longName": "YarraTrak",
   "resources": {
     "media": [
