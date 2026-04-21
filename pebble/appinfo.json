@@ -4,7 +4,6 @@
     "configurable"
   ],
   "companyName": "Netcavy Media",
-  "enableMultiJS": true,
   "longName": "YarraTrak",
   "resources": {
     "media": [
