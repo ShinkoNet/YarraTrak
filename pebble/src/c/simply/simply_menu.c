@@ -22,7 +22,8 @@
 
 #define MAX_CACHED_ITEMS IF_APLITE_ELSE(6, 51)
 
-#define EMPTY_TITLE ""
+static char s_empty_title[] = "";
+#define EMPTY_TITLE s_empty_title
 
 #define SPINNER_MS 66
 #define MENU_ROW_GRADIENT_STEPS 10

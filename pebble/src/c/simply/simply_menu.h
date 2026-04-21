@@ -50,19 +50,12 @@ struct SimplyMenuCommon {
   char *title;
 };
 
-typedef struct SimplyMenuCommonMember SimplyMenuCommonMember;
-
-struct SimplyMenuCommonMember {
-  union {
-    SimplyMenuCommon common;
-    SimplyMenuCommon;
-  };
-};
-
 typedef struct SimplyMenuSection SimplyMenuSection;
 
 struct SimplyMenuSection {
-  SimplyMenuCommonMember;
+  List1Node node;
+  uint16_t section;
+  char *title;
   uint16_t num_items;
   GColor8 title_foreground;
   GColor8 title_background;
@@ -71,7 +64,9 @@ struct SimplyMenuSection {
 typedef struct SimplyMenuItem SimplyMenuItem;
 
 struct SimplyMenuItem {
-  SimplyMenuCommonMember;
+  List1Node node;
+  uint16_t section;
+  char *title;
   char *subtitle;
   uint32_t icon;
   GColor8 background_color;
