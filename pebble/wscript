@@ -32,7 +32,7 @@ def build(ctx):
     ctx.load('pebble_sdk')
 
     binaries = []
-    js_target = ctx.concat_javascript(js_path='src/js')
+    js_target = ctx.concat_javascript(js_path='src/pkjs')
 
     if ctx.env.TARGET_PLATFORMS:
         for platform in ctx.env.TARGET_PLATFORMS:
@@ -74,7 +74,8 @@ def build_platform(ctx, platform=None, binaries=None):
     build_worker = os.path.exists('worker_src')
 
     app_elf = '{}/pebble-app.elf'.format(ctx.env.BUILD_DIR)
-    ctx.pbl_program(source=ctx.path.ant_glob('src/**/*.c'),
+    ctx.pbl_program(source=ctx.path.ant_glob('src/c/**/*.c'),
+                    includes='src/c',
                     target=app_elf)
 
     if build_worker:
@@ -159,7 +160,7 @@ def concat_javascript(ctx, js_path=None):
                 f.write(body + '\n')
                 lineno += body.count('\n') + 1
 
-    js_target = ctx.path.make_node('build/src/js/pebble-js-app.js')
+    js_target = ctx.path.make_node('build/src/pkjs/pebble-js-app.js')
 
     ctx(rule=concat_javascript_task,
         source=js_nodes,
