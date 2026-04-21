@@ -21,23 +21,16 @@ struct SimplyRes {
 
 typedef struct SimplyResItemCommon SimplyResItemCommon;
 
-#define SimplyResItemCommonDef { \
-  List1Node node;                \
-  uint32_t id;                   \
-}
-
-struct SimplyResItemCommon SimplyResItemCommonDef;
-
-#define SimplyResItemCommonMember      \
-  union {                              \
-    struct SimplyResItemCommon common; \
-    struct SimplyResItemCommonDef;     \
-  }
+struct SimplyResItemCommon {
+  List1Node node;
+  uint32_t id;
+};
 
 typedef struct SimplyImage SimplyImage;
 
 struct SimplyImage {
-  SimplyResItemCommonMember;
+  List1Node node;
+  uint32_t id;
   uint8_t *bitmap_data;
   GBitmap *bitmap;
   GColor8 *palette;
@@ -47,7 +40,8 @@ struct SimplyImage {
 typedef struct SimplyFont SimplyFont;
 
 struct SimplyFont {
-  SimplyResItemCommonMember;
+  List1Node node;
+  uint32_t id;
   GFont font;
 };
 
