@@ -4,7 +4,7 @@
 
 #include "simply.h"
 
-#include "util/list1.h"
+#include "../util/list1.h"
 
 #include <pebble.h>
 
