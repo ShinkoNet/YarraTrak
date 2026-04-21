@@ -66,7 +66,7 @@ pebble install --phone YOUR_PHONE_IP
 
 ```
 pebble/          Pebble.js smartwatch app
-  src/js/app.js  Main app logic (WebSocket client, vibrations, UI)
+  src/pkjs/app.js  Main app logic (WebSocket client, vibrations, UI)
   config/        Settings page (served by server)
 server/          FastAPI Python server
   api.py         REST + WebSocket endpoints
