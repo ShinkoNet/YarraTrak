@@ -2,7 +2,7 @@
 
 #include "simply_msg.h"
 #include "simply.h"
-#include "util/compat.h"
+#include "../util/compat.h"
 
 #include <pebble.h>
 

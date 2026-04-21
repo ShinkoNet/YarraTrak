@@ -9,10 +9,10 @@
 
 #include "simply.h"
 
-#include "util/graphics.h"
-#include "util/scroll_layer.h"
-#include "util/status_bar_layer.h"
-#include "util/string.h"
+#include "../util/graphics.h"
+#include "../util/scroll_layer.h"
+#include "../util/status_bar_layer.h"
+#include "../util/string.h"
 
 #include <pebble.h>
 

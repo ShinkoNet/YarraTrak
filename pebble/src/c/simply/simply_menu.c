@@ -6,15 +6,15 @@
 
 #include "simply.h"
 
-#include "util/color.h"
-#include "util/compat.h"
-#include "util/display.h"
-#include "util/graphics.h"
-#include "util/graphics_text.h"
-#include "util/menu_layer.h"
-#include "util/noop.h"
-#include "util/platform.h"
-#include "util/string.h"
+#include "../util/color.h"
+#include "../util/compat.h"
+#include "../util/display.h"
+#include "../util/graphics.h"
+#include "../util/graphics_text.h"
+#include "../util/menu_layer.h"
+#include "../util/noop.h"
+#include "../util/platform.h"
+#include "../util/string.h"
 
 #include <pebble.h>
 

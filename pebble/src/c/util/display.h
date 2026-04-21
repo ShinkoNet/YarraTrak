@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util/none.h"
+#include "none.h"
 
 #if defined(PBL_RECT)
 #define RECT_USAGE

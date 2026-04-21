@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util/none.h"
+#include "none.h"
 
 #if defined(PBL_SDK_3)
 #define IF_SDK_3_ELSE(sdk3, other) sdk3

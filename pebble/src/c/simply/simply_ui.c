@@ -6,14 +6,14 @@
 
 #include "simply.h"
 
-#include "util/compat.h"
-#include "util/color.h"
-#include "util/graphics.h"
-#include "util/graphics_text.h"
-#include "util/math.h"
-#include "util/noop.h"
-#include "util/string.h"
-#include "util/window.h"
+#include "../util/compat.h"
+#include "../util/color.h"
+#include "../util/graphics.h"
+#include "../util/graphics_text.h"
+#include "../util/math.h"
+#include "../util/noop.h"
+#include "../util/string.h"
+#include "../util/window.h"
 
 #include <pebble.h>
 
