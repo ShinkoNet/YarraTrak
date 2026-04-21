@@ -2,7 +2,7 @@
 
 #include <pebble.h>
 
-#include "simply/simply.h"
+#include "../simply/simply.h"
 
 static inline ClickConfigProvider menu_layer_click_config_provider_accessor(ClickConfigProvider provider) {
   static ClickConfigProvider s_provider;

@@ -2,8 +2,8 @@
 
 #include "simply.h"
 
-#include "util/color.h"
-#include "util/list1.h"
+#include "../util/color.h"
+#include "../util/list1.h"
 
 #include <pebble.h>
 

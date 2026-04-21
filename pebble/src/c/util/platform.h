@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util/none.h"
+#include "none.h"
 
 #if defined(PBL_PLATFORM_APLITE) || defined(PBL_SDK_2)
 #define IF_APLITE_ELSE(aplite, other) aplite

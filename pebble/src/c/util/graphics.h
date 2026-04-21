@@ -1,7 +1,7 @@
 #pragma once
 
-#include "util/compat.h"
-#include "util/color.h"
+#include "compat.h"
+#include "color.h"
 
 #include <pebble.h>
 

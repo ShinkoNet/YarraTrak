@@ -2,8 +2,8 @@
 
 #include "simply.h"
 
-#include "util/graphics.h"
-#include "util/platform.h"
+#include "../util/graphics.h"
+#include "../util/platform.h"
 
 #include <pebble.h>
 
