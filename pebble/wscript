@@ -32,7 +32,10 @@ def build(ctx):
     ctx.load('pebble_sdk')
 
     binaries = []
-    js_target = ctx.concat_javascript(js_path='src/pkjs')
+    # The split pkjs sources are pre-bundled into src/pkjs/bundle.js by
+    # tools/build_pkjs_bundle.py (run_pebble.sh invokes it before `pebble build`).
+    # Ship that single file straight through so pbl_bundle doesn't re-wrap it.
+    js_target = ctx.path.find_node('src/pkjs/bundle.js')
 
     if ctx.env.TARGET_PLATFORMS:
         for platform in ctx.env.TARGET_PLATFORMS:
