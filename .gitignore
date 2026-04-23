@@ -73,6 +73,11 @@ tools/
 pebble/build/
 pebble/.lock-waf*
 
+# Local Pebble screencaps / recordings (not source)
+pebble/*.png
+pebble/*.gif
+pebble/*.mkv
+
 # The Python-packaging ignores above (lib/, tools/, build/) are too broad for
 # the Pebble source tree; re-include the specific directories we track.
 !pebble/tools/
