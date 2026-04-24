@@ -87,7 +87,7 @@ static bool is_numeric_countdown(const char *s) {
 // a word; the time floats to the right with a small gap.
 static void info_layer_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
-  GColor fg = theme_fg();
+  GColor fg = theme_watch_fg();
   graphics_context_set_text_color(ctx, fg);
   graphics_context_set_stroke_color(ctx, fg);
   graphics_context_set_stroke_width(ctx, 1);
@@ -348,7 +348,7 @@ static void render(void) {
   }
   s_bottom_buf[sizeof(s_bottom_buf) - 1] = '\0';
   text_layer_set_text_color(s_bottom_layer,
-      bottom_disruption ? theme_disruption(bottom_disruption) : theme_fg());
+      bottom_disruption ? theme_watch_disruption(bottom_disruption) : theme_watch_fg());
   text_layer_set_text(s_bottom_layer, s_bottom_buf);
 
   if (s_progress_layer) layer_mark_dirty(s_progress_layer);
@@ -579,4 +579,13 @@ void watch_window_refresh(void) {
 
 bool watch_window_is_open(void) {
   return s_window != NULL;
+}
+
+void watch_window_close(void) {
+  // window_stack_remove triggers window_unload which tears the layers
+  // down, cancels timers and resets s_window to NULL. Safe even if the
+  // watch isn't currently the top window.
+  if (s_window) {
+    window_stack_remove(s_window, true);
+  }
 }
