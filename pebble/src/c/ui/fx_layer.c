@@ -24,8 +24,8 @@
 #define STAR_FOV 130            // perspective focal length (bigger = more spread)
 
 // ---- Cube (effect 4) ---------------------------------------------------
-#define CUBE_UNIT 56            // half edge length in world units
-#define CUBE_FOV 170
+#define CUBE_UNIT 50            // half edge length in world units
+#define CUBE_FOV 165
 #define CUBE_CAM_Z 200          // camera offset along +z
 #define CUBE_YAW_STEP  700      // trig-ratio units per frame
 #define CUBE_PITCH_STEP 450
