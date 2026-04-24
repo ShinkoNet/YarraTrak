@@ -10,6 +10,7 @@
 #define PKEY_FLAG_AI_DISABLED      103
 #define PKEY_FLAG_24H_TIME         104
 #define PKEY_FLAG_DARK_THEME       105
+#define PKEY_FLAG_BG_FX            106
 
 // per-entry persisted key ranges
 #define PKEY_ENTRY_BASE            200

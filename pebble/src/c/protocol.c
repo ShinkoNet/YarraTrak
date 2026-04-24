@@ -81,7 +81,11 @@ static void handle_conn_state(char *data) {
 }
 
 // flags_sync is packed as bits plus bg fx
-static void handle_flags_sync(const char *data) {
+static void handle_flags_sync(char *data) {
+  char *bg_token = NULL;
+  for (char *p = data; *p; p++) {
+    if (*p == '|') { *p = '\0'; bg_token = p + 1; break; }
+  }
   int bits = atoi(data);
   Flags *f = &g_app_state.flags;
   f->disable_vibration    = (bits & 1)  != 0;
@@ -90,6 +94,11 @@ static void handle_flags_sync(const char *data) {
   f->disable_ai_assistant = (bits & 8)  != 0;
   f->use_24hr_time        = (bits & 16) != 0;
   f->dark_theme           = (bits & 32) != 0;
+  f->bg_fx = 0;
+  if (bg_token && *bg_token) {
+    int v = atoi(bg_token);
+    if (v >= 0 && v <= 4) f->bg_fx = (uint8_t)v;
+  }
   settings_store_save_flags();
   g_app_state.settings_received = true;
 }

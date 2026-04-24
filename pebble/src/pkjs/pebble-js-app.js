@@ -108,26 +108,72 @@ function getConfiguredEntryCount() {
     return isFinite(v) ? v : 0;
 }
 
-// one-shot upgrade path: v1 stored favourites under btnn_* keys
+// old settings storage was weird
+var APP_UUID = '61ae3254-ce00-49db-aad8-23143f649b91';
+
 function migrateLegacyBtnKeys() {
     if (getOption('entry_count') || getOption('entry1_stop_id')) return;
-    if (!getOption('btn1_stop_id')) return;
 
     var fields = ['name', 'full_name', 'stop_id', 'dest_name', 'full_dest_name',
                   'dest_id', 'route_type', 'direction_id'];
-    var migrated = 0;
-    for (var i = 1; i <= 10; i++) {
-        if (!getOption('btn' + i + '_stop_id')) continue;
-        for (var f = 0; f < fields.length; f++) {
-            var v = getOption('btn' + i + '_' + fields[f]);
-            if (v !== null) setOption('entry' + i + '_' + fields[f], v);
-            setOption('btn' + i + '_' + fields[f], null);
+
+    // Pebble.js Settings blob — single JSON object under `options:<uuid>`.
+    var blobKey = 'options:' + APP_UUID;
+    var blobRaw = lsGet(blobKey);
+    if (blobRaw) {
+        var blob = null;
+        try { blob = JSON.parse(blobRaw); } catch (e) { blob = null; }
+        if (blob && typeof blob === 'object') {
+            var migrated = 0;
+            for (var i = 1; i <= 10; i++) {
+                var stopId = blob['entry' + i + '_stop_id'] || blob['btn' + i + '_stop_id'];
+                if (!stopId) continue;
+                for (var f = 0; f < fields.length; f++) {
+                    var v = blob['entry' + i + '_' + fields[f]];
+                    if (v === undefined || v === null || v === '') {
+                        v = blob['btn' + i + '_' + fields[f]];
+                    }
+                    if (v !== undefined && v !== null && v !== '') {
+                        setOption('entry' + i + '_' + fields[f], v);
+                    }
+                }
+                migrated = i;
+            }
+            var flagKeys = ['server_url', 'llm_api_key', 'use_24hr_time',
+                            'disable_ai_assistant', 'enable_third_party_endpoint',
+                            'disable_vibration', 'disable_ripple_vfx',
+                            'disable_timer_shake', 'dark_theme', 'client_id'];
+            for (var k = 0; k < flagKeys.length; k++) {
+                var fv = blob[flagKeys[k]];
+                if (fv !== undefined && fv !== null && fv !== '') {
+                    setOption(flagKeys[k], fv);
+                }
+            }
+            if (migrated > 0) {
+                setOption('entry_count', blob.entry_count || migrated);
+                console.log('Migrated ' + migrated + ' favourites from Pebble.js Settings blob');
+            }
+            // Drop the old blob so we don't re-run this next boot.
+            lsSet(blobKey, null);
+            if (migrated > 0) return;
         }
-        migrated = i;
     }
-    if (migrated > 0) {
-        setOption('entry_count', migrated);
-        console.log('Migrated ' + migrated + ' legacy btn* favourites to entry*');
+
+    // raw btnn_* fallback - some ancient local installs never went through the settings module
+    if (!getOption('btn1_stop_id')) return;
+    var migratedRaw = 0;
+    for (var j = 1; j <= 10; j++) {
+        if (!getOption('btn' + j + '_stop_id')) continue;
+        for (var ff = 0; ff < fields.length; ff++) {
+            var rv = getOption('btn' + j + '_' + fields[ff]);
+            if (rv !== null) setOption('entry' + j + '_' + fields[ff], rv);
+            setOption('btn' + j + '_' + fields[ff], null);
+        }
+        migratedRaw = j;
+    }
+    if (migratedRaw > 0) {
+        setOption('entry_count', migratedRaw);
+        console.log('Migrated ' + migratedRaw + ' legacy btn* favourites to entry*');
     }
 }
 
@@ -154,7 +200,7 @@ function collectSettingsSnapshot() {
     var keys = ['server_url', 'llm_api_key', 'use_24hr_time', 'disable_ai_assistant',
                 'enable_third_party_endpoint', 'disable_vibration',
                 'disable_ripple_vfx', 'disable_timer_shake', 'dark_theme',
-                'entry_count', 'client_id'];
+                'bg_fx', 'entry_count', 'client_id'];
     for (var i = 0; i < keys.length; i++) {
         var v = getOption(keys[i]);
         if (v !== null) snapshot[keys[i]] = v;
@@ -174,15 +220,12 @@ function collectSettingsSnapshot() {
 
 function applySettingsPayload(payload) {
     if (!payload || typeof payload !== 'object') return;
-    // first nuke any stale per-entry keys for indexes above the new count so we don't re-sync phantom entries
-    var newCount = parseInt(payload.entry_count || 0, 10) || 0;
+    // settings save replaces the whole entry set
+    var fields = ['name', 'full_name', 'stop_id', 'dest_name', 'full_dest_name',
+                  'dest_id', 'route_type', 'direction_id'];
     for (var i = 1; i <= 10; i++) {
-        if (i > newCount) {
-            var fields = ['name', 'full_name', 'stop_id', 'dest_name', 'full_dest_name',
-                          'dest_id', 'route_type', 'direction_id'];
-            for (var k = 0; k < fields.length; k++) {
-                setOption('entry' + i + '_' + fields[k], null);
-            }
+        for (var k = 0; k < fields.length; k++) {
+            setOption('entry' + i + '_' + fields[k], null);
         }
     }
     for (var key in payload) {
@@ -280,7 +323,9 @@ function syncFlagsToWatch() {
     if (boolOption('disable_ai_assistant')) bits |= 8;
     if (boolOption('use_24hr_time'))        bits |= 16;
     if (boolOption('dark_theme'))           bits |= 32;
-    sendToWatch(IN_FLAGS_SYNC, String(bits));
+    var bg = parseInt(getOption('bg_fx') || '0', 10);
+    if (isNaN(bg) || bg < 0 || bg > 4) bg = 0;
+    sendToWatch(IN_FLAGS_SYNC, String(bits) + '|' + String(bg));
 }
 
 function syncEntriesToWatch() {
@@ -787,6 +832,13 @@ Pebble.addEventListener('appmessage', function (e) {
 function openConfigPage() {
     var base = DEFAULT_SERVER_URL;  // Config page always on default server.
     var snapshot = collectSettingsSnapshot();
+    // settings needs the watch platform
+    try {
+        if (typeof Pebble.getActiveWatchInfo === 'function') {
+            var info = Pebble.getActiveWatchInfo();
+            if (info && info.platform) snapshot._platform = info.platform;
+        }
+    } catch (err) { /* best effort */ }
     var url = base + CONFIG_URL_PATH + '#' + encodeURIComponent(JSON.stringify(snapshot));
     Pebble.openURL(url);
 }
