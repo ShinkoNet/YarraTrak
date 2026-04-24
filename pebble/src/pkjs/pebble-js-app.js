@@ -343,19 +343,27 @@ function encodeDeparture(d) {
     return fields.join(';');
 }
 
-// Drop exact duplicates (same run_ref) but otherwise pass the server's
-// departure list through untouched. V1 did the same — the server is
-// authoritative about which services are relevant.
+// Drop duplicate run_refs and collapse services leaving the same minute
+// (e.g. V/Line at Southern Cross where three lines depart at 06:29). After
+// this, the watch-side service-after guard naturally rejects the down click
+// because the second slot is empty — Service After is meaningful only when
+// it's actually a later train.
 function dedupeDepartures(deps) {
     if (!deps || deps.length === 0) return [];
-    var seen = {};
+    var seenRef = {};
+    var seenMinute = {};
     var out = [];
     for (var i = 0; i < deps.length; i++) {
         var d = deps[i];
         if (!d) continue;
-        var key = d.run_ref || ('idx_' + i);
-        if (seen[key]) continue;
-        seen[key] = true;
+        var refKey = d.run_ref || ('idx_' + i);
+        if (seenRef[refKey]) continue;
+        // "YYYY-MM-DDTHH:MM" — truncating to the minute catches both exact
+        // matches and sub-second siblings (16:13:00 / 16:13:45).
+        var minute = (d.departure_time || '').slice(0, 16);
+        if (minute && seenMinute[minute]) continue;
+        seenRef[refKey] = true;
+        if (minute) seenMinute[minute] = true;
         out.push(d);
     }
     return out;
