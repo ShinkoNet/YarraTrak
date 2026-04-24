@@ -30,6 +30,17 @@ static char s_time_buf[10];         // "17:27" or "5:27 PM" — "" if unknown
 static char s_route_buf[48];
 static char s_bottom_buf[48];
 
+// Shadow buffers of the last value fed into each text layer. Used to skip
+// set_text calls that would mark the layer dirty without actually changing
+// what it displays. Pebble's OS leaves the display static when no drawing
+// calls land, so this saves a per-tick redraw of every text layer.
+static char s_status_prev[24];
+static char s_route_prev[48];
+static char s_bottom_prev[48];
+static char s_platform_badge_prev[8];
+static char s_time_buf_prev[10];
+static GColor s_bottom_color_prev;
+
 static int32_t s_last_vibrated_minutes = -1;
 static bool    s_now_pattern_fired = false;  // NOW played for the active run
 static char s_last_run_ref[RUN_REF_LEN] = "";
@@ -176,10 +187,19 @@ static void cancel_running_anim(void) {
   s_shake_anim = NULL;
 }
 
+// Suppressed in battery-saver mode too: when the user disables background
+// FX we treat that as "only redraw when something actually changes" and
+// skip the per-tick bump and the delay shake along with it. The long
+// haptic pulse on delay still fires so the information isn't lost.
+static bool animations_suppressed(void) {
+  return g_app_state.flags.disable_timer_shake ||
+         g_app_state.flags.disable_ripple_vfx;
+}
+
 // V1 'bounce': the countdown ticked down — tiny +1y bob then back.
 // Fires every second the user's watching, so kept minimal (~70 ms).
 static void trigger_bounce(void) {
-  if (g_app_state.flags.disable_timer_shake) return;
+  if (animations_suppressed()) return;
   if (!s_countdown_layer) return;
   cancel_running_anim();
 
@@ -208,7 +228,7 @@ static void trigger_bounce(void) {
 // detected. Horizontal wiggle -2, +2, -1, +1, 0 over ~180 ms to draw the
 // eye to the number. Much more intrusive than the per-tick bounce.
 static void trigger_shake(void) {
-  if (g_app_state.flags.disable_timer_shake) return;
+  if (animations_suppressed()) return;
   if (!s_countdown_layer) return;
   cancel_running_anim();
 
@@ -277,24 +297,39 @@ static void render(void) {
     strncpy(s_status_buf, label, sizeof(s_status_buf) - 1);
   }
   s_status_buf[sizeof(s_status_buf) - 1] = '\0';
-  text_layer_set_text(s_status_layer, s_status_buf);
+  // Pebble's OS skips the display refresh when no drawing calls come in
+  // this pass, so suppress set_text when the buffer matches the last
+  // render — every set_text marks the TextLayer dirty even if the string
+  // is unchanged.
+  if (strcmp(s_status_prev, s_status_buf) != 0) {
+    text_layer_set_text(s_status_layer, s_status_buf);
+    strncpy(s_status_prev, s_status_buf, sizeof(s_status_prev) - 1);
+    s_status_prev[sizeof(s_status_prev) - 1] = '\0';
+  }
 
   // Route text
   fmt_watch_route(e, s_route_buf, sizeof(s_route_buf));
-  text_layer_set_text(s_route_layer, s_route_buf);
+  if (strcmp(s_route_prev, s_route_buf) != 0) {
+    text_layer_set_text(s_route_layer, s_route_buf);
+    strncpy(s_route_prev, s_route_buf, sizeof(s_route_prev) - 1);
+    s_route_prev[sizeof(s_route_prev) - 1] = '\0';
+  }
 
   Departure *dep = get_watched_departure();
 
   // Countdown — swap to a square numeric font when the string is all digits.
   int32_t sec = dep ? departure_seconds_until(dep) : INT32_MAX;
   fmt_countdown(sec, dep, s_countdown_buf, sizeof(s_countdown_buf));
-  text_layer_set_font(s_countdown_layer, fonts_get_system_font(
-      is_numeric_countdown(s_countdown_buf) ? FONT_KEY_LECO_42_NUMBERS
-                                            : FONT_KEY_BITHAM_42_BOLD));
-  text_layer_set_text(s_countdown_layer, s_countdown_buf);
 
   bool changed = strcmp(s_countdown_prev, s_countdown_buf) != 0;
   if (changed) {
+    // Font swap + text update only when the string actually changed. The
+    // font swap itself triggers a dirty mark, so keeping it in the
+    // change-gate saves a redraw every "no-change" tick.
+    text_layer_set_font(s_countdown_layer, fonts_get_system_font(
+        is_numeric_countdown(s_countdown_buf) ? FONT_KEY_LECO_42_NUMBERS
+                                              : FONT_KEY_BITHAM_42_BOLD));
+    text_layer_set_text(s_countdown_layer, s_countdown_buf);
     strncpy(s_countdown_prev, s_countdown_buf, sizeof(s_countdown_prev) - 1);
     s_countdown_prev[sizeof(s_countdown_prev) - 1] = '\0';
 
@@ -335,7 +370,17 @@ static void render(void) {
     snprintf(s_platform_badge, sizeof(s_platform_badge), "P%s", dep->platform);
   }
 
-  if (s_info_layer) layer_mark_dirty(s_info_layer);
+  // info_layer renders the platform badge + time through a custom
+  // update_proc, so only re-mark it dirty when one of its inputs changes.
+  if (s_info_layer &&
+      (strcmp(s_platform_badge, s_platform_badge_prev) != 0 ||
+       strcmp(s_time_buf,       s_time_buf_prev)       != 0)) {
+    layer_mark_dirty(s_info_layer);
+    strncpy(s_platform_badge_prev, s_platform_badge, sizeof(s_platform_badge_prev) - 1);
+    s_platform_badge_prev[sizeof(s_platform_badge_prev) - 1] = '\0';
+    strncpy(s_time_buf_prev, s_time_buf, sizeof(s_time_buf_prev) - 1);
+    s_time_buf_prev[sizeof(s_time_buf_prev) - 1] = '\0';
+  }
 
   // Bottom: disruption, live distance (metro only, non-zero), or vehicle desc.
   s_bottom_buf[0] = '\0';
@@ -358,10 +403,19 @@ static void render(void) {
     strncpy(s_bottom_buf, g_app_state.watched_vehicle_desc, sizeof(s_bottom_buf) - 1);
   }
   s_bottom_buf[sizeof(s_bottom_buf) - 1] = '\0';
-  text_layer_set_text_color(s_bottom_layer,
-      bottom_disruption ? theme_disruption(bottom_disruption) : theme_fg());
-  text_layer_set_text(s_bottom_layer, s_bottom_buf);
+  GColor bottom_color = bottom_disruption ? theme_disruption(bottom_disruption) : theme_fg();
+  if (!gcolor_equal(bottom_color, s_bottom_color_prev)) {
+    text_layer_set_text_color(s_bottom_layer, bottom_color);
+    s_bottom_color_prev = bottom_color;
+  }
+  if (strcmp(s_bottom_prev, s_bottom_buf) != 0) {
+    text_layer_set_text(s_bottom_layer, s_bottom_buf);
+    strncpy(s_bottom_prev, s_bottom_buf, sizeof(s_bottom_prev) - 1);
+    s_bottom_prev[sizeof(s_bottom_prev) - 1] = '\0';
+  }
 
+  // The progress bar shrinks per second (sec % 60), so it genuinely needs
+  // a redraw every tick. Leave it unconditionally marked.
   if (s_progress_layer) layer_mark_dirty(s_progress_layer);
 
   // Auto-advance if current departure has fully passed. Slide the cache
@@ -521,6 +575,12 @@ static void window_load(Window *window) {
   window_set_click_config_provider(window, click_config_provider);
 
   s_countdown_prev[0] = '\0';
+  s_status_prev[0] = '\0';
+  s_route_prev[0] = '\0';
+  s_bottom_prev[0] = '\0';
+  s_platform_badge_prev[0] = '\0';
+  s_time_buf_prev[0] = '\0';
+  s_bottom_color_prev = GColorClear;
 
   // Kick first render + watch_start.
   Departure *dep = get_watched_departure();
