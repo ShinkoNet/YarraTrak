@@ -359,6 +359,16 @@ void protocol_init(void) {
   app_message_register_inbox_dropped(inbox_dropped_handler);
   app_message_register_outbox_failed(outbox_failed_handler);
 
-  // keep appmessage buffers boringly small
-  app_message_open(1024, 256);
+  // bulk entry syncs (in_entry_sync_replace / in_entry_sync_bulk) target 960-byte payloads; once the dict+tuple overhead lands
+  AppMessageResult r = app_message_open(1536, 256);
+  if (r != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_ERROR,
+            "app_message_open(1536) failed (%d); retrying smaller", r);
+    r = app_message_open(1024, 256);
+    if (r != APP_MSG_OK) {
+      APP_LOG(APP_LOG_LEVEL_ERROR,
+              "app_message_open(1024) also failed (%d); falling back to 512", r);
+      app_message_open(512, 256);
+    }
+  }
 }

@@ -299,10 +299,16 @@ static void render(void) {
 
   bool changed = strcmp(s_countdown_prev, s_countdown_buf) != 0;
   if (changed) {
-    // font swap + text update only when the string actually changed
-    text_layer_set_font(s_countdown_layer, fonts_get_system_font(
-        is_numeric_countdown(s_countdown_buf) ? FONT_KEY_LECO_42_NUMBERS
-                                              : FONT_KEY_BITHAM_42_BOLD));
+    // leco only draws digits
+    const char *font_key;
+    if (!is_numeric_countdown(s_countdown_buf)) {
+      font_key = FONT_KEY_BITHAM_42_BOLD;
+    } else if (strlen(s_countdown_buf) >= 7) {
+      font_key = FONT_KEY_LECO_36_BOLD_NUMBERS;
+    } else {
+      font_key = FONT_KEY_LECO_42_NUMBERS;
+    }
+    text_layer_set_font(s_countdown_layer, fonts_get_system_font(font_key));
     text_layer_set_text(s_countdown_layer, s_countdown_buf);
     strncpy(s_countdown_prev, s_countdown_buf, sizeof(s_countdown_prev) - 1);
     s_countdown_prev[sizeof(s_countdown_prev) - 1] = '\0';
