@@ -19,8 +19,3 @@ GColor theme_ring(void);        // ripple ring stroke (colour) or dot (aplite)
 // replacements, upcoming service changes) and red for warning-level
 // (anything else). Falls back to theme_fg on aplite since it's 1-bit.
 GColor theme_disruption(const char *label);
-
-// True when the given label represents a "major" (non-caution) disruption
-// — i.e. would render red via theme_disruption. Used by the Alert fx to
-// decide whether to flare on the current watched run.
-bool theme_is_major_disruption(const char *label);

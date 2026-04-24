@@ -40,21 +40,16 @@ GColor theme_ring(void) {
 // V1 used yellow for caution-level disruptions; orange reads better on both
 // white and black backgrounds so it survives the theme flip. Anything more
 // severe uses the usual red.
-bool theme_is_major_disruption(const char *label) {
-  if (!label || !label[0]) return false;
+GColor theme_disruption(const char *label) {
+#if defined(PBL_COLOR)
+  if (!label || !label[0]) return theme_fg();
   if (strncmp(label, "Minor Delays", 12) == 0 ||
       strstr(label, "Buses") != NULL ||
       strstr(label, "Bus Replacement") != NULL ||
       strstr(label, "Service Change") != NULL) {
-    return false;
+    return GColorOrange;
   }
-  return true;
-}
-
-GColor theme_disruption(const char *label) {
-#if defined(PBL_COLOR)
-  if (!label || !label[0]) return theme_fg();
-  return theme_is_major_disruption(label) ? GColorRed : GColorOrange;
+  return GColorRed;
 #else
   (void)label;
   return theme_fg();
