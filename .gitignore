@@ -86,3 +86,4 @@ pebble/*.mkv
 # Legacy top-level reference checkouts
 pebble-hass-reference/
 pebblejs-reference/
+PEBBLE_C_PORT_FEASIBILITY.md
