@@ -31,6 +31,7 @@ var IN_QUERY_RESULT    = 9;
 var IN_QUERY_CLARIFY   = 10;
 var IN_QUERY_ERROR     = 11;
 var IN_QUERY_SAVED     = 12;
+var IN_ENTRY_SYNC_REPLACE = 13;
 
 // Outbound (C -> JS) types.
 var OUT_READY       = 1;
@@ -302,7 +303,6 @@ function syncFlagsToWatch() {
 }
 
 function syncEntriesToWatch() {
-    sendToWatch(IN_CLEAR_ENTRIES, '');
     var count = getConfiguredEntryCount();
     var chunks = [];
     for (var i = 1; i <= count; i++) {
@@ -321,15 +321,33 @@ function syncEntriesToWatch() {
         ];
         chunks.push(i + '|' + fields.join(';'));
     }
-    if (chunks.length === 0) return;
+
+    // No favourites: an explicit clear is the only correct signal.
+    if (chunks.length === 0) {
+        sendToWatch(IN_CLEAR_ENTRIES, '');
+        return;
+    }
 
     // Batch into as few AppMessages as possible — each send costs ~150-300ms
-    // of phone/watch roundtrip, so populating the menu one entry at a time
-    // looked like entries were popping in individually. The watch's inbox is
-    // 1024 bytes; leave 64 bytes of headroom for keys/type/overhead.
+    // of phone/watch roundtrip. Watch inbox is 1024 bytes; leave 64 bytes
+    // of headroom for keys/type/overhead.
     var INBOX_BUDGET = 960;
     var SEP = '\x1f';  // unit separator
+    var joined = chunks.join(SEP);
 
+    if (joined.length <= INBOX_BUDGET) {
+        // Happy path: the entire entry set fits in one AppMessage. Skip the
+        // preceding IN_CLEAR_ENTRIES round-trip (~150-300 ms saved) and let
+        // the watch do an atomic clear+apply inside the REPLACE handler.
+        sendToWatch(IN_ENTRY_SYNC_REPLACE, joined);
+        return;
+    }
+
+    // Multi-chunk fallback: the CLEAR still matters because a BULK chunk
+    // can't self-authoritatively clear without wiping peer chunks. The
+    // watch's 500 ms post-clear debounce absorbs the inter-message gap so
+    // users don't see the empty state between clear and first chunk.
+    sendToWatch(IN_CLEAR_ENTRIES, '');
     var batch = '';
     for (var j = 0; j < chunks.length; j++) {
         var piece = chunks[j];

@@ -22,6 +22,7 @@ enum {
   IN_QUERY_CLARIFY   = 10,  // data: "question\x1elabel1\x1fvalue1\x1elabel2\x1fvalue2..."
   IN_QUERY_ERROR     = 11,  // data: error message
   IN_QUERY_SAVED     = 12,  // data: button_id — agent persisted a favourite
+  IN_ENTRY_SYNC_REPLACE = 13,  // atomic clear + apply (single-message sync)
 };
 
 // Outbound message types (C -> JS).

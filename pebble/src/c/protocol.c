@@ -266,6 +266,22 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       menu_window_refresh();
       break;
     }
+    case IN_ENTRY_SYNC_REPLACE: {
+      // Single-message atomic replacement: clear then apply in one handler,
+      // no preceding IN_CLEAR_ENTRIES. Only used when PKJS knows the whole
+      // entry set fits inside one AppMessage (the common case). Multi-chunk
+      // syncs still use IN_CLEAR_ENTRIES + IN_ENTRY_SYNC_BULK.
+      cancel_pending_clear_refresh();
+      app_state_clear_entries();
+      char *chunks[MAX_ENTRIES];
+      int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
+      for (int i = 0; i < cc; i++) {
+        if (chunks[i][0]) handle_entry_sync(chunks[i]);
+      }
+      settings_store_save_entries();
+      menu_window_refresh();
+      break;
+    }
     case IN_CLEAR_ENTRIES:
       app_state_clear_entries();
       settings_store_save_entries();
