@@ -1,0 +1,326 @@
+#include "watch_window.h"
+#include "../app_state.h"
+#include "../protocol.h"
+#include "../departures.h"
+#include "../formatting.h"
+#include "../haptics.h"
+
+#include <pebble.h>
+#include <limits.h>
+#include <stdio.h>
+#include <string.h>
+
+static Window *s_window = NULL;
+static TextLayer *s_status_layer = NULL;
+static TextLayer *s_countdown_layer = NULL;
+static TextLayer *s_platform_layer = NULL;
+static TextLayer *s_route_layer = NULL;
+static TextLayer *s_bottom_layer = NULL;
+static Layer     *s_progress_layer = NULL;
+static AppTimer  *s_tick_timer = NULL;
+
+static char s_status_buf[24];
+static char s_countdown_buf[16];
+static char s_platform_buf[24];
+static char s_route_buf[48];
+static char s_bottom_buf[48];
+
+static int32_t s_last_vibrated_minutes = -1;
+static char s_last_run_ref[RUN_REF_LEN] = "";
+
+static void schedule_tick(void);
+
+static Departure *get_watched_departure(void) {
+  Entry *e = app_state_get_entry(g_app_state.watching_button);
+  if (!e) return NULL;
+  return departures_get(e, g_app_state.watching_offset);
+}
+
+static void send_watch_start_if_needed(Departure *dep) {
+  Entry *e = app_state_get_entry(g_app_state.watching_button);
+  if (!e || !dep || !dep->has_data || !dep->run_ref[0]) {
+    return;
+  }
+  if (strcmp(s_last_run_ref, dep->run_ref) == 0) {
+    return;
+  }
+  strncpy(s_last_run_ref, dep->run_ref, sizeof(s_last_run_ref) - 1);
+  s_last_run_ref[sizeof(s_last_run_ref) - 1] = '\0';
+  g_app_state.watched_distance_km_x100 = INT32_MIN;
+  g_app_state.watched_vehicle_desc[0] = '\0';
+  protocol_send_watch_start(g_app_state.watching_button,
+                            dep->run_ref,
+                            e->stop_id,
+                            dep->route_type,
+                            dep->route_id,
+                            dep->direction_id);
+}
+
+static void progress_update_proc(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
+
+  Departure *dep = get_watched_departure();
+  if (!dep || !dep->has_data) {
+    graphics_context_set_fill_color(ctx, GColorDarkGray);
+    graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+    return;
+  }
+
+  int32_t sec = departure_seconds_until(dep);
+  if (sec < 0) sec = 0;
+  int32_t within_minute = sec % 60;
+  int32_t fill_width = (within_minute * bounds.size.w) / 60;
+
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+
+  graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorVividCerulean, GColorWhite));
+  graphics_fill_rect(ctx, GRect(0, 0, fill_width, bounds.size.h), 0, GCornerNone);
+}
+
+static void render(void) {
+  Entry *e = app_state_get_entry(g_app_state.watching_button);
+  if (!e) {
+    return;
+  }
+
+  // Status text
+  if (g_app_state.conn_state != CONN_CONNECTED) {
+    strncpy(s_status_buf, "Reconnecting...", sizeof(s_status_buf) - 1);
+  } else if (g_app_state.watching_offset == 0) {
+    strncpy(s_status_buf, "Next Service", sizeof(s_status_buf) - 1);
+  } else {
+    strncpy(s_status_buf, "Service After", sizeof(s_status_buf) - 1);
+  }
+  s_status_buf[sizeof(s_status_buf) - 1] = '\0';
+  text_layer_set_text(s_status_layer, s_status_buf);
+
+  // Route text
+  fmt_watch_route(e, s_route_buf, sizeof(s_route_buf));
+  text_layer_set_text(s_route_layer, s_route_buf);
+
+  Departure *dep = get_watched_departure();
+
+  // Countdown
+  int32_t sec = dep ? departure_seconds_until(dep) : INT32_MAX;
+  fmt_countdown(sec, dep, s_countdown_buf, sizeof(s_countdown_buf));
+  text_layer_set_text(s_countdown_layer, s_countdown_buf);
+
+  // Platform
+  if (dep && dep->has_data && dep->platform[0]) {
+    snprintf(s_platform_buf, sizeof(s_platform_buf), "Platform %s", dep->platform);
+  } else {
+    s_platform_buf[0] = '\0';
+  }
+  text_layer_set_text(s_platform_layer, s_platform_buf);
+
+  // Bottom: disruption, vehicle desc, or route id.
+  s_bottom_buf[0] = '\0';
+  if (e->disruption_count > 0) {
+    uint32_t which = (uint32_t)(time(NULL) / 3) % e->disruption_count;
+    strncpy(s_bottom_buf, e->disruptions[which], sizeof(s_bottom_buf) - 1);
+  } else if (g_app_state.watched_distance_km_x100 != INT32_MIN &&
+             strcmp(g_app_state.watched_run_ref, dep ? dep->run_ref : "") == 0) {
+    int32_t whole = g_app_state.watched_distance_km_x100 / 100;
+    int32_t frac = g_app_state.watched_distance_km_x100 % 100;
+    if (frac < 0) frac = -frac;
+    snprintf(s_bottom_buf, sizeof(s_bottom_buf), "%ld.%02ld km away", (long)whole, (long)frac);
+  } else if (g_app_state.watched_vehicle_desc[0] &&
+             strcmp(g_app_state.watched_run_ref, dep ? dep->run_ref : "") == 0) {
+    strncpy(s_bottom_buf, g_app_state.watched_vehicle_desc, sizeof(s_bottom_buf) - 1);
+  } else if (dep && dep->route_id[0]) {
+    strncpy(s_bottom_buf, dep->route_id, sizeof(s_bottom_buf) - 1);
+  }
+  s_bottom_buf[sizeof(s_bottom_buf) - 1] = '\0';
+  text_layer_set_text(s_bottom_layer, s_bottom_buf);
+
+  if (s_progress_layer) layer_mark_dirty(s_progress_layer);
+
+  // Auto-advance if current departure has fully passed.
+  if ((!dep || sec < -60) && g_app_state.watching_offset == 0) {
+    // Try switching to the next departure slot.
+    Entry *e2 = app_state_get_entry(g_app_state.watching_button);
+    if (e2) {
+      Departure *next = departures_get(e2, 1);
+      if (next && next->has_data) {
+        // Slide it into slot 0.
+        memcpy(&e2->departures[0], &e2->departures[1], sizeof(Departure));
+        memset(&e2->departures[1], 0, sizeof(Departure));
+        s_last_run_ref[0] = '\0';
+      }
+    }
+  }
+}
+
+static void maybe_vibrate(Departure *dep) {
+  if (!dep || !dep->has_data) return;
+
+  int32_t sec = departure_seconds_until(dep);
+  int32_t mins = sec >= 0 ? sec / 60 : 0;
+
+  bool new_run = (strcmp(s_last_run_ref, dep->run_ref) != 0);
+  bool decreased = (s_last_vibrated_minutes > 0 && mins < s_last_vibrated_minutes);
+
+  if (new_run || decreased || s_last_vibrated_minutes < 0) {
+    s_last_vibrated_minutes = mins;
+    if (mins >= 0) {
+      haptics_play_for_minutes(mins);
+    }
+  }
+}
+
+static void tick_cb(void *unused) {
+  s_tick_timer = NULL;
+
+  Departure *dep = get_watched_departure();
+  if (dep) {
+    send_watch_start_if_needed(dep);
+    maybe_vibrate(dep);
+  }
+  render();
+  schedule_tick();
+}
+
+static void schedule_tick(void) {
+  if (s_tick_timer) {
+    app_timer_cancel(s_tick_timer);
+  }
+  s_tick_timer = app_timer_register(1000, tick_cb, NULL);
+}
+
+static void up_click(ClickRecognizerRef rec, void *context) {
+  if (g_app_state.watching_offset != 0) {
+    g_app_state.watching_offset = 0;
+    s_last_run_ref[0] = '\0';
+    s_last_vibrated_minutes = -1;
+    render();
+    Departure *dep = get_watched_departure();
+    if (dep) send_watch_start_if_needed(dep);
+  }
+}
+
+static void down_click(ClickRecognizerRef rec, void *context) {
+  Entry *e = app_state_get_entry(g_app_state.watching_button);
+  if (!e) return;
+  Departure *next = departures_get(e, 1);
+  if (next && next->has_data && g_app_state.watching_offset != 1) {
+    g_app_state.watching_offset = 1;
+    s_last_run_ref[0] = '\0';
+    s_last_vibrated_minutes = -1;
+    render();
+    send_watch_start_if_needed(next);
+  }
+}
+
+static void click_config_provider(void *context) {
+  window_single_click_subscribe(BUTTON_ID_UP, up_click);
+  window_single_click_subscribe(BUTTON_ID_DOWN, down_click);
+}
+
+static void window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(root);
+  window_set_background_color(window, GColorBlack);
+
+  s_status_layer = text_layer_create(GRect(0, 4, bounds.size.w, 18));
+  text_layer_set_font(s_status_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_text_color(s_status_layer, GColorWhite);
+  text_layer_set_background_color(s_status_layer, GColorClear);
+  text_layer_set_text_alignment(s_status_layer, GTextAlignmentCenter);
+  layer_add_child(root, text_layer_get_layer(s_status_layer));
+
+  s_route_layer = text_layer_create(GRect(4, 22, bounds.size.w - 8, 20));
+  text_layer_set_font(s_route_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_text_color(s_route_layer, GColorWhite);
+  text_layer_set_background_color(s_route_layer, GColorClear);
+  text_layer_set_text_alignment(s_route_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_route_layer, GTextOverflowModeTrailingEllipsis);
+  layer_add_child(root, text_layer_get_layer(s_route_layer));
+
+  s_countdown_layer = text_layer_create(GRect(0, bounds.size.h / 2 - 32, bounds.size.w, 44));
+  text_layer_set_font(s_countdown_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
+  text_layer_set_text_color(s_countdown_layer, GColorWhite);
+  text_layer_set_background_color(s_countdown_layer, GColorClear);
+  text_layer_set_text_alignment(s_countdown_layer, GTextAlignmentCenter);
+  layer_add_child(root, text_layer_get_layer(s_countdown_layer));
+
+  s_platform_layer = text_layer_create(GRect(4, bounds.size.h / 2 + 18, bounds.size.w - 8, 18));
+  text_layer_set_font(s_platform_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_text_color(s_platform_layer, GColorWhite);
+  text_layer_set_background_color(s_platform_layer, GColorClear);
+  text_layer_set_text_alignment(s_platform_layer, GTextAlignmentCenter);
+  layer_add_child(root, text_layer_get_layer(s_platform_layer));
+
+  s_bottom_layer = text_layer_create(GRect(4, bounds.size.h - 40, bounds.size.w - 8, 18));
+  text_layer_set_font(s_bottom_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_text_color(s_bottom_layer, GColorWhite);
+  text_layer_set_background_color(s_bottom_layer, GColorClear);
+  text_layer_set_text_alignment(s_bottom_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_bottom_layer, GTextOverflowModeTrailingEllipsis);
+  layer_add_child(root, text_layer_get_layer(s_bottom_layer));
+
+  s_progress_layer = layer_create(GRect(0, bounds.size.h - 6, bounds.size.w, 4));
+  layer_set_update_proc(s_progress_layer, progress_update_proc);
+  layer_add_child(root, s_progress_layer);
+
+  window_set_click_config_provider(window, click_config_provider);
+
+  // Kick first render + watch_start.
+  Departure *dep = get_watched_departure();
+  if (dep) {
+    send_watch_start_if_needed(dep);
+    maybe_vibrate(dep);
+  }
+  render();
+  schedule_tick();
+}
+
+static void window_unload(Window *window) {
+  if (s_tick_timer) { app_timer_cancel(s_tick_timer); s_tick_timer = NULL; }
+  if (s_status_layer) { text_layer_destroy(s_status_layer); s_status_layer = NULL; }
+  if (s_route_layer) { text_layer_destroy(s_route_layer); s_route_layer = NULL; }
+  if (s_countdown_layer) { text_layer_destroy(s_countdown_layer); s_countdown_layer = NULL; }
+  if (s_platform_layer) { text_layer_destroy(s_platform_layer); s_platform_layer = NULL; }
+  if (s_bottom_layer) { text_layer_destroy(s_bottom_layer); s_bottom_layer = NULL; }
+  if (s_progress_layer) { layer_destroy(s_progress_layer); s_progress_layer = NULL; }
+  window_destroy(s_window);
+  s_window = NULL;
+  g_app_state.watching_button = 0;
+  g_app_state.watching_offset = 0;
+  s_last_run_ref[0] = '\0';
+  s_last_vibrated_minutes = -1;
+  haptics_cancel();
+  protocol_send_watch_stop();
+}
+
+void watch_window_push(uint8_t button_id) {
+  Entry *e = app_state_get_entry(button_id);
+  if (!e || !e->configured) return;
+
+  g_app_state.watching_button = button_id;
+  g_app_state.watching_offset = 0;
+  g_app_state.watched_distance_km_x100 = INT32_MIN;
+  g_app_state.watched_vehicle_desc[0] = '\0';
+  g_app_state.watched_run_ref[0] = '\0';
+  s_last_run_ref[0] = '\0';
+  s_last_vibrated_minutes = -1;
+
+  if (s_window) return;  // Already open.
+
+  s_window = window_create();
+  window_set_window_handlers(s_window, (WindowHandlers){
+    .load = window_load,
+    .unload = window_unload,
+  });
+  window_stack_push(s_window, true);
+}
+
+void watch_window_refresh(void) {
+  if (s_window) {
+    render();
+  }
+}
+
+bool watch_window_is_open(void) {
+  return s_window != NULL;
+}
