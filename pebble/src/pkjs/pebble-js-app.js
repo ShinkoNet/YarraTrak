@@ -4,8 +4,6 @@
  * Owns the WebSocket bridge, heartbeat, config page, and compacts server JSON
  * into AppMessage dictionaries for the native C watch app. The watch owns the
  * UI; this file owns only transport.
- *
- * See PEBBLE_C_PORT_FEASIBILITY.md (recommended architecture) for the split.
  */
 
 var DEFAULT_SERVER_URL = 'https://ptv.netcavy.net';
