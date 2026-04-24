@@ -101,6 +101,10 @@ static void handle_flags_sync(char *data) {
   }
   settings_store_save_flags();
   g_app_state.settings_received = true;
+  // close the watch face before repainting theme stuff
+  if (watch_window_is_open()) {
+    watch_window_close();
+  }
 }
 
 // entry_sync only sends what the watch needs
@@ -242,6 +246,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       handle_entry_sync(data);
       settings_store_save_entries();
       menu_window_refresh();
+      if (watch_window_is_open()) watch_window_close();
       break;
     case IN_ENTRY_SYNC_BULK: {
       // "entry1\x1fentry2\x1f..." where each sub-chunk is the same format in_entry_sync accepts:
@@ -253,6 +258,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       }
       settings_store_save_entries();
       menu_window_refresh();
+      if (watch_window_is_open()) watch_window_close();
       break;
     }
     case IN_ENTRY_SYNC_REPLACE: {
@@ -266,6 +272,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       }
       settings_store_save_entries();
       menu_window_refresh();
+      if (watch_window_is_open()) watch_window_close();
       break;
     }
     case IN_CLEAR_ENTRIES:
@@ -273,6 +280,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       settings_store_save_entries();
       // wait a beat before showing empty favourites
       schedule_clear_refresh();
+      if (watch_window_is_open()) watch_window_close();
       break;
     case IN_QUERY_RESULT:
       query_window_show_result(data);
