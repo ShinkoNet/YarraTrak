@@ -4,13 +4,22 @@
 #include <pebble.h>
 #include <stdbool.h>
 
+typedef enum {
+  BG_FX_RIPPLE    = 0,  // concentric expanding rings (default)
+  BG_FX_STARFIELD = 1,  // perspective starfield, Amiga style
+  BG_FX_PLASMA    = 2,  // 8x8 blocked sin-field
+  BG_FX_FIRE      = 3,  // Doom-menu style bottom-up fire
+  BG_FX_CUBE      = 4,  // rotating wireframe cube
+} BgFxMode;
+
 typedef struct {
   bool disable_vibration;
-  bool disable_ripple_vfx;
+  bool disable_ripple_vfx;   // master kill for all background fx
   bool disable_timer_shake;
   bool disable_ai_assistant;
   bool use_24hr_time;
   bool dark_theme;           // false = light (default), true = dark
+  uint8_t bg_fx;             // BgFxMode — which effect to draw behind the countdown
 } Flags;
 
 typedef struct {

@@ -227,7 +227,7 @@ function collectSettingsSnapshot() {
     var keys = ['server_url', 'llm_api_key', 'use_24hr_time', 'disable_ai_assistant',
                 'enable_third_party_endpoint', 'disable_vibration',
                 'disable_ripple_vfx', 'disable_timer_shake', 'dark_theme',
-                'entry_count', 'client_id'];
+                'bg_fx', 'entry_count', 'client_id'];
     for (var i = 0; i < keys.length; i++) {
         var v = getOption(keys[i]);
         if (v !== null) snapshot[keys[i]] = v;
@@ -361,7 +361,11 @@ function syncFlagsToWatch() {
     if (boolOption('disable_ai_assistant')) bits |= 8;
     if (boolOption('use_24hr_time'))        bits |= 16;
     if (boolOption('dark_theme'))           bits |= 32;
-    sendToWatch(IN_FLAGS_SYNC, String(bits));
+    // Pipe-append the bg-fx enum (0=rings, 1=starfield, 2=plasma, 3=fire,
+    // 4=cube). Older watch builds ignore the trailing token.
+    var bg = parseInt(getOption('bg_fx') || '0', 10);
+    if (isNaN(bg) || bg < 0 || bg > 4) bg = 0;
+    sendToWatch(IN_FLAGS_SYNC, String(bits) + '|' + String(bg));
 }
 
 function syncEntriesToWatch() {
@@ -888,6 +892,15 @@ Pebble.addEventListener('appmessage', function (e) {
 function openConfigPage() {
     var base = DEFAULT_SERVER_URL;  // Config page always on default server.
     var snapshot = collectSettingsSnapshot();
+    // Expose the watch platform so settings.html can gate colour-only
+    // effects (plasma / fire) behind the capability check. Falls through
+    // gracefully if Pebble.getActiveWatchInfo isn't available on the host.
+    try {
+        if (typeof Pebble.getActiveWatchInfo === 'function') {
+            var info = Pebble.getActiveWatchInfo();
+            if (info && info.platform) snapshot._platform = info.platform;
+        }
+    } catch (err) { /* best effort */ }
     var url = base + CONFIG_URL_PATH + '#' + encodeURIComponent(JSON.stringify(snapshot));
     Pebble.openURL(url);
 }
