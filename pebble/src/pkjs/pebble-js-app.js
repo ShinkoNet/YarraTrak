@@ -343,12 +343,30 @@ function encodeDeparture(d) {
     return fields.join(';');
 }
 
+// Drop exact duplicates (same run_ref) but otherwise pass the server's
+// departure list through untouched. V1 did the same — the server is
+// authoritative about which services are relevant.
+function dedupeDepartures(deps) {
+    if (!deps || deps.length === 0) return [];
+    var seen = {};
+    var out = [];
+    for (var i = 0; i < deps.length; i++) {
+        var d = deps[i];
+        if (!d) continue;
+        var key = d.run_ref || ('idx_' + i);
+        if (seen[key]) continue;
+        seen[key] = true;
+        out.push(d);
+    }
+    return out;
+}
+
 function handleFavUpdate(msg) {
     var updates = msg.updates || [];
     for (var i = 0; i < updates.length; i++) {
         var u = updates[i];
         var bid = u.button_id;
-        var deps = u.departures || [];
+        var deps = dedupeDepartures(u.departures);
         var dep1 = encodeDeparture(deps[0]);
         var dep2 = encodeDeparture(deps[1]);
         var labels = u.disruption_labels || (u.disruption_label ? [u.disruption_label] : []);
