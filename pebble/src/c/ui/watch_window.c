@@ -201,16 +201,16 @@ static void render(void) {
   text_layer_set_text(s_platform_layer, s_platform_buf);
 
   // Bottom: disruption, live distance (metro only, non-zero), or vehicle desc.
-  // We intentionally do NOT fall back to raw route_id — that shows numeric
-  // IDs like "1740" which aren't meaningful to riders.
   s_bottom_buf[0] = '\0';
+  const char *bottom_disruption = NULL;
   bool have_position = (g_app_state.watched_distance_km_x100 != INT32_MIN &&
                         g_app_state.watched_distance_km_x100 > 0 &&
                         dep && strcmp(g_app_state.watched_run_ref, dep->run_ref) == 0);
 
   if (e->disruption_count > 0) {
     uint32_t which = (uint32_t)(time(NULL) / 3) % e->disruption_count;
-    strncpy(s_bottom_buf, e->disruptions[which], sizeof(s_bottom_buf) - 1);
+    bottom_disruption = e->disruptions[which];
+    strncpy(s_bottom_buf, bottom_disruption, sizeof(s_bottom_buf) - 1);
   } else if (have_position && dep->route_type == 0 /* metro train */) {
     int32_t whole = g_app_state.watched_distance_km_x100 / 100;
     int32_t frac = g_app_state.watched_distance_km_x100 % 100;
@@ -221,6 +221,8 @@ static void render(void) {
     strncpy(s_bottom_buf, g_app_state.watched_vehicle_desc, sizeof(s_bottom_buf) - 1);
   }
   s_bottom_buf[sizeof(s_bottom_buf) - 1] = '\0';
+  text_layer_set_text_color(s_bottom_layer,
+      bottom_disruption ? theme_disruption(bottom_disruption) : theme_fg());
   text_layer_set_text(s_bottom_layer, s_bottom_buf);
 
   if (s_progress_layer) layer_mark_dirty(s_progress_layer);

@@ -71,6 +71,7 @@ static void draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_ind
 
   char title[64];
   char subtitle[32];
+  const char *disruption_label = NULL;
   title[0] = '\0';
   subtitle[0] = '\0';
 
@@ -93,8 +94,9 @@ static void draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_ind
 
     if (e->disruption_count > 0) {
       uint32_t which = (uint32_t)(time(NULL) / 3) % e->disruption_count;
+      disruption_label = e->disruptions[which];
       snprintf(subtitle, sizeof(subtitle), "%s | %s",
-               countdown, e->disruptions[which]);
+               countdown, disruption_label);
     } else {
       strncpy(subtitle, countdown, sizeof(subtitle) - 1);
       subtitle[sizeof(subtitle) - 1] = '\0';
@@ -106,11 +108,13 @@ draw:;
   // Colour platforms: highlight bg is cerulean, white text reads well.
   // Aplite: highlight bg is theme_fg (inverse of bg), so text must flip to
   // theme_bg or it disappears (white-on-white / black-on-black).
-  GColor text = highlighted
+  GColor default_text = highlighted
       ? PBL_IF_COLOR_ELSE(GColorWhite, theme_bg())
       : theme_fg();
-  graphics_context_set_text_color(ctx, text);
 
+  // Title always uses the default text colour — only the subtitle tints
+  // disruption severity, so the row title stays legible under any alert.
+  graphics_context_set_text_color(ctx, default_text);
   graphics_draw_text(ctx, title,
                      fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
                      GRect(4, 0, bounds.size.w - 8, 22),
@@ -118,6 +122,12 @@ draw:;
                      GTextAlignmentLeft, NULL);
 
   if (subtitle[0]) {
+    // Only tint when NOT highlighted — on a cerulean / inverse-fg background
+    // the orange/red caution colours wouldn't have enough contrast.
+    GColor sub_color = (!highlighted && disruption_label)
+        ? theme_disruption(disruption_label)
+        : default_text;
+    graphics_context_set_text_color(ctx, sub_color);
     graphics_draw_text(ctx, subtitle,
                        fonts_get_system_font(FONT_KEY_GOTHIC_14),
                        GRect(4, 20, bounds.size.w - 8, 18),

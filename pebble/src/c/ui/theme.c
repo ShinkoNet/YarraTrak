@@ -1,6 +1,8 @@
 #include "theme.h"
 #include "../app_state.h"
 
+#include <string.h>
+
 static bool is_dark(void) {
   return g_app_state.flags.dark_theme;
 }
@@ -31,6 +33,25 @@ GColor theme_ring(void) {
 #else
   // Aplite: rings are the foreground colour so the stippled dots are
   // visible against the background in either theme.
+  return theme_fg();
+#endif
+}
+
+// V1 used yellow for caution-level disruptions; orange reads better on both
+// white and black backgrounds so it survives the theme flip. Anything more
+// severe uses the usual red.
+GColor theme_disruption(const char *label) {
+#if defined(PBL_COLOR)
+  if (!label || !label[0]) return theme_fg();
+  if (strncmp(label, "Minor Delays", 12) == 0 ||
+      strstr(label, "Buses") != NULL ||
+      strstr(label, "Bus Replacement") != NULL ||
+      strstr(label, "Service Change") != NULL) {
+    return GColorOrange;
+  }
+  return GColorRed;
+#else
+  (void)label;
   return theme_fg();
 #endif
 }
