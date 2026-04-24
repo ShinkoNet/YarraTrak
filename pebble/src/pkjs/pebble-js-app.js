@@ -118,29 +118,89 @@ function getConfiguredEntryCount() {
     return isFinite(v) ? v : 0;
 }
 
-// One-shot upgrade path: V1 stored favourites under btnN_* keys. If an old
-// install is rolling up to this build, copy any btn-prefixed data across to
-// the new entry-prefixed keys and wipe the originals so we don't keep two
-// sources of truth. Cheap no-op when there's nothing to migrate.
+// One-shot upgrade path. Two historical storage shapes exist, both covered
+// here, no-ops when there's nothing to migrate:
+//
+//  1. Pebble.js Settings (master JS build) serialised every Settings.option()
+//     call into a single JSON blob at `options:<uuid>`. Raw `entry1_stop_id`
+//     / `btn1_stop_id` never existed as top-level localStorage keys — so the
+//     old migration checked the wrong place, missed every real JS install,
+//     fell through to firstLaunchDemoSeed, and the user saw demo favourites
+//     replace their real ones on first launch after the update.
+//
+//  2. Pre-Settings-module V1 builds stored favourites under btnN_* keys
+//     directly. Fold those into entryN_* the same way.
+//
+// Both paths write into the new entryN_* raw-key layout and set entry_count
+// so the demo seed skips.
+var APP_UUID = '61ae3254-ce00-49db-aad8-23143f649b91';
+
 function migrateLegacyBtnKeys() {
     if (getOption('entry_count') || getOption('entry1_stop_id')) return;
-    if (!getOption('btn1_stop_id')) return;
 
     var fields = ['name', 'full_name', 'stop_id', 'dest_name', 'full_dest_name',
                   'dest_id', 'route_type', 'direction_id'];
-    var migrated = 0;
-    for (var i = 1; i <= 10; i++) {
-        if (!getOption('btn' + i + '_stop_id')) continue;
-        for (var f = 0; f < fields.length; f++) {
-            var v = getOption('btn' + i + '_' + fields[f]);
-            if (v !== null) setOption('entry' + i + '_' + fields[f], v);
-            setOption('btn' + i + '_' + fields[f], null);
+
+    // Pebble.js Settings blob — single JSON object under `options:<uuid>`.
+    var blobKey = 'options:' + APP_UUID;
+    var blobRaw = lsGet(blobKey);
+    if (blobRaw) {
+        var blob = null;
+        try { blob = JSON.parse(blobRaw); } catch (e) { blob = null; }
+        if (blob && typeof blob === 'object') {
+            var migrated = 0;
+            for (var i = 1; i <= 10; i++) {
+                // Accept either the canonical entryN_* form or the older
+                // btnN_* naming the JS build also understood as input.
+                var stopId = blob['entry' + i + '_stop_id'] || blob['btn' + i + '_stop_id'];
+                if (!stopId) continue;
+                for (var f = 0; f < fields.length; f++) {
+                    var v = blob['entry' + i + '_' + fields[f]];
+                    if (v === undefined || v === null || v === '') {
+                        v = blob['btn' + i + '_' + fields[f]];
+                    }
+                    if (v !== undefined && v !== null && v !== '') {
+                        setOption('entry' + i + '_' + fields[f], v);
+                    }
+                }
+                migrated = i;
+            }
+            var flagKeys = ['server_url', 'llm_api_key', 'use_24hr_time',
+                            'disable_ai_assistant', 'enable_third_party_endpoint',
+                            'disable_vibration', 'disable_ripple_vfx',
+                            'disable_timer_shake', 'dark_theme', 'client_id'];
+            for (var k = 0; k < flagKeys.length; k++) {
+                var fv = blob[flagKeys[k]];
+                if (fv !== undefined && fv !== null && fv !== '') {
+                    setOption(flagKeys[k], fv);
+                }
+            }
+            if (migrated > 0) {
+                setOption('entry_count', blob.entry_count || migrated);
+                console.log('Migrated ' + migrated + ' favourites from Pebble.js Settings blob');
+            }
+            // Drop the old blob so we don't re-run this next boot.
+            lsSet(blobKey, null);
+            if (migrated > 0) return;
         }
-        migrated = i;
     }
-    if (migrated > 0) {
-        setOption('entry_count', migrated);
-        console.log('Migrated ' + migrated + ' legacy btn* favourites to entry*');
+
+    // Raw btnN_* fallback — some ancient local installs never went through
+    // the Settings module.
+    if (!getOption('btn1_stop_id')) return;
+    var migratedRaw = 0;
+    for (var j = 1; j <= 10; j++) {
+        if (!getOption('btn' + j + '_stop_id')) continue;
+        for (var ff = 0; ff < fields.length; ff++) {
+            var rv = getOption('btn' + j + '_' + fields[ff]);
+            if (rv !== null) setOption('entry' + j + '_' + fields[ff], rv);
+            setOption('btn' + j + '_' + fields[ff], null);
+        }
+        migratedRaw = j;
+    }
+    if (migratedRaw > 0) {
+        setOption('entry_count', migratedRaw);
+        console.log('Migrated ' + migratedRaw + ' legacy btn* favourites to entry*');
     }
 }
 
@@ -187,16 +247,18 @@ function collectSettingsSnapshot() {
 
 function applySettingsPayload(payload) {
     if (!payload || typeof payload !== 'object') return;
-    // First nuke any stale per-entry keys for indexes above the new count so
-    // we don't re-sync phantom entries.
-    var newCount = parseInt(payload.entry_count || 0, 10) || 0;
+    // The config page's save payload is the authoritative view of the
+    // user's favourites — anything not mentioned in it should not remain
+    // on disk. Clear every entry slot up front, then reapply whatever the
+    // payload contains. This keeps the previous "nuke > newCount" logic
+    // working while also closing edge cases where entry_count in the
+    // payload doesn't match reality (e.g. the user adds an empty slot
+    // and saves, leaving a stale slot below the declared count).
+    var fields = ['name', 'full_name', 'stop_id', 'dest_name', 'full_dest_name',
+                  'dest_id', 'route_type', 'direction_id'];
     for (var i = 1; i <= 10; i++) {
-        if (i > newCount) {
-            var fields = ['name', 'full_name', 'stop_id', 'dest_name', 'full_dest_name',
-                          'dest_id', 'route_type', 'direction_id'];
-            for (var k = 0; k < fields.length; k++) {
-                setOption('entry' + i + '_' + fields[k], null);
-            }
+        for (var k = 0; k < fields.length; k++) {
+            setOption('entry' + i + '_' + fields[k], null);
         }
     }
     for (var key in payload) {
