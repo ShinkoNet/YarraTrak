@@ -42,6 +42,35 @@ static void copy_bounded(char *dst, const char *src, size_t dst_size) {
   dst[dst_size - 1] = '\0';
 }
 
+// ---- Menu-refresh debounce ----------------------------------------------
+//
+// PKJS's syncEntriesToWatch sends IN_CLEAR_ENTRIES immediately followed by
+// IN_ENTRY_SYNC_BULK. AppMessage roundtrips are ~150-300 ms each, so if the
+// clear refreshes the menu immediately the user sees "No favourites" flash
+// between their real rows. Defer the post-clear refresh; cancel it as soon
+// as a real sync arrives. Only fires if no sync shows up within the window
+// (the genuine "user has zero favourites" case).
+#define PENDING_CLEAR_REFRESH_MS 500
+static AppTimer *s_clear_refresh_timer = NULL;
+
+static void clear_refresh_cb(void *unused) {
+  s_clear_refresh_timer = NULL;
+  menu_window_refresh();
+}
+
+static void cancel_pending_clear_refresh(void) {
+  if (s_clear_refresh_timer) {
+    app_timer_cancel(s_clear_refresh_timer);
+    s_clear_refresh_timer = NULL;
+  }
+}
+
+static void schedule_clear_refresh(void) {
+  cancel_pending_clear_refresh();
+  s_clear_refresh_timer = app_timer_register(PENDING_CLEAR_REFRESH_MS,
+                                              clear_refresh_cb, NULL);
+}
+
 // ---- Inbound handlers ----------------------------------------------------
 
 static void handle_conn_state(char *data) {
@@ -218,6 +247,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       handle_flags_sync(data);
       break;
     case IN_ENTRY_SYNC:
+      cancel_pending_clear_refresh();
       handle_entry_sync(data);
       settings_store_save_entries();
       menu_window_refresh();
@@ -226,6 +256,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       // "entry1\x1fentry2\x1f..." where each sub-chunk is the same format
       // IN_ENTRY_SYNC accepts: "index|name;full_name;stop_id;dest_name;
       // full_dest_name;dest_id;route_type;direction_id".
+      cancel_pending_clear_refresh();
       char *chunks[MAX_ENTRIES];
       int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
       for (int i = 0; i < cc; i++) {
@@ -238,7 +269,10 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     case IN_CLEAR_ENTRIES:
       app_state_clear_entries();
       settings_store_save_entries();
-      menu_window_refresh();
+      // Defer the refresh: if a sync lands within the debounce window the
+      // pre-existing rows stay on screen; otherwise we fall through to the
+      // "No favourites" state once the timer fires.
+      schedule_clear_refresh();
       break;
     case IN_QUERY_RESULT:
       query_window_show_result(data);
