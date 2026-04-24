@@ -31,6 +31,7 @@ static char s_route_buf[48];
 static char s_bottom_buf[48];
 
 static int32_t s_last_vibrated_minutes = -1;
+static bool    s_now_pattern_fired = false;  // NOW played for the active run
 static char s_last_run_ref[RUN_REF_LEN] = "";
 static GRect s_countdown_home_frame;
 static Animation *s_shake_anim = NULL;
@@ -295,8 +296,10 @@ static void render(void) {
         trigger_bounce();
       } else if (new_sec > s_last_seconds + 1) {
         // Guard against +1 s jitter from minute-precision deps — require
-        // a real jump before interpreting as a delay.
+        // a real jump before interpreting as a delay. Fire a long pulse
+        // alongside the horizontal shake so the wrist feels the slip too.
         trigger_shake();
+        haptics_long();
       }
     }
     s_last_seconds = new_sec;
@@ -373,15 +376,30 @@ static void maybe_vibrate(Departure *dep) {
 
   int32_t sec = departure_seconds_until(dep);
   int32_t mins = sec >= 0 ? sec / 60 : 0;
+  // V1 JS parity: count ticks for the *rounded* minute so rolling 3:00→2:59
+  // buzzes three times (2 + 1) and 1:00→0:59 buzzes once (0 + 1). Under 30 s
+  // the round-up collapses to 0 and haptics_play_for_minutes fires the
+  // shave-and-haircut NOW pattern.
+  int32_t extra = (sec >= 0 && (sec % 60) >= 30) ? 1 : 0;
 
   bool new_run = (strcmp(s_last_run_ref, dep->run_ref) != 0);
   bool decreased = (s_last_vibrated_minutes > 0 && mins < s_last_vibrated_minutes);
 
   if (new_run || decreased || s_last_vibrated_minutes < 0) {
+    if (new_run) s_now_pattern_fired = false;
     s_last_vibrated_minutes = mins;
     if (mins >= 0) {
-      haptics_play_for_minutes(mins);
+      haptics_play_for_minutes(mins + extra);
+      if (sec < 30) s_now_pattern_fired = true;
     }
+    return;
+  }
+
+  // Minute floor stops changing under 60 s, but the display flips to "NOW!"
+  // at the 30 s mark — fire the NOW haptic exactly once on that transition.
+  if (!s_now_pattern_fired && sec >= 0 && sec < 30) {
+    s_now_pattern_fired = true;
+    haptics_play_for_minutes(0);
   }
 }
 
@@ -409,6 +427,7 @@ static void up_click(ClickRecognizerRef rec, void *context) {
     g_app_state.watching_offset = 0;
     s_last_run_ref[0] = '\0';
     s_last_vibrated_minutes = -1;
+    s_now_pattern_fired = false;
     s_last_seconds = INT32_MAX;
     render();
     Departure *dep = get_watched_departure();
@@ -523,6 +542,7 @@ static void window_unload(Window *window) {
   g_app_state.watching_offset = 0;
   s_last_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
+  s_now_pattern_fired = false;
   haptics_cancel();
   protocol_send_watch_stop();
 }
@@ -538,6 +558,7 @@ void watch_window_push(uint8_t button_id) {
   g_app_state.watched_run_ref[0] = '\0';
   s_last_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
+  s_now_pattern_fired = false;
   s_last_seconds = INT32_MAX;
 
   if (s_window) return;

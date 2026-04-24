@@ -88,6 +88,13 @@ void haptics_short(void) {
   vibes_short_pulse();
 }
 
+void haptics_long(void) {
+  if (g_app_state.flags.disable_vibration) {
+    return;
+  }
+  vibes_long_pulse();
+}
+
 void haptics_cancel(void) {
   vibes_cancel();
 }
