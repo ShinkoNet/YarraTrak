@@ -16,12 +16,12 @@
 #define RIPPLE_APLITE_INNER_SKIP 40
 
 // ---- Starfield (effect 1) ----------------------------------------------
-#define STAR_COUNT 34
+#define STAR_COUNT 30
 #define STAR_Z_MAX 255
-#define STAR_Z_MIN 8
+#define STAR_Z_MIN 12
 #define STAR_SPEED 3
 #define STAR_SPAWN_RANGE 80     // x/y world extents when respawning
-#define STAR_FOV 110            // perspective focal length
+#define STAR_FOV 130            // perspective focal length (bigger = more spread)
 
 // ---- Plasma (effect 2) -------------------------------------------------
 #define PLASMA_BLOCK 8          // pixel size of each plasma cell
@@ -95,29 +95,32 @@ static GColor fire_palette(uint8_t h) {
   return GColorWhite;
 }
 
-// Map a byte 0..255 to a cyclic plasma palette running through the cool
-// and warm halves of the 64-colour palette.
+// Cool-only plasma palette: blue → cyan → mint → cyan → blue. No warm
+// tones, no purples — those make black-on-plasma text unreadable and look
+// muddy against the rest of the watch chrome.
 static GColor plasma_palette(uint8_t h) {
   switch (h >> 5) {  // 0..7 buckets
-    case 0:  return GColorIndigo;
-    case 1:  return GColorImperialPurple;
-    case 2:  return GColorBlueMoon;
-    case 3:  return GColorVividCerulean;
-    case 4:  return GColorCyan;
-    case 5:  return GColorGreen;
-    case 6:  return GColorYellow;
-    default: return GColorOrange;
+    case 0:  return GColorBlueMoon;
+    case 1:  return GColorPictonBlue;
+    case 2:  return GColorVividCerulean;
+    case 3:  return GColorCyan;
+    case 4:  return GColorMediumAquamarine;
+    case 5:  return GColorMalachite;
+    case 6:  return GColorVividCerulean;
+    default: return GColorPictonBlue;
   }
 }
 
 static GColor star_color(uint8_t z) {
-  if (z < 40)  return GColorWhite;
-  if (z < 120) return GColorLightGray;
+  if (z < 60)  return GColorWhite;
+  if (z < 160) return GColorLightGray;
   return GColorDarkGray;
 }
 
 static GColor cube_color(void) {
-  return g_app_state.flags.dark_theme ? GColorVividCerulean : GColorIndigo;
+  // The dark indigo wires were too low-contrast on the light-theme white
+  // background; cerulean reads cleanly on both themes.
+  return GColorVividCerulean;
 }
 #endif
 
@@ -188,20 +191,27 @@ static void draw_starfield(Layer *layer, GContext *ctx, FxData *d) {
     }
     int sx = cx + ((int32_t)s->x * STAR_FOV) / s->z;
     int sy = cy + ((int32_t)s->y * STAR_FOV) / s->z;
-    if (sx < 0 || sx >= bounds.size.w || sy < 0 || sy >= bounds.size.h) {
+    if (sx < -2 || sx >= bounds.size.w + 2 ||
+        sy < -2 || sy >= bounds.size.h + 2) {
       spawn_star(s, &seed);
       continue;
     }
 #if defined(PBL_COLOR)
-    graphics_context_set_stroke_color(ctx, star_color(s->z));
+    graphics_context_set_fill_color(ctx, star_color(s->z));
 #else
-    graphics_context_set_stroke_color(ctx, theme_fg());
+    graphics_context_set_fill_color(ctx, theme_fg());
 #endif
-    graphics_draw_pixel(ctx, GPoint(sx, sy));
-    // Nearest stars get a second pixel to look bigger.
-    if (s->z < 40) {
-      graphics_draw_pixel(ctx, GPoint(sx + 1, sy));
-    }
+    // Size scales with proximity so the depth reads at a glance: distant
+    // stars are a single pixel, mid-field a 2x2 block, nearest a chunky
+    // 3x3 with a 4-pixel cross around it. Fill_rect is cheaper than
+    // multiple draw_pixel calls and reads as a brighter "star" on the
+    // screen instead of a hairline dot that disappears under the LCD
+    // pixel grid.
+    int size;
+    if      (s->z < 60)  size = 3;
+    else if (s->z < 140) size = 2;
+    else                 size = 1;
+    graphics_fill_rect(ctx, GRect(sx, sy, size, size), 0, GCornerNone);
   }
 }
 

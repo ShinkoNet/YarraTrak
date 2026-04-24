@@ -18,3 +18,14 @@ GColor theme_ring(void);        // ripple ring stroke (colour) or dot (aplite)
 // replacements, upcoming service changes) and red for warning-level
 // (anything else). Falls back to theme_fg on aplite since it's 1-bit.
 GColor theme_disruption(const char *label);
+
+// Watch-window foreground / disruption colour with the active background-FX
+// taken into account. Plasma and Fire flood the screen with mid-bright
+// colours, so the regular black-or-white text + orange/red disruption
+// label both lose contrast — these helpers force a high-contrast colour
+// (black, the only thing readable across every fire/plasma cell) when
+// those effects are running. Other effects fall through to the regular
+// theme_fg / theme_disruption.
+GColor theme_watch_fg(void);
+GColor theme_watch_disruption(const char *label);
+GColor theme_watch_bg(void);  // matches a clear background colour for text outline
