@@ -248,9 +248,29 @@ static void render(void) {
     s_last_seconds = new_sec;
   }
 
-  // Platform
-  if (dep && dep->has_data && dep->platform[0]) {
-    snprintf(s_platform_buf, sizeof(s_platform_buf), "Platform %s", dep->platform);
+  // Platform + absolute departure time. The LECO countdown shows how long
+  // you've got; the HH:MM tells you which physical service you're tracking
+  // — handy when you need to explain "I'm on the 5:27" to someone or when
+  // you flip to Service After.
+  char time_buf[8] = "";
+  if (dep && dep->has_data && dep->departure_unix != 0) {
+    time_t t = dep->departure_unix;
+    struct tm *lt = localtime(&t);
+    if (lt) {
+      const char *fmt = g_app_state.flags.use_24hr_time ? "%H:%M" : "%l:%M";
+      strftime(time_buf, sizeof(time_buf), fmt, lt);
+      // %l pads with a leading space — trim so "5:27" not " 5:27".
+      if (time_buf[0] == ' ') memmove(time_buf, time_buf + 1, strlen(time_buf));
+    }
+  }
+
+  const char *plat = (dep && dep->has_data) ? dep->platform : "";
+  if (plat[0] && time_buf[0]) {
+    snprintf(s_platform_buf, sizeof(s_platform_buf), "Plat %s · %s", plat, time_buf);
+  } else if (plat[0]) {
+    snprintf(s_platform_buf, sizeof(s_platform_buf), "Platform %s", plat);
+  } else if (time_buf[0]) {
+    snprintf(s_platform_buf, sizeof(s_platform_buf), "at %s", time_buf);
   } else {
     s_platform_buf[0] = '\0';
   }
