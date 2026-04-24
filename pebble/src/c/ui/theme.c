@@ -35,46 +35,23 @@ GColor theme_ring(void) {
 }
 
 // orange survives both themes better
-GColor theme_disruption(const char *label) {
-#if defined(PBL_COLOR)
-  if (!label || !label[0]) return theme_fg();
+bool theme_is_major_disruption(const char *label) {
+  if (!label || !label[0]) return false;
   if (strncmp(label, "Minor Delays", 12) == 0 ||
       strstr(label, "Buses") != NULL ||
       strstr(label, "Bus Replacement") != NULL ||
       strstr(label, "Service Change") != NULL) {
-    return GColorOrange;
+    return false;
   }
-  return GColorRed;
+  return true;
+}
+
+GColor theme_disruption(const char *label) {
+#if defined(PBL_COLOR)
+  if (!label || !label[0]) return theme_fg();
+  return theme_is_major_disruption(label) ? GColorRed : GColorOrange;
 #else
   (void)label;
   return theme_fg();
 #endif
-}
-
-static bool fx_floods_background(void) {
-  // plasma cycles through mid-bright blues/cyans/greens; fire ramps from dark red through white
-  uint8_t fx = g_app_state.flags.bg_fx;
-  return fx == BG_FX_PLASMA || fx == BG_FX_FIRE;
-}
-
-GColor theme_watch_fg(void) {
-#if defined(PBL_COLOR)
-  if (fx_floods_background()) return GColorBlack;
-#endif
-  return theme_fg();
-}
-
-GColor theme_watch_disruption(const char *label) {
-#if defined(PBL_COLOR)
-  if (fx_floods_background()) return GColorBlack;
-#endif
-  return theme_disruption(label);
-}
-
-GColor theme_watch_bg(void) {
-#if defined(PBL_COLOR)
-  // when the fx layer paints the whole frame anyway, the watch window's own background colour is mostly irrelevant; use clear so
-  if (fx_floods_background()) return GColorClear;
-#endif
-  return theme_bg();
 }
