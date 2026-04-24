@@ -43,11 +43,23 @@ static void ripple_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_color(ctx, theme_ring());
 
 #if defined(PBL_COLOR)
-  graphics_context_set_stroke_width(ctx, 1);
-  for (int i = 0; i < RIPPLE_RING_COUNT; i++) {
-    uint16_t r = (d->phase + i * RIPPLE_SPACING) % d->max_radius;
-    if (r < 6) continue;
-    graphics_draw_circle(ctx, center, r);
+  // Dark theme: solid indigo rings on black read well. Light theme: a solid
+  // stroke against white is too loud behind the black countdown, so use the
+  // same stippled-pixel style as aplite for a softer dotted texture.
+  if (g_app_state.flags.dark_theme) {
+    graphics_context_set_stroke_width(ctx, 1);
+    for (int i = 0; i < RIPPLE_RING_COUNT; i++) {
+      uint16_t r = (d->phase + i * RIPPLE_SPACING) % d->max_radius;
+      if (r < 6) continue;
+      graphics_draw_circle(ctx, center, r);
+    }
+  } else {
+    for (int i = 0; i < RIPPLE_RING_COUNT; i++) {
+      uint16_t r = (d->phase + i * RIPPLE_SPACING) % d->max_radius;
+      if (r < 6) continue;
+      int step = (i & 1) ? 14 : 10;
+      draw_dotted_ring(ctx, center, r, step);
+    }
   }
 #else
   for (int i = 0; i < RIPPLE_RING_COUNT; i++) {
