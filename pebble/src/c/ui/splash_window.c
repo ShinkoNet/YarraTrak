@@ -1,12 +1,16 @@
 #include "splash_window.h"
 
 #include <pebble.h>
+#include <string.h>
 
 static Window *s_window = NULL;
 static TextLayer *s_text_layer = NULL;
 static TextLayer *s_sub_text_layer = NULL;
 static BitmapLayer *s_logo_layer = NULL;
 static GBitmap *s_logo_bitmap = NULL;
+
+#define SPLASH_STATUS_LEN 64
+static char s_sub_text_buf[SPLASH_STATUS_LEN] = "Connecting...";
 
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
@@ -40,7 +44,7 @@ static void window_load(Window *window) {
 #endif
 
   s_sub_text_layer = text_layer_create(GRect(0, bounds.size.h - 30, bounds.size.w, 24));
-  text_layer_set_text(s_sub_text_layer, "Connecting...");
+  text_layer_set_text(s_sub_text_layer, s_sub_text_buf);
   text_layer_set_font(s_sub_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
   text_layer_set_text_color(s_sub_text_layer, GColorWhite);
   text_layer_set_background_color(s_sub_text_layer, GColorClear);
@@ -70,5 +74,17 @@ void splash_window_push(void) {
 void splash_window_pop(void) {
   if (s_window) {
     window_stack_remove(s_window, true);
+  }
+}
+
+void splash_window_set_status(const char *text) {
+  if (text && text[0]) {
+    strncpy(s_sub_text_buf, text, sizeof(s_sub_text_buf) - 1);
+  } else {
+    strncpy(s_sub_text_buf, "Connecting...", sizeof(s_sub_text_buf) - 1);
+  }
+  s_sub_text_buf[sizeof(s_sub_text_buf) - 1] = '\0';
+  if (s_sub_text_layer) {
+    text_layer_set_text(s_sub_text_layer, s_sub_text_buf);
   }
 }

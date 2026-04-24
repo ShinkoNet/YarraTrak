@@ -117,6 +117,32 @@ function getConfiguredEntryCount() {
     return isFinite(v) ? v : 0;
 }
 
+// One-shot upgrade path: V1 stored favourites under btnN_* keys. If an old
+// install is rolling up to this build, copy any btn-prefixed data across to
+// the new entry-prefixed keys and wipe the originals so we don't keep two
+// sources of truth. Cheap no-op when there's nothing to migrate.
+function migrateLegacyBtnKeys() {
+    if (getOption('entry_count') || getOption('entry1_stop_id')) return;
+    if (!getOption('btn1_stop_id')) return;
+
+    var fields = ['name', 'full_name', 'stop_id', 'dest_name', 'full_dest_name',
+                  'dest_id', 'route_type', 'direction_id'];
+    var migrated = 0;
+    for (var i = 1; i <= 10; i++) {
+        if (!getOption('btn' + i + '_stop_id')) continue;
+        for (var f = 0; f < fields.length; f++) {
+            var v = getOption('btn' + i + '_' + fields[f]);
+            if (v !== null) setOption('entry' + i + '_' + fields[f], v);
+            setOption('btn' + i + '_' + fields[f], null);
+        }
+        migrated = i;
+    }
+    if (migrated > 0) {
+        setOption('entry_count', migrated);
+        console.log('Migrated ' + migrated + ' legacy btn* favourites to entry*');
+    }
+}
+
 function firstLaunchDemoSeed() {
     if (getOption('entry_count') || getOption('entry1_stop_id')) return;
     console.log('First launch: seeding demo entries');
@@ -218,8 +244,48 @@ function sendToWatch(type, data) {
     enqueueSend(d);
 }
 
-function sendConnState(state) {
-    sendToWatch(IN_CONN_STATE, String(state));
+function sendConnState(state, message) {
+    // Extended format: "state|message" — the C side splits on '|' and uses
+    // the message (if any) as the splash subtitle, giving users a specific
+    // reason when the first connect doesn't land.
+    var payload = String(state);
+    if (message) payload += '|' + String(message).slice(0, 60);
+    sendToWatch(IN_CONN_STATE, payload);
+}
+
+// One-shot startup diagnostic: only fires after we've spent ~8 seconds
+// unable to reach the WebSocket since boot, and only once per session.
+// Cheap — one GET /api/v1/health with a 5 s timeout — so it doesn't pay
+// unless something's already wrong.
+var diagnosticRan = false;
+function runStartupDiagnosticIfStillOffline() {
+    if (diagnosticRan || wsConnected) return;
+    diagnosticRan = true;
+
+    var base = getServerUrl().replace(/\/+$/, '');
+    var url = base + '/api/v1/health';
+    try {
+        var xhr = new XMLHttpRequest();
+        xhr.timeout = 5000;
+        xhr.open('GET', url);
+        xhr.onload = function () {
+            if (wsConnected) return;
+            if (xhr.status >= 200 && xhr.status < 300) {
+                sendConnState(CONN_CONNECTING, 'Slow connection');
+            } else {
+                sendConnState(CONN_OFFLINE, 'Server error ' + xhr.status);
+            }
+        };
+        xhr.onerror = function () {
+            if (!wsConnected) sendConnState(CONN_OFFLINE, 'Phone offline');
+        };
+        xhr.ontimeout = function () {
+            if (!wsConnected) sendConnState(CONN_OFFLINE, 'Server unreachable');
+        };
+        xhr.send();
+    } catch (e) {
+        sendConnState(CONN_OFFLINE, 'Network error');
+    }
 }
 
 // ---- Settings sync to watch ---------------------------------------------
@@ -384,11 +450,7 @@ function encodeDeparture(d) {
     return fields.join(';');
 }
 
-// Drop duplicate run_refs and collapse services leaving the same minute
-// (e.g. V/Line at Southern Cross where three lines depart at 06:29). After
-// this, the watch-side service-after guard naturally rejects the down click
-// because the second slot is empty — Service After is meaningful only when
-// it's actually a later train.
+// Drop duplicate run_refs and collapse services
 function dedupeDepartures(deps) {
     if (!deps || deps.length === 0) return [];
     var seenRef = {};
@@ -416,12 +478,15 @@ function handleFavUpdate(msg) {
         var u = updates[i];
         var bid = u.button_id;
         var deps = dedupeDepartures(u.departures);
+        // Cache three: dep[0] = now, dep[1] = service-after, dep[2] = buffer
+        // for auto-advance when the current service passes. Matches V1.
         var dep1 = encodeDeparture(deps[0]);
         var dep2 = encodeDeparture(deps[1]);
+        var dep3 = encodeDeparture(deps[2]);
         var labels = u.disruption_labels || (u.disruption_label ? [u.disruption_label] : []);
-        // Use 0x1E (record separator) between labels; matches C decoder.
+        // 0x1E (record separator) between labels — matches the C decoder.
         var labelStr = labels.join('\x1e');
-        var payload = bid + '|' + dep1 + '|' + dep2 + '|' + labelStr;
+        var payload = bid + '|' + dep1 + '|' + dep2 + '|' + dep3 + '|' + labelStr;
         sendToWatch(IN_FAV_UPDATE, payload);
     }
 }
@@ -517,8 +582,46 @@ function wsSend(obj) {
 // ---- AI query transport -----------------------------------------------
 
 var nextQueryId = 0;
-var pendingQueries = {};  // id -> { timeout }
+var pendingQueries = {};  // id -> { timeout, text }
 var sessionId = null;
+
+// Rolling query history: last N successful queries + their learned stops.
+// Forwarded with every new query so the agent can lean on recency when
+// ranking clarifications ("Richmond" is probably the same one as last time).
+// Each entry: { text, stop_name?, stop_id?, route_type?, at }
+var QUERY_HISTORY_MAX = 5;
+var queryHistory = [];
+
+function loadQueryHistory() {
+    try {
+        var s = lsGet('query_history');
+        if (!s) return;
+        var parsed = JSON.parse(s);
+        if (Array.isArray(parsed)) queryHistory = parsed.slice(0, QUERY_HISTORY_MAX);
+    } catch (e) { queryHistory = []; }
+}
+
+function saveQueryHistory() {
+    try { lsSet('query_history', JSON.stringify(queryHistory.slice(0, QUERY_HISTORY_MAX))); }
+    catch (e) { }
+}
+
+function recordQuerySuccess(text, learnedStop) {
+    var entry = {
+        text: (text || '').slice(0, 160),
+        at: Math.floor(Date.now() / 1000),
+    };
+    if (learnedStop) {
+        if (learnedStop.stop_name) entry.stop_name = String(learnedStop.stop_name).slice(0, 60);
+        if (learnedStop.stop_id)   entry.stop_id = learnedStop.stop_id;
+        if (learnedStop.route_type !== undefined) entry.route_type = learnedStop.route_type;
+    }
+    queryHistory.unshift(entry);
+    if (queryHistory.length > QUERY_HISTORY_MAX) {
+        queryHistory.length = QUERY_HISTORY_MAX;
+    }
+    saveQueryHistory();
+}
 
 function queryInFlight() {
     for (var _ in pendingQueries) return true;
@@ -557,7 +660,9 @@ function startQuery(text) {
     cancelPendingQueries();
 
     var id = String(++nextQueryId);
+    var queryText = truncate(String(text || ''), 400);
     pendingQueries[id] = {
+        text: queryText,
         timeout: setTimeout(function () {
             if (pendingQueries[id]) {
                 delete pendingQueries[id];
@@ -569,9 +674,10 @@ function startQuery(text) {
     wsSend({
         type: 'query',
         id: id,
-        text: truncate(String(text || ''), 400),
+        text: queryText,
         session_id: sessionId,
         llm_api_key: llmKey,
+        query_history: queryHistory,
     });
 }
 
@@ -595,6 +701,9 @@ function handleQueryMessage(msg) {
     var kind = data && data.type;
 
     if (kind === 'RESULT' && payload) {
+        // Successful terminal — record the query + the stop the agent locked
+        // onto so the next query can hint context to the LLM.
+        recordQuerySuccess(pending.text, msg.learned_stop);
         var text = payload.tts_text || 'No info';
         sendToWatch(IN_QUERY_RESULT, truncate(text, MAX_TTS_TEXT));
     } else if (kind === 'CLARIFICATION' && payload) {
@@ -641,11 +750,14 @@ function parsePipe(str) { return String(str == null ? '' : str).split('|'); }
 
 Pebble.addEventListener('ready', function () {
     console.log('PKJS ready');
+    migrateLegacyBtnKeys();
     firstLaunchDemoSeed();
+    loadQueryHistory();
     getOrCreateClientId();
     sendConnState(CONN_CONNECTING);
     syncAllToWatch();
     connect();
+    setTimeout(runStartupDiagnosticIfStillOffline, 8000);
 });
 
 Pebble.addEventListener('appmessage', function (e) {

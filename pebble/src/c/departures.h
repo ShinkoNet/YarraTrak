@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #define MAX_ENTRIES         10
-#define MAX_DEPS_PER_ENTRY  2
+#define MAX_DEPS_PER_ENTRY  3   // dep[0]=now, dep[1]=service after, dep[2]=buffer
 #define MAX_DISRUPTIONS     3
 
 #define NAME_LEN         33  // matches truncateName(…, 32) in config/settings.html + NUL

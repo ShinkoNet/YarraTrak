@@ -227,14 +227,18 @@ static void render(void) {
 
   if (s_progress_layer) layer_mark_dirty(s_progress_layer);
 
-  // Auto-advance if current departure has fully passed.
+  // Auto-advance if current departure has fully passed. Slide the cache
+  // down by one so the former service-after becomes the new current and
+  // dep[2] (if any) becomes the new service-after.
   if ((!dep || sec < -60) && g_app_state.watching_offset == 0) {
     Entry *e2 = app_state_get_entry(g_app_state.watching_button);
     if (e2) {
       Departure *next = departures_get(e2, 1);
       if (next && next->has_data) {
-        memcpy(&e2->departures[0], &e2->departures[1], sizeof(Departure));
-        memset(&e2->departures[1], 0, sizeof(Departure));
+        for (uint8_t i = 0; i + 1 < MAX_DEPS_PER_ENTRY; i++) {
+          memcpy(&e2->departures[i], &e2->departures[i + 1], sizeof(Departure));
+        }
+        memset(&e2->departures[MAX_DEPS_PER_ENTRY - 1], 0, sizeof(Departure));
         s_last_run_ref[0] = '\0';
       }
     }

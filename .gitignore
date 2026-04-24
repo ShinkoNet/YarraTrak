@@ -87,3 +87,4 @@ pebble/*.mkv
 pebble-hass-reference/
 pebblejs-reference/
 PEBBLE_C_PORT_FEASIBILITY.md
+LLM_SWITCH_PLAN.md

@@ -4,6 +4,7 @@
 #include "ui/menu_window.h"
 #include "ui/watch_window.h"
 #include "ui/query_window.h"
+#include "ui/splash_window.h"
 #include "haptics.h"
 
 #include <pebble.h>
@@ -43,11 +44,17 @@ static void copy_bounded(char *dst, const char *src, size_t dst_size) {
 
 // ---- Inbound handlers ----------------------------------------------------
 
-static void handle_conn_state(const char *data) {
+static void handle_conn_state(char *data) {
+  // Payload: "<state>" or "<state>|<diagnostic message>"
+  char *msg = NULL;
+  for (char *p = data; *p; p++) {
+    if (*p == '|') { *p = '\0'; msg = p + 1; break; }
+  }
   int v = atoi(data);
   if (v < 0) v = 0;
   if (v > 2) v = 2;
   g_app_state.conn_state = (uint8_t)v;
+  splash_window_set_status(msg && msg[0] ? msg : NULL);
   menu_window_refresh();
   watch_window_refresh();
 }
@@ -128,30 +135,37 @@ static void parse_departure(char *blob, Departure *out) {
 }
 
 static void handle_fav_update(char *data) {
-  char *parts[4];
-  int pc = split_in_place(data, '|', parts, 4);
+  // New format (5 parts): "button_id|dep1|dep2|dep3|labels"
+  // Old format (4 parts): "button_id|dep1|dep2|labels" — still accepted so a
+  // client running this build against a PKJS that only sends two deps
+  // doesn't lose data.
+  char *parts[5];
+  int pc = split_in_place(data, '|', parts, 5);
   if (pc < 1) return;
 
   int button_id = atoi(parts[0]);
   Entry *e = app_state_get_entry((uint8_t)button_id);
   if (!e) return;
 
-  // Clear existing departures / disruptions before filling.
   for (uint8_t i = 0; i < MAX_DEPS_PER_ENTRY; i++) {
     memset(&e->departures[i], 0, sizeof(Departure));
   }
   e->disruption_count = 0;
 
-  if (pc > 1 && parts[1][0]) {
-    parse_departure(parts[1], &e->departures[0]);
-  }
-  if (pc > 2 && parts[2][0]) {
-    parse_departure(parts[2], &e->departures[1]);
+  int dep_count, labels_idx;
+  if (pc >= 5)      { dep_count = 3; labels_idx = 4; }
+  else if (pc >= 4) { dep_count = 2; labels_idx = 3; }
+  else              { dep_count = 0; labels_idx = -1; }
+  if (dep_count > MAX_DEPS_PER_ENTRY) dep_count = MAX_DEPS_PER_ENTRY;
+  for (int i = 0; i < dep_count; i++) {
+    if (parts[1 + i][0]) {
+      parse_departure(parts[1 + i], &e->departures[i]);
+    }
   }
 
-  if (pc > 3 && parts[3][0]) {
+  if (labels_idx >= 0 && parts[labels_idx][0]) {
     char *labels[MAX_DISRUPTIONS];
-    int lc = split_in_place(parts[3], 0x1e, labels, MAX_DISRUPTIONS);
+    int lc = split_in_place(parts[labels_idx], 0x1e, labels, MAX_DISRUPTIONS);
     for (int i = 0; i < lc && i < MAX_DISRUPTIONS; i++) {
       copy_bounded(e->disruptions[i], labels[i], DISRUPTION_LEN);
       if (e->disruptions[i][0]) {
