@@ -391,7 +391,23 @@ void protocol_init(void) {
   app_message_register_inbox_dropped(inbox_dropped_handler);
   app_message_register_outbox_failed(outbox_failed_handler);
 
-  // Cap explicitly to keep aplite heap usage bounded. Protocol messages are
-  // small (entry syncs ~250B, fav updates ~300B, watch_start ~96B).
-  app_message_open(1024, 256);
+  // Bulk entry syncs (IN_ENTRY_SYNC_REPLACE / IN_ENTRY_SYNC_BULK) target
+  // 960-byte payloads; once the Dict+Tuple overhead lands on top, the
+  // inbox genuinely needs ~1100 bytes. The previous 1024 request cut it
+  // too close on aplite — with the overhead factored in, incoming bulk
+  // messages were getting dropped silently, leaving the watch stuck on
+  // "Waiting..." for live departures. 1536 is comfortable headroom on
+  // every target platform; fall back to a smaller pair if the kernel
+  // refuses the allocation so we at least keep small messages working.
+  AppMessageResult r = app_message_open(1536, 256);
+  if (r != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_ERROR,
+            "app_message_open(1536) failed (%d); retrying smaller", r);
+    r = app_message_open(1024, 256);
+    if (r != APP_MSG_OK) {
+      APP_LOG(APP_LOG_LEVEL_ERROR,
+              "app_message_open(1024) also failed (%d); falling back to 512", r);
+      app_message_open(512, 256);
+    }
+  }
 }

@@ -323,12 +323,22 @@ static void render(void) {
 
   bool changed = strcmp(s_countdown_prev, s_countdown_buf) != 0;
   if (changed) {
-    // Font swap + text update only when the string actually changed. The
-    // font swap itself triggers a dirty mark, so keeping it in the
-    // change-gate saves a redraw every "no-change" tick.
-    text_layer_set_font(s_countdown_layer, fonts_get_system_font(
-        is_numeric_countdown(s_countdown_buf) ? FONT_KEY_LECO_42_NUMBERS
-                                              : FONT_KEY_BITHAM_42_BOLD));
+    // Pick the countdown font based on content width:
+    // - "NOW!" / "--" / "1:23 hr" etc.  -> proportional Bitham-42
+    // - "N:MM"                          -> wide LECO-42 numerals
+    // - "H:MM:SS" (>= 1 hour)           -> narrower LECO-36 so it fits
+    //                                     the watch without ellipsis
+    // Deciding by digit count rather than string length keeps the trailing
+    // zero-pad buckets stable (a "0:05" always stays on LECO-42).
+    const char *font_key;
+    if (!is_numeric_countdown(s_countdown_buf)) {
+      font_key = FONT_KEY_BITHAM_42_BOLD;
+    } else if (strlen(s_countdown_buf) >= 7) {
+      font_key = FONT_KEY_LECO_36_BOLD_NUMBERS;
+    } else {
+      font_key = FONT_KEY_LECO_42_NUMBERS;
+    }
+    text_layer_set_font(s_countdown_layer, fonts_get_system_font(font_key));
     text_layer_set_text(s_countdown_layer, s_countdown_buf);
     strncpy(s_countdown_prev, s_countdown_buf, sizeof(s_countdown_prev) - 1);
     s_countdown_prev[sizeof(s_countdown_prev) - 1] = '\0';
