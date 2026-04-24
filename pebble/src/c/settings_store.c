@@ -23,6 +23,7 @@ void settings_store_load(void) {
   f->disable_timer_shake = persist_read_bool(PKEY_FLAG_SHAKE_DISABLED);
   f->disable_ai_assistant = persist_read_bool(PKEY_FLAG_AI_DISABLED);
   f->use_24hr_time       = persist_read_bool(PKEY_FLAG_24H_TIME);
+  f->dark_theme          = persist_read_bool(PKEY_FLAG_DARK_THEME);
 
   g_app_state.entry_count = 0;
   if (persist_exists(PKEY_ENTRY_COUNT)) {
@@ -53,6 +54,7 @@ void settings_store_save_flags(void) {
   persist_write_bool(PKEY_FLAG_SHAKE_DISABLED,   f->disable_timer_shake);
   persist_write_bool(PKEY_FLAG_AI_DISABLED,      f->disable_ai_assistant);
   persist_write_bool(PKEY_FLAG_24H_TIME,         f->use_24hr_time);
+  persist_write_bool(PKEY_FLAG_DARK_THEME,       f->dark_theme);
 }
 
 void settings_store_save_entries(void) {

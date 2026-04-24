@@ -1,5 +1,6 @@
 #include "watch_window.h"
 #include "ripple_layer.h"
+#include "theme.h"
 #include "../app_state.h"
 #include "../protocol.h"
 #include "../departures.h"
@@ -83,7 +84,7 @@ static void progress_update_proc(Layer *layer, GContext *ctx) {
 
   Departure *dep = get_watched_departure();
   if (!dep || !dep->has_data) {
-    graphics_context_set_fill_color(ctx, GColorDarkGray);
+    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGray, theme_fg()));
     graphics_fill_rect(ctx, bounds, 0, GCornerNone);
     return;
   }
@@ -93,10 +94,12 @@ static void progress_update_proc(Layer *layer, GContext *ctx) {
   int32_t within_minute = sec % 60;
   int32_t fill_width = (within_minute * bounds.size.w) / 60;
 
-  graphics_context_set_fill_color(ctx, GColorBlack);
+  // Unfilled portion of the track = background colour (disappears into the
+  // window). Filled portion = theme accent so the bar always stands out.
+  graphics_context_set_fill_color(ctx, theme_bg());
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
-  graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorVividCerulean, GColorWhite));
+  graphics_context_set_fill_color(ctx, theme_accent());
   graphics_fill_rect(ctx, GRect(0, 0, fill_width, bounds.size.h), 0, GCornerNone);
 }
 
@@ -110,28 +113,34 @@ static void trigger_shake(void) {
   if (g_app_state.flags.disable_timer_shake) return;
   if (!s_countdown_layer) return;
   if (s_shake_anim) {
-    // Reset frame to avoid drift if prior animation is still running.
     layer_set_frame(text_layer_get_layer(s_countdown_layer), s_countdown_home_frame);
     animation_unschedule(s_shake_anim);
     s_shake_anim = NULL;
   }
 
-  GRect from = s_countdown_home_frame;
-  GRect dn = from;
-  dn.origin.y += 6;
+  // Subtle ±1px horizontal wiggle. Each leg is roughly two frames (~66ms)
+  // so the whole effect is barely a blip — intentionally gentle since it
+  // fires every second the countdown changes.
+  GRect home = s_countdown_home_frame;
+  GRect left = home;  left.origin.x  -= 1;
+  GRect right = home; right.origin.x += 1;
 
-  PropertyAnimation *down = property_animation_create_layer_frame(
-      text_layer_get_layer(s_countdown_layer), &from, &dn);
-  PropertyAnimation *up = property_animation_create_layer_frame(
-      text_layer_get_layer(s_countdown_layer), &dn, &from);
+  PropertyAnimation *a = property_animation_create_layer_frame(
+      text_layer_get_layer(s_countdown_layer), &home, &left);
+  PropertyAnimation *b = property_animation_create_layer_frame(
+      text_layer_get_layer(s_countdown_layer), &left, &right);
+  PropertyAnimation *c = property_animation_create_layer_frame(
+      text_layer_get_layer(s_countdown_layer), &right, &home);
 
-  animation_set_duration((Animation *)down, 90);
-  animation_set_duration((Animation *)up, 120);
-  animation_set_curve((Animation *)down, AnimationCurveEaseOut);
-  animation_set_curve((Animation *)up,   AnimationCurveEaseIn);
+  animation_set_duration((Animation *)a, 66);
+  animation_set_duration((Animation *)b, 66);
+  animation_set_duration((Animation *)c, 66);
+  animation_set_curve((Animation *)a, AnimationCurveLinear);
+  animation_set_curve((Animation *)b, AnimationCurveLinear);
+  animation_set_curve((Animation *)c, AnimationCurveLinear);
 
   Animation *seq = animation_sequence_create(
-      (Animation *)down, (Animation *)up, NULL);
+      (Animation *)a, (Animation *)b, (Animation *)c, NULL);
   animation_set_handlers(seq, (AnimationHandlers){
     .stopped = shake_anim_stopped,
   }, NULL);
@@ -303,9 +312,10 @@ static void click_config_provider(void *context) {
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
-  window_set_background_color(window, GColorBlack);
+  GColor fg = theme_fg();
+  window_set_background_color(window, theme_bg());
 
-  // Ripple sits at the back. On aplite this returns NULL and we skip it.
+  // Ripple sits at the back.
   s_ripple_layer = ripple_layer_create(bounds);
   if (s_ripple_layer) {
     layer_add_child(root, s_ripple_layer);
@@ -313,14 +323,14 @@ static void window_load(Window *window) {
 
   s_status_layer = text_layer_create(GRect(0, 4, bounds.size.w, 18));
   text_layer_set_font(s_status_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_text_color(s_status_layer, GColorWhite);
+  text_layer_set_text_color(s_status_layer, fg);
   text_layer_set_background_color(s_status_layer, GColorClear);
   text_layer_set_text_alignment(s_status_layer, GTextAlignmentCenter);
   layer_add_child(root, text_layer_get_layer(s_status_layer));
 
   s_route_layer = text_layer_create(GRect(4, 22, bounds.size.w - 8, 20));
   text_layer_set_font(s_route_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_text_color(s_route_layer, GColorWhite);
+  text_layer_set_text_color(s_route_layer, fg);
   text_layer_set_background_color(s_route_layer, GColorClear);
   text_layer_set_text_alignment(s_route_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(s_route_layer, GTextOverflowModeTrailingEllipsis);
@@ -329,21 +339,21 @@ static void window_load(Window *window) {
   s_countdown_home_frame = GRect(0, bounds.size.h / 2 - 32, bounds.size.w, 48);
   s_countdown_layer = text_layer_create(s_countdown_home_frame);
   text_layer_set_font(s_countdown_layer, fonts_get_system_font(FONT_KEY_LECO_42_NUMBERS));
-  text_layer_set_text_color(s_countdown_layer, GColorWhite);
+  text_layer_set_text_color(s_countdown_layer, fg);
   text_layer_set_background_color(s_countdown_layer, GColorClear);
   text_layer_set_text_alignment(s_countdown_layer, GTextAlignmentCenter);
   layer_add_child(root, text_layer_get_layer(s_countdown_layer));
 
   s_platform_layer = text_layer_create(GRect(4, bounds.size.h / 2 + 20, bounds.size.w - 8, 18));
   text_layer_set_font(s_platform_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_text_color(s_platform_layer, GColorWhite);
+  text_layer_set_text_color(s_platform_layer, fg);
   text_layer_set_background_color(s_platform_layer, GColorClear);
   text_layer_set_text_alignment(s_platform_layer, GTextAlignmentCenter);
   layer_add_child(root, text_layer_get_layer(s_platform_layer));
 
   s_bottom_layer = text_layer_create(GRect(4, bounds.size.h - 40, bounds.size.w - 8, 18));
   text_layer_set_font(s_bottom_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_text_color(s_bottom_layer, GColorWhite);
+  text_layer_set_text_color(s_bottom_layer, fg);
   text_layer_set_background_color(s_bottom_layer, GColorClear);
   text_layer_set_text_alignment(s_bottom_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(s_bottom_layer, GTextOverflowModeTrailingEllipsis);

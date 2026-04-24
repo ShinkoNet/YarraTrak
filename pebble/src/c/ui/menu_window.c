@@ -1,5 +1,6 @@
 #include "menu_window.h"
 #include "watch_window.h"
+#include "theme.h"
 #include "../app_state.h"
 #include "../protocol.h"
 #include "../formatting.h"
@@ -24,9 +25,13 @@ static char s_time_buf[8];
 static void time_bar_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
 #if defined(PBL_COLOR)
+  // Indigo strip regardless of theme — matches the splash and gives the
+  // menu a visual anchor in both light and dark modes.
   graphics_context_set_fill_color(ctx, GColorFromHEX(0x291381));
 #else
-  graphics_context_set_fill_color(ctx, GColorBlack);
+  // Aplite: blend with the menu background so the clock sits in a neutral
+  // strip instead of flipping to a high-contrast band that looks jarring.
+  graphics_context_set_fill_color(ctx, theme_bg());
 #endif
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 }
@@ -83,17 +88,28 @@ static void draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_ind
     fmt_menu_title(e, title, sizeof(title));
     Departure *dep = departures_get(e, 0);
 
-    if (e->disruption_count > 0 && (time(NULL) / 3) % 2 == 0) {
-      strncpy(subtitle, e->disruptions[0], sizeof(subtitle) - 1);
-      subtitle[sizeof(subtitle) - 1] = '\0';
+    char countdown[16];
+    fmt_menu_subtitle(dep, countdown, sizeof(countdown));
+
+    if (e->disruption_count > 0) {
+      uint32_t which = (uint32_t)(time(NULL) / 3) % e->disruption_count;
+      snprintf(subtitle, sizeof(subtitle), "%s | %s",
+               countdown, e->disruptions[which]);
     } else {
-      fmt_menu_subtitle(dep, subtitle, sizeof(subtitle));
+      strncpy(subtitle, countdown, sizeof(subtitle) - 1);
+      subtitle[sizeof(subtitle) - 1] = '\0';
     }
   }
 
 draw:;
   bool highlighted = menu_cell_layer_is_highlighted(cell_layer);
-  graphics_context_set_text_color(ctx, highlighted ? GColorWhite : GColorBlack);
+  // Colour platforms: highlight bg is cerulean, white text reads well.
+  // Aplite: highlight bg is theme_fg (inverse of bg), so text must flip to
+  // theme_bg or it disappears (white-on-white / black-on-black).
+  GColor text = highlighted
+      ? PBL_IF_COLOR_ELSE(GColorWhite, theme_bg())
+      : theme_fg();
+  graphics_context_set_text_color(ctx, text);
 
   graphics_draw_text(ctx, title,
                      fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
@@ -135,6 +151,10 @@ static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
 
+  // Window bg matches the theme so any overscroll / padding below the last
+  // menu row doesn't flash white when scrolling in dark mode.
+  window_set_background_color(window, theme_bg());
+
   // Top time strip: filled rect with the current time centred.
   s_time_bar = layer_create(GRect(0, 0, bounds.size.w, TIME_BAR_HEIGHT));
   layer_set_update_proc(s_time_bar, time_bar_update_proc);
@@ -144,7 +164,9 @@ static void window_load(Window *window) {
   s_time_layer = text_layer_create(GRect(0, -2, bounds.size.w, TIME_BAR_HEIGHT + 2));
   text_layer_set_text(s_time_layer, s_time_buf);
   text_layer_set_font(s_time_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
-  text_layer_set_text_color(s_time_layer, GColorWhite);
+  // Colour platforms use white on indigo; aplite uses theme foreground on
+  // the matching-background strip.
+  text_layer_set_text_color(s_time_layer, PBL_IF_COLOR_ELSE(GColorWhite, theme_fg()));
   text_layer_set_background_color(s_time_layer, GColorClear);
   text_layer_set_text_alignment(s_time_layer, GTextAlignmentCenter);
   layer_add_child(root, text_layer_get_layer(s_time_layer));
@@ -162,10 +184,9 @@ static void window_load(Window *window) {
     .select_long_click = select_long_click,
   });
   menu_layer_set_click_config_onto_window(s_menu_layer, window);
-#if defined(PBL_COLOR)
-  menu_layer_set_normal_colors(s_menu_layer, GColorWhite, GColorBlack);
-  menu_layer_set_highlight_colors(s_menu_layer, GColorVividCerulean, GColorWhite);
-#endif
+  menu_layer_set_normal_colors(s_menu_layer, theme_bg(), theme_fg());
+  menu_layer_set_highlight_colors(s_menu_layer, theme_accent(),
+                                  PBL_IF_COLOR_ELSE(GColorWhite, theme_bg()));
   layer_add_child(root, menu_layer_get_layer(s_menu_layer));
 
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
@@ -194,9 +215,17 @@ void menu_window_push(void) {
 }
 
 void menu_window_refresh(void) {
-  if (s_menu_layer) {
-    menu_layer_reload_data(s_menu_layer);
+  if (!s_menu_layer) return;
+  if (s_window) window_set_background_color(s_window, theme_bg());
+  menu_layer_set_normal_colors(s_menu_layer, theme_bg(), theme_fg());
+  menu_layer_set_highlight_colors(s_menu_layer, theme_accent(),
+                                  PBL_IF_COLOR_ELSE(GColorWhite, theme_bg()));
+  if (s_time_layer) {
+    text_layer_set_text_color(s_time_layer,
+                              PBL_IF_COLOR_ELSE(GColorWhite, theme_fg()));
   }
+  menu_layer_reload_data(s_menu_layer);
+  if (s_time_bar) layer_mark_dirty(s_time_bar);
 }
 
 bool menu_window_is_on_top(void) {

@@ -357,6 +357,14 @@
                 </span>
                 <input type="checkbox" id="disable_timer_shake">
             </label>
+            <div class="divider"></div>
+            <label class="toggle-row" for="dark_theme">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Dark theme</span>
+                    <span class="toggle-hint">Flips the menu and watch page to a black background with white text.</span>
+                </span>
+                <input type="checkbox" id="dark_theme">
+            </label>
             <button id="reset_defaults" style="background: #4CAF50; margin-top: 0; margin-bottom: 0;">Reset to Default</button>
         </div>
     </details>
@@ -391,6 +399,7 @@
         var disableVibrationEl = document.getElementById('disable_vibration');
         var disableRippleVfxEl = document.getElementById('disable_ripple_vfx');
         var disableTimerShakeEl = document.getElementById('disable_timer_shake');
+        var darkThemeEl = document.getElementById('dark_theme');
         var serverSettingsGroupEl = document.getElementById('server_settings_group');
         var aiSettingsGroupEl = document.getElementById('ai_settings_group');
         serverUrlEl.value = options.server_url || serverBase;
@@ -403,6 +412,7 @@
         disableVibrationEl.checked = isTruthyOption(options.disable_vibration);
         disableRippleVfxEl.checked = isTruthyOption(options.disable_ripple_vfx);
         disableTimerShakeEl.checked = isTruthyOption(options.disable_timer_shake);
+        darkThemeEl.checked = isTruthyOption(options.dark_theme);
 
         function updateSectionVisibility() {
             serverSettingsGroupEl.style.display = enableThirdPartyEndpointEl.checked ? 'block' : 'none';
@@ -708,7 +718,8 @@
                 enable_third_party_endpoint: enableThirdPartyEndpointEl.checked,
                 disable_vibration: disableVibrationEl.checked,
                 disable_ripple_vfx: disableRippleVfxEl.checked,
-                disable_timer_shake: disableTimerShakeEl.checked
+                disable_timer_shake: disableTimerShakeEl.checked,
+                dark_theme: darkThemeEl.checked
             };
             for (var i = 1; i <= entryCount; i++) {
                 var startIdEl = document.getElementById('entry' + i + '_start_id');
@@ -1089,6 +1100,7 @@
             disableVibrationEl.checked = false;
             disableRippleVfxEl.checked = false;
             disableTimerShakeEl.checked = false;
+            darkThemeEl.checked = false;
             serverUrlEl.value = serverBase;
             updateSectionVisibility();
 

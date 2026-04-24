@@ -10,6 +10,7 @@ typedef struct {
   bool disable_timer_shake;
   bool disable_ai_assistant;
   bool use_24hr_time;
+  bool dark_theme;           // false = light (default), true = dark
 } Flags;
 
 typedef struct {

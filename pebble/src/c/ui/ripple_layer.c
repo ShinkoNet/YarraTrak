@@ -1,4 +1,5 @@
 #include "ripple_layer.h"
+#include "theme.h"
 #include "../app_state.h"
 
 #include <pebble.h>
@@ -36,19 +37,19 @@ static void ripple_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   GPoint center = grect_center_point(&bounds);
 
-  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_context_set_fill_color(ctx, theme_bg());
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
+  graphics_context_set_stroke_color(ctx, theme_ring());
+
 #if defined(PBL_COLOR)
-  graphics_context_set_stroke_color(ctx, GColorBlueMoon);
   graphics_context_set_stroke_width(ctx, 1);
   for (int i = 0; i < RIPPLE_RING_COUNT; i++) {
     uint16_t r = (d->phase + i * RIPPLE_SPACING) % d->max_radius;
-    if (r < 6) continue;  // skip tiny inner dot
+    if (r < 6) continue;
     graphics_draw_circle(ctx, center, r);
   }
 #else
-  graphics_context_set_stroke_color(ctx, GColorWhite);
   for (int i = 0; i < RIPPLE_RING_COUNT; i++) {
     uint16_t r = (d->phase + i * RIPPLE_SPACING) % d->max_radius;
     if (r < RIPPLE_APLITE_INNER_SKIP) continue;

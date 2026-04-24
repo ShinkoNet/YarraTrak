@@ -9,6 +9,7 @@
 #define PKEY_FLAG_SHAKE_DISABLED   102
 #define PKEY_FLAG_AI_DISABLED      103
 #define PKEY_FLAG_24H_TIME         104
+#define PKEY_FLAG_DARK_THEME       105
 
 // Per-entry persisted key ranges. Each entry uses 200 + 10*(N-1) + field.
 // Field offsets:

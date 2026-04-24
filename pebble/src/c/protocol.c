@@ -52,7 +52,7 @@ static void handle_conn_state(const char *data) {
 
 // FLAGS_SYNC format: "flag_bits"
 // bit0 disable_vibration, bit1 disable_ripple_vfx, bit2 disable_timer_shake,
-// bit3 disable_ai_assistant, bit4 use_24hr_time
+// bit3 disable_ai_assistant, bit4 use_24hr_time, bit5 dark_theme
 static void handle_flags_sync(const char *data) {
   int bits = atoi(data);
   Flags *f = &g_app_state.flags;
@@ -61,6 +61,7 @@ static void handle_flags_sync(const char *data) {
   f->disable_timer_shake  = (bits & 4)  != 0;
   f->disable_ai_assistant = (bits & 8)  != 0;
   f->use_24hr_time        = (bits & 16) != 0;
+  f->dark_theme           = (bits & 32) != 0;
   settings_store_save_flags();
   g_app_state.settings_received = true;
 }

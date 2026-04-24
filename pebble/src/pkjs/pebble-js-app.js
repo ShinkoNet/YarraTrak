@@ -125,7 +125,8 @@ function collectSettingsSnapshot() {
     var snapshot = {};
     var keys = ['server_url', 'llm_api_key', 'use_24hr_time', 'disable_ai_assistant',
                 'enable_third_party_endpoint', 'disable_vibration',
-                'disable_ripple_vfx', 'disable_timer_shake', 'entry_count', 'client_id'];
+                'disable_ripple_vfx', 'disable_timer_shake', 'dark_theme',
+                'entry_count', 'client_id'];
     for (var i = 0; i < keys.length; i++) {
         var v = getOption(keys[i]);
         if (v !== null) snapshot[keys[i]] = v;
@@ -216,6 +217,7 @@ function syncFlagsToWatch() {
     if (boolOption('disable_timer_shake'))  bits |= 4;
     if (boolOption('disable_ai_assistant')) bits |= 8;
     if (boolOption('use_24hr_time'))        bits |= 16;
+    if (boolOption('dark_theme'))           bits |= 32;
     sendToWatch(IN_FLAGS_SYNC, String(bits));
 }
 
