@@ -65,15 +65,25 @@ pebble install --phone YOUR_PHONE_IP
 ## Architecture
 
 ```
-pebble/          Pebble.js smartwatch app
-  src/pkjs/app.js  Main app logic (WebSocket client, vibrations, UI)
-  config/        Settings page (served by server)
+pebble/          Native Pebble SDK 4.x watchapp
+  src/c/         C source (watch side)
+    main.c         Entry point + window wiring
+    app_state.*    Global state: entries, connection, watched run
+    departures.*   Departure cache helpers
+    formatting.*   Countdown / menu row text
+    haptics.*      Minute-encoded vibration patterns
+    protocol.*     AppMessage protocol (PKJS <-> C)
+    settings_store.*  Persisted settings + favourites
+    ui/            splash, menu, watch, query windows + ripple layer + theme
+  src/pkjs/      PebbleKit JS companion
+    pebble-js-app.js   WebSocket client, settings bridge, AI assistant
+  config/        Settings HTML page (stop picker, flags)
 server/          FastAPI Python server
-  api.py         REST + WebSocket endpoints
-  agent_engine.py  AI agent (Anthropic Claude)
-  tools.py       Agent tool implementations
-  ptv_client.py  PTV Timetable API client
-  *.json         Pre-built station databases
+  api.py            REST + WebSocket endpoints
+  agent_engine.py   AI agent (Anthropic Claude)
+  tools.py          Agent tool implementations
+  ptv_client.py     PTV Timetable API client
+  *.json            Pre-built station databases
 ```
 
 ### API Endpoints
@@ -110,7 +120,13 @@ YarraTrak's vibration patterns encode the wait time haptically:
 
 So "1 hour 23 minutes" feels like: `BUZZZZZ ... BUZ BUZ ... bz bz bz`
 
-When a train is arriving **NOW**, you get the "shave and a haircut" pattern.
+The count rounds up mid-minute — rolling from 3:00 to 2:59 buzzes three
+times, rolling from 1:00 to 0:59 buzzes once. Under 30 seconds the
+countdown flips to **NOW!** and you get the "shave and a haircut" pattern.
+
+If the ETA slips (a delay pushes the timer back), the countdown shakes
+left/right and a single long pulse fires alongside it so you feel the
+slip even if you're not looking at the watch.
 
 ## Demo Entries
 

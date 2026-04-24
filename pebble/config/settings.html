@@ -374,11 +374,23 @@
             <div class="divider"></div>
             <label class="toggle-row" for="disable_ripple_vfx">
                 <span class="toggle-copy">
-                    <span class="toggle-title">Disable ripple VFX</span>
-                    <span class="toggle-hint">Uses a plain black watch page background instead of the animated ripple.</span>
+                    <span class="toggle-title">Disable background FX</span>
+                    <span class="toggle-hint">Uses a plain background instead of the animated effect on the watch page. Master kill switch — overrides the style below.</span>
                 </span>
                 <input type="checkbox" id="disable_ripple_vfx">
             </label>
+            <div class="divider"></div>
+            <div class="form-group" style="margin-bottom: 4px;">
+                <label for="bg_fx" style="margin-bottom: 6px;">Background FX style</label>
+                <select id="bg_fx">
+                    <option value="0">Rings — concentric ripple</option>
+                    <option value="1">Starfield — fly through space</option>
+                    <option value="2">Plasma — sin-field colour cycle</option>
+                    <option value="3">Fire — crackling flames</option>
+                    <option value="4">Cube — rotating wireframe</option>
+                </select>
+                <div class="hint">Pick the demoscene vibe you want behind the countdown. Plasma and Fire use the colour display, so they fall back to rings on Aplite watches.</div>
+            </div>
             <div class="divider"></div>
             <label class="toggle-row" for="disable_timer_shake">
                 <span class="toggle-copy">
@@ -430,6 +442,22 @@
         var disableRippleVfxEl = document.getElementById('disable_ripple_vfx');
         var disableTimerShakeEl = document.getElementById('disable_timer_shake');
         var darkThemeEl = document.getElementById('dark_theme');
+        var bgFxEl = document.getElementById('bg_fx');
+
+        // Aplite is 1-bit — plasma and fire rely on the 64-colour palette to
+        // read as anything but noise, so strip them out of the picker when
+        // PKJS tells us the watch is aplite. Starfield and the wireframe
+        // cube draw fine on B&W, so they stay.
+        var platform = String(options._platform || '').toLowerCase();
+        var isColor = platform !== 'aplite';
+        if (!isColor) {
+            var removeVals = { '2': 1, '3': 1 };
+            for (var oi = bgFxEl.options.length - 1; oi >= 0; oi--) {
+                if (removeVals[bgFxEl.options[oi].value]) {
+                    bgFxEl.remove(oi);
+                }
+            }
+        }
         var serverSettingsGroupEl = document.getElementById('server_settings_group');
         var aiSettingsGroupEl = document.getElementById('ai_settings_group');
         serverUrlEl.value = options.server_url || serverBase;
@@ -443,6 +471,9 @@
         disableRippleVfxEl.checked = isTruthyOption(options.disable_ripple_vfx);
         disableTimerShakeEl.checked = isTruthyOption(options.disable_timer_shake);
         darkThemeEl.checked = isTruthyOption(options.dark_theme);
+        if (options.bg_fx !== undefined && options.bg_fx !== null) {
+            bgFxEl.value = String(options.bg_fx);
+        }
 
         function updateSectionVisibility() {
             serverSettingsGroupEl.style.display = enableThirdPartyEndpointEl.checked ? 'block' : 'none';
@@ -748,6 +779,7 @@
                 enable_third_party_endpoint: enableThirdPartyEndpointEl.checked,
                 disable_vibration: disableVibrationEl.checked,
                 disable_ripple_vfx: disableRippleVfxEl.checked,
+                bg_fx: parseInt(bgFxEl.value, 10) || 0,
                 disable_timer_shake: disableTimerShakeEl.checked,
                 dark_theme: darkThemeEl.checked
             };
@@ -1315,6 +1347,7 @@
             disableRippleVfxEl.checked = false;
             disableTimerShakeEl.checked = false;
             darkThemeEl.checked = false;
+            bgFxEl.value = '0';
             serverUrlEl.value = serverBase;
             updateSectionVisibility();
 

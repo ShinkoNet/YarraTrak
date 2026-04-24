@@ -24,6 +24,7 @@ void settings_store_load(void) {
   f->disable_ai_assistant = persist_read_bool(PKEY_FLAG_AI_DISABLED);
   f->use_24hr_time       = persist_read_bool(PKEY_FLAG_24H_TIME);
   f->dark_theme          = persist_read_bool(PKEY_FLAG_DARK_THEME);
+  f->bg_fx               = (uint8_t)persist_read_int(PKEY_FLAG_BG_FX);
 
   g_app_state.entry_count = 0;
   if (persist_exists(PKEY_ENTRY_COUNT)) {
@@ -55,6 +56,7 @@ void settings_store_save_flags(void) {
   persist_write_bool(PKEY_FLAG_AI_DISABLED,      f->disable_ai_assistant);
   persist_write_bool(PKEY_FLAG_24H_TIME,         f->use_24hr_time);
   persist_write_bool(PKEY_FLAG_DARK_THEME,       f->dark_theme);
+  persist_write_int(PKEY_FLAG_BG_FX,             f->bg_fx);
 }
 
 void settings_store_save_entries(void) {

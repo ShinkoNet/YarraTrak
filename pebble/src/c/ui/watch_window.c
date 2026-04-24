@@ -1,5 +1,5 @@
 #include "watch_window.h"
-#include "ripple_layer.h"
+#include "fx_layer.h"
 #include "theme.h"
 #include "../app_state.h"
 #include "../protocol.h"
@@ -13,7 +13,7 @@
 #include <string.h>
 
 static Window *s_window = NULL;
-static Layer     *s_ripple_layer = NULL;
+static Layer     *s_fx_layer = NULL;
 static TextLayer *s_status_layer = NULL;
 static TextLayer *s_countdown_layer = NULL;
 static Layer     *s_info_layer = NULL;  // boxed platform badge + departure time
@@ -466,9 +466,9 @@ static void window_load(Window *window) {
   window_set_background_color(window, theme_bg());
 
   // Ripple sits at the back.
-  s_ripple_layer = ripple_layer_create(bounds);
-  if (s_ripple_layer) {
-    layer_add_child(root, s_ripple_layer);
+  s_fx_layer = fx_layer_create(bounds);
+  if (s_fx_layer) {
+    layer_add_child(root, s_fx_layer);
   }
 
   s_status_layer = text_layer_create(GRect(0, 4, bounds.size.w, 18));
@@ -521,15 +521,15 @@ static void window_load(Window *window) {
     maybe_vibrate(dep);
   }
   render();
-  ripple_layer_start(s_ripple_layer);
+  fx_layer_start(s_fx_layer);
   schedule_tick();
 }
 
 static void window_unload(Window *window) {
   if (s_tick_timer) { app_timer_cancel(s_tick_timer); s_tick_timer = NULL; }
   if (s_shake_anim) { animation_unschedule(s_shake_anim); s_shake_anim = NULL; }
-  ripple_layer_stop(s_ripple_layer);
-  if (s_ripple_layer) { ripple_layer_destroy(s_ripple_layer); s_ripple_layer = NULL; }
+  fx_layer_stop(s_fx_layer);
+  if (s_fx_layer) { fx_layer_destroy(s_fx_layer); s_fx_layer = NULL; }
   if (s_status_layer) { text_layer_destroy(s_status_layer); s_status_layer = NULL; }
   if (s_route_layer) { text_layer_destroy(s_route_layer); s_route_layer = NULL; }
   if (s_countdown_layer) { text_layer_destroy(s_countdown_layer); s_countdown_layer = NULL; }
