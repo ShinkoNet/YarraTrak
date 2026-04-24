@@ -33,6 +33,7 @@ static int32_t s_last_vibrated_minutes = -1;
 static char s_last_run_ref[RUN_REF_LEN] = "";
 static GRect s_countdown_home_frame;
 static Animation *s_shake_anim = NULL;
+static int32_t s_last_seconds = INT32_MAX;  // previous render's seconds_until
 
 static void schedule_tick(void);
 
@@ -109,38 +110,79 @@ static void shake_anim_stopped(Animation *anim, bool finished, void *context) {
   s_shake_anim = NULL;
 }
 
+static void cancel_running_anim(void) {
+  if (!s_shake_anim) return;
+  layer_set_frame(text_layer_get_layer(s_countdown_layer), s_countdown_home_frame);
+  animation_unschedule(s_shake_anim);
+  s_shake_anim = NULL;
+}
+
+// V1 'bounce': the countdown ticked down — tiny +1y bob then back.
+// Fires every second the user's watching, so kept minimal (~70 ms).
+static void trigger_bounce(void) {
+  if (g_app_state.flags.disable_timer_shake) return;
+  if (!s_countdown_layer) return;
+  cancel_running_anim();
+
+  GRect home = s_countdown_home_frame;
+  GRect down = home; down.origin.y += 1;
+
+  PropertyAnimation *a = property_animation_create_layer_frame(
+      text_layer_get_layer(s_countdown_layer), &home, &down);
+  PropertyAnimation *b = property_animation_create_layer_frame(
+      text_layer_get_layer(s_countdown_layer), &down, &home);
+  animation_set_duration((Animation *)a, 35);
+  animation_set_duration((Animation *)b, 35);
+  animation_set_curve((Animation *)a, AnimationCurveLinear);
+  animation_set_curve((Animation *)b, AnimationCurveLinear);
+
+  Animation *seq = animation_sequence_create(
+      (Animation *)a, (Animation *)b, NULL);
+  animation_set_handlers(seq, (AnimationHandlers){
+    .stopped = shake_anim_stopped,
+  }, NULL);
+  s_shake_anim = seq;
+  animation_schedule(seq);
+}
+
+// V1 'shake': the countdown *increased* — ETA slipped, i.e. a delay was
+// detected. Horizontal wiggle -2, +2, -1, +1, 0 over ~180 ms to draw the
+// eye to the number. Much more intrusive than the per-tick bounce.
 static void trigger_shake(void) {
   if (g_app_state.flags.disable_timer_shake) return;
   if (!s_countdown_layer) return;
-  if (s_shake_anim) {
-    layer_set_frame(text_layer_get_layer(s_countdown_layer), s_countdown_home_frame);
-    animation_unschedule(s_shake_anim);
-    s_shake_anim = NULL;
-  }
+  cancel_running_anim();
 
-  // Subtle ±1px horizontal wiggle. Each leg is roughly two frames (~66ms)
-  // so the whole effect is barely a blip — intentionally gentle since it
-  // fires every second the countdown changes.
   GRect home = s_countdown_home_frame;
-  GRect left = home;  left.origin.x  -= 1;
-  GRect right = home; right.origin.x += 1;
+  GRect l2 = home; l2.origin.x -= 2;
+  GRect r2 = home; r2.origin.x += 2;
+  GRect l1 = home; l1.origin.x -= 1;
+  GRect r1 = home; r1.origin.x += 1;
 
   PropertyAnimation *a = property_animation_create_layer_frame(
-      text_layer_get_layer(s_countdown_layer), &home, &left);
+      text_layer_get_layer(s_countdown_layer), &home, &l2);
   PropertyAnimation *b = property_animation_create_layer_frame(
-      text_layer_get_layer(s_countdown_layer), &left, &right);
+      text_layer_get_layer(s_countdown_layer), &l2, &r2);
   PropertyAnimation *c = property_animation_create_layer_frame(
-      text_layer_get_layer(s_countdown_layer), &right, &home);
-
-  animation_set_duration((Animation *)a, 66);
-  animation_set_duration((Animation *)b, 66);
-  animation_set_duration((Animation *)c, 66);
+      text_layer_get_layer(s_countdown_layer), &r2, &l1);
+  PropertyAnimation *d = property_animation_create_layer_frame(
+      text_layer_get_layer(s_countdown_layer), &l1, &r1);
+  PropertyAnimation *e = property_animation_create_layer_frame(
+      text_layer_get_layer(s_countdown_layer), &r1, &home);
+  animation_set_duration((Animation *)a, 45);
+  animation_set_duration((Animation *)b, 45);
+  animation_set_duration((Animation *)c, 45);
+  animation_set_duration((Animation *)d, 45);
+  animation_set_duration((Animation *)e, 45);
   animation_set_curve((Animation *)a, AnimationCurveLinear);
   animation_set_curve((Animation *)b, AnimationCurveLinear);
   animation_set_curve((Animation *)c, AnimationCurveLinear);
+  animation_set_curve((Animation *)d, AnimationCurveLinear);
+  animation_set_curve((Animation *)e, AnimationCurveLinear);
 
   Animation *seq = animation_sequence_create(
-      (Animation *)a, (Animation *)b, (Animation *)c, NULL);
+      (Animation *)a, (Animation *)b, (Animation *)c,
+      (Animation *)d, (Animation *)e, NULL);
   animation_set_handlers(seq, (AnimationHandlers){
     .stopped = shake_anim_stopped,
   }, NULL);
@@ -189,7 +231,21 @@ static void render(void) {
   if (changed) {
     strncpy(s_countdown_prev, s_countdown_buf, sizeof(s_countdown_prev) - 1);
     s_countdown_prev[sizeof(s_countdown_prev) - 1] = '\0';
-    trigger_shake();
+
+    // V1 semantics: countdown went DOWN → bounce (tick). Countdown went
+    // UP → shake (ETA slipped). First render after watch start has no
+    // prior value and skips the animation entirely.
+    int32_t new_sec = sec;
+    if (s_last_seconds != INT32_MAX && new_sec != INT32_MAX) {
+      if (new_sec < s_last_seconds) {
+        trigger_bounce();
+      } else if (new_sec > s_last_seconds + 1) {
+        // Guard against +1 s jitter from minute-precision deps — require
+        // a real jump before interpreting as a delay.
+        trigger_shake();
+      }
+    }
+    s_last_seconds = new_sec;
   }
 
   // Platform
@@ -286,6 +342,7 @@ static void up_click(ClickRecognizerRef rec, void *context) {
     g_app_state.watching_offset = 0;
     s_last_run_ref[0] = '\0';
     s_last_vibrated_minutes = -1;
+    s_last_seconds = INT32_MAX;
     render();
     Departure *dep = get_watched_departure();
     if (dep) send_watch_start_if_needed(dep);
@@ -306,6 +363,7 @@ static void down_click(ClickRecognizerRef rec, void *context) {
   g_app_state.watching_offset = 1;
   s_last_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
+  s_last_seconds = INT32_MAX;
   render();
   send_watch_start_if_needed(next);
 }
@@ -416,6 +474,7 @@ void watch_window_push(uint8_t button_id) {
   g_app_state.watched_run_ref[0] = '\0';
   s_last_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
+  s_last_seconds = INT32_MAX;
 
   if (s_window) return;
 
