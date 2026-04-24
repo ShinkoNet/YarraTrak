@@ -169,6 +169,36 @@
             color: #888;
         }
 
+        /* Tram sibling group: two physical stops share a name. The head row
+           collapses them; tapping it reveals per-direction sub-rows. */
+        .search-result.group-head::after {
+            content: '▾';
+            color: #888;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+
+        .search-result.group-head.open::after {
+            content: '▴';
+        }
+
+        .search-result.sub {
+            padding-left: 24px;
+            border-left: 2px solid #ff6b00;
+            background: #2d2d2d;
+        }
+
+        .search-result.sub .dir-arrow {
+            color: #ff6b00;
+            font-weight: bold;
+            margin-right: 4px;
+        }
+
+        .search-result.sub .route-hint {
+            font-size: 11px;
+            color: #888;
+        }
+
         .clear-btn {
             background: #444;
             font-size: 12px;
@@ -313,7 +343,7 @@
             <label class="toggle-row" for="use_24hr_time">
                 <span class="toggle-copy">
                     <span class="toggle-title">Use 24-hour time</span>
-                    <span class="toggle-hint">Shows planned bus replacement times as 16:30 instead of 4:30pm.</span>
+                    <span class="toggle-hint">Shows the menu clock, watch-page departure times, and planned disruption times as 16:30 instead of 4:30 PM.</span>
                 </span>
                 <input type="checkbox" id="use_24hr_time">
             </label>
@@ -357,6 +387,14 @@
                 </span>
                 <input type="checkbox" id="disable_timer_shake">
             </label>
+            <div class="divider"></div>
+            <label class="toggle-row" for="dark_theme">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Dark theme</span>
+                    <span class="toggle-hint">Flips the menu and watch page to a black background with white text.</span>
+                </span>
+                <input type="checkbox" id="dark_theme">
+            </label>
             <button id="reset_defaults" style="background: #4CAF50; margin-top: 0; margin-bottom: 0;">Reset to Default</button>
         </div>
     </details>
@@ -391,6 +429,7 @@
         var disableVibrationEl = document.getElementById('disable_vibration');
         var disableRippleVfxEl = document.getElementById('disable_ripple_vfx');
         var disableTimerShakeEl = document.getElementById('disable_timer_shake');
+        var darkThemeEl = document.getElementById('dark_theme');
         var serverSettingsGroupEl = document.getElementById('server_settings_group');
         var aiSettingsGroupEl = document.getElementById('ai_settings_group');
         serverUrlEl.value = options.server_url || serverBase;
@@ -403,6 +442,7 @@
         disableVibrationEl.checked = isTruthyOption(options.disable_vibration);
         disableRippleVfxEl.checked = isTruthyOption(options.disable_ripple_vfx);
         disableTimerShakeEl.checked = isTruthyOption(options.disable_timer_shake);
+        darkThemeEl.checked = isTruthyOption(options.dark_theme);
 
         function updateSectionVisibility() {
             serverSettingsGroupEl.style.display = enableThirdPartyEndpointEl.checked ? 'block' : 'none';
@@ -708,7 +748,8 @@
                 enable_third_party_endpoint: enableThirdPartyEndpointEl.checked,
                 disable_vibration: disableVibrationEl.checked,
                 disable_ripple_vfx: disableRippleVfxEl.checked,
-                disable_timer_shake: disableTimerShakeEl.checked
+                disable_timer_shake: disableTimerShakeEl.checked,
+                dark_theme: darkThemeEl.checked
             };
             for (var i = 1; i <= entryCount; i++) {
                 var startIdEl = document.getElementById('entry' + i + '_start_id');
@@ -770,6 +811,63 @@
             }
         });
 
+        // Tram sibling disambiguation ------------------------------------
+        //
+        // A single physical intersection like "Royal Melbourne Hospital/
+        // Royal Pde #10" is split into two `stop_id`s — one per side of the
+        // road — that share an identical `name`. Each side only boards
+        // trams heading in one direction. The legacy picker showed both
+        // rows identically, so users couldn't tell which side they were
+        // picking; `resolveDirection` then silently picked whichever
+        // direction had startSeq < destSeq, which could be the wrong way
+        // if the user guessed wrong.
+        //
+        // Rule: for each sibling, walk its `routes[r].dirs[d]` entries and
+        // collect the directions where this sibling has `seq === 0` — that
+        // means "a tram departs toward this direction from here". These
+        // are the boarding directions for this physical side.
+        function getBoardingDirections(stop) {
+            var out = [];
+            if (!stop || !stop.routes) return out;
+            for (var routeId in stop.routes) {
+                var route = stop.routes[routeId];
+                var dirs = route.dirs || {};
+                for (var dirId in dirs) {
+                    if (dirs[dirId] && dirs[dirId].seq === 0) {
+                        out.push({
+                            routeId: routeId,
+                            routeName: route.name || '',
+                            dirId: parseInt(dirId, 10),
+                            dirName: dirs[dirId].name || ''
+                        });
+                    }
+                }
+            }
+            return out;
+        }
+
+        // Group tram stops that share an identical `name`. Returns an array
+        // of entries, each { name, suburbs, stops: [...] }. For non-tram
+        // types we keep the original stations as single-stop groups so
+        // downstream code can treat everything uniformly.
+        function groupByName(stations) {
+            var order = [];
+            var byName = {};
+            stations.forEach(function (s) {
+                if (!byName[s.name]) {
+                    byName[s.name] = { name: s.name, stops: [] };
+                    order.push(s.name);
+                }
+                byName[s.name].stops.push(s);
+            });
+            return order.map(function (n) { return byName[n]; });
+        }
+
+        // Search result cache keyed by entryNum so the expand/collapse
+        // click handlers can find the original group data without
+        // re-searching.
+        var searchCtx = {};
+
         // Get stations for a start station that share a route (for destination filtering)
         function getDestinationsForStart(startStopId, routeType) {
             var stations = stationsByType[routeType] || [];
@@ -828,6 +926,109 @@
             return null;
         }
 
+        // Render a single search result row. If the group has one stop,
+        // tapping selects it directly. If the group has two siblings
+        // (tram, opposite sides of the road), the row expands in place
+        // with one sub-row per boarding direction.
+        function renderSearchResults(results, groups, opts) {
+            // opts: { entryNum, kind: 'start'|'dest', sharedRouteId (dest only), onSelect(stop, dirId) }
+            if (groups.length === 0) {
+                results.innerHTML = '<div class="loading">No matches</div>';
+                results.style.display = 'block';
+                return;
+            }
+
+            var html = groups.map(function (g, gi) {
+                if (g.stops.length === 1) {
+                    var s = g.stops[0];
+                    var hint = opts.kind === 'dest'
+                        ? (s.routes[opts.sharedRouteId] && s.routes[opts.sharedRouteId].name) || ''
+                        : (s.suburb || '');
+                    return `<div class="search-result" data-group-idx="${gi}" data-stop-id="${s.stop_id}">
+                        <span class="name">${s.name}</span>
+                        <span class="type">${hint}</span>
+                    </div>`;
+                }
+                // Collapsed sibling group. Suburb hint shows the two sides
+                // separated by a slash so the user knows to expand.
+                var suburbs = g.stops.map(function (s) { return s.suburb || '?'; }).join(' / ');
+                return `<div class="search-result group-head" data-group-idx="${gi}">
+                    <span class="name">${g.stops[0].name}</span>
+                    <span class="type">${suburbs}</span>
+                </div>`;
+            }).join('');
+
+            results.innerHTML = html;
+            results.style.display = 'block';
+
+            results.querySelectorAll('.search-result').forEach(function (el) {
+                el.addEventListener('click', function (ev) {
+                    ev.stopPropagation();
+                    var gi = parseInt(this.dataset.groupIdx, 10);
+                    var group = groups[gi];
+                    if (!group) return;
+
+                    if (group.stops.length === 1) {
+                        opts.onSelect(group.stops[0], null);
+                        return;
+                    }
+                    // Toggle the group-head: expand sibling options inline.
+                    var already = this.classList.contains('open');
+                    // Remove any previously injected sub rows, reset heads.
+                    results.querySelectorAll('.search-result.sub').forEach(function (n) { n.remove(); });
+                    results.querySelectorAll('.search-result.group-head.open').forEach(function (n) { n.classList.remove('open'); });
+                    if (already) return;
+                    this.classList.add('open');
+
+                    // One sub-row per (sibling, boarding direction).
+                    var parentEl = this;
+                    var subHtml = [];
+                    var subMeta = [];
+                    group.stops.forEach(function (stop) {
+                        var boards = getBoardingDirections(stop);
+                        if (boards.length === 0) {
+                            // Fallback: show sibling without direction hint.
+                            subMeta.push({ stop: stop, dirId: null });
+                            subHtml.push(`<div class="search-result sub" data-meta="${subMeta.length - 1}">
+                                <span class="name"><span class="dir-arrow">→</span>${stop.suburb || 'this side'}</span>
+                                <span class="route-hint"></span>
+                            </div>`);
+                            return;
+                        }
+                        boards.forEach(function (b) {
+                            subMeta.push({ stop: stop, dirId: b.dirId });
+                            subHtml.push(`<div class="search-result sub" data-meta="${subMeta.length - 1}">
+                                <span class="name"><span class="dir-arrow">→</span>${b.dirName}</span>
+                                <span class="route-hint">${b.routeName}</span>
+                            </div>`);
+                        });
+                    });
+
+                    // Insert the sub rows right after the clicked head.
+                    parentEl.insertAdjacentHTML('afterend', subHtml.join(''));
+                    // Bind sub-row clicks.
+                    var nextNodes = [];
+                    var n = parentEl.nextElementSibling;
+                    while (n && n.classList.contains('sub')) {
+                        nextNodes.push(n);
+                        n = n.nextElementSibling;
+                    }
+                    nextNodes.forEach(function (row) {
+                        row.addEventListener('click', function (ev2) {
+                            ev2.stopPropagation();
+                            var idx = parseInt(this.dataset.meta, 10);
+                            var meta = subMeta[idx];
+                            if (meta) opts.onSelect(meta.stop, meta.dirId);
+                        });
+                        // Prevent the input's blur handler from closing the
+                        // dropdown before the click registers on mobile.
+                        row.addEventListener('mousedown', function (ev2) { ev2.preventDefault(); });
+                    });
+                });
+                el.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+            });
+        }
+
         // Search Logic - for START station (searches all stations of type)
         function setupStartSearch(input, results, hiddenId, entryNum) {
             input.addEventListener('input', function () {
@@ -850,31 +1051,22 @@
 
                 var matches = stations.filter(function (s) {
                     return s.name.toLowerCase().includes(query);
-                }).slice(0, 10);
+                });
 
-                if (matches.length > 0) {
-                    results.innerHTML = matches.map(function (s) {
-                        return `<div class="search-result" data-stop-id="${s.stop_id}">
-                            <span class="name">${s.name}</span>
-                            <span class="type">${s.suburb || ''}</span>
-                        </div>`;
-                    }).join('');
-                    results.style.display = 'block';
+                // Sibling collapsing is tram-only — train/vline stop names
+                // are already unique per physical platform pair.
+                var groups = (type === 1) ? groupByName(matches) : matches.map(function (s) { return { name: s.name, stops: [s] }; });
+                groups = groups.slice(0, 10);
 
-                    // Add click handlers
-                    results.querySelectorAll('.search-result').forEach(function (el) {
-                        el.addEventListener('click', function () {
-                            var stopId = this.dataset.stopId;
-                            var stop = stations.find(s => s.stop_id == stopId);
-                            if (stop) {
-                                selectStartStation(input.id, results.id, hiddenId.id, stop, entryNum);
-                            }
-                        });
-                    });
-                } else {
-                    results.innerHTML = '<div class="loading">No matches</div>';
-                    results.style.display = 'block';
-                }
+                searchCtx['start_' + entryNum] = groups;
+
+                renderSearchResults(results, groups, {
+                    entryNum: entryNum,
+                    kind: 'start',
+                    onSelect: function (stop, dirId) {
+                        selectStartStation(input.id, results.id, hiddenId.id, stop, entryNum, dirId);
+                    }
+                });
             });
 
             input.addEventListener('blur', function () {
@@ -898,6 +1090,8 @@
                 var query = this.value.trim().toLowerCase();
                 var type = parseInt(document.getElementById('entry' + entryNum + '_type').value);
                 var startId = document.getElementById('entry' + entryNum + '_start_id').value;
+                var preDir = document.getElementById('entry' + entryNum + '_direction_id').value;
+                preDir = preDir ? parseInt(preDir, 10) : null;
 
                 if (!startId) {
                     results.innerHTML = '<div class="loading">Select start first</div>';
@@ -913,33 +1107,53 @@
 
                 var destinations = getDestinationsForStart(parseInt(startId), type);
 
+                // If the start picker already pinned a direction (tram
+                // sibling sub-picker), keep only destinations reachable in
+                // that direction. This both shortens the list and removes
+                // the wrong-side sibling automatically: only one physical
+                // platform per intersection has a `seq` entry in any given
+                // travel direction.
+                if (preDir !== null) {
+                    var stations = stationsByType[type] || [];
+                    var startStation = stations.find(function (s) { return s.stop_id == startId; });
+                    destinations = destinations.filter(function (s) {
+                        var r = s.routes[s._sharedRoute];
+                        if (!r || !r.dirs || !r.dirs[preDir]) return false;
+                        var startRoute = startStation && startStation.routes[s._sharedRoute];
+                        var startSeq = startRoute && startRoute.dirs && startRoute.dirs[preDir] ? startRoute.dirs[preDir].seq : -1;
+                        var destSeq = r.dirs[preDir].seq;
+                        return destSeq > startSeq;
+                    });
+                }
+
                 var matches = destinations.filter(function (s) {
                     return s.name.toLowerCase().includes(query);
-                }).slice(0, 10);
+                });
 
-                if (matches.length > 0) {
-                    results.innerHTML = matches.map(function (s) {
-                        var routeName = s.routes[s._sharedRoute]?.name || '';
-                        return `<div class="search-result" data-stop-id="${s.stop_id}">
-                            <span class="name">${s.name}</span>
-                            <span class="type">${routeName}</span>
-                        </div>`;
-                    }).join('');
-                    results.style.display = 'block';
+                // Tram-only sibling collapse. When `preDir` is set the
+                // above filter already removed the wrong-side sibling, so
+                // each group is naturally a single stop; the group helper
+                // handles that case without a sub-picker.
+                var groups = (type === 1) ? groupByName(matches) : matches.map(function (s) { return { name: s.name, stops: [s] }; });
+                groups = groups.slice(0, 10);
 
-                    results.querySelectorAll('.search-result').forEach(function (el) {
-                        el.addEventListener('click', function () {
-                            var stopId = this.dataset.stopId;
-                            var stop = destinations.find(s => s.stop_id == stopId);
-                            if (stop) {
-                                selectDestStation(input.id, results.id, hiddenId.id, stop, entryNum);
-                            }
-                        });
-                    });
-                } else {
-                    results.innerHTML = '<div class="loading">No destinations on this route</div>';
-                    results.style.display = 'block';
-                }
+                searchCtx['dest_' + entryNum] = groups;
+
+                // Pick the sharedRouteId to pass to renderSearchResults.
+                // Any stop in the group has it (group members share name
+                // and therefore the same route coverage pair).
+                var sharedRouteId = groups[0] && groups[0].stops[0]
+                    ? groups[0].stops[0]._sharedRoute
+                    : null;
+
+                renderSearchResults(results, groups, {
+                    entryNum: entryNum,
+                    kind: 'dest',
+                    sharedRouteId: sharedRouteId,
+                    onSelect: function (stop, dirId) {
+                        selectDestStation(input.id, results.id, hiddenId.id, stop, entryNum, dirId);
+                    }
+                });
             });
 
             input.addEventListener('blur', function () {
@@ -948,14 +1162,15 @@
 
             input.addEventListener('keydown', function () {
                 hiddenId.value = '';
-                document.getElementById('entry' + entryNum + '_direction_id').value = '';
+                // Preserve direction_id if it was pre-set from a tram
+                // sibling sub-picker — only clear the resolved stop_id.
                 updateStatus(entryNum);
             });
         }
 
         // Note: Search handlers are now set up dynamically in setupEntrySearch()
 
-        window.selectStartStation = function (inputId, resultsId, hiddenIdStr, stop, entryNum) {
+        window.selectStartStation = function (inputId, resultsId, hiddenIdStr, stop, entryNum, dirId) {
             document.getElementById(inputId).value = stop.name;
             document.getElementById(hiddenIdStr).value = stop.stop_id;
             document.getElementById(resultsId).style.display = 'none';
@@ -966,25 +1181,35 @@
             destInput.placeholder = 'Search destination...';
             destInput.value = '';
             document.getElementById('entry' + entryNum + '_dest_id').value = '';
-            document.getElementById('entry' + entryNum + '_direction_id').value = '';
+            // A tram sibling sub-picker supplies the direction up front; for
+            // other routes direction stays empty and is resolved at dest pick.
+            document.getElementById('entry' + entryNum + '_direction_id').value =
+                (dirId !== null && dirId !== undefined) ? dirId : '';
 
             updateStatus(entryNum);
         };
 
-        window.selectDestStation = function (inputId, resultsId, hiddenIdStr, stop, entryNum) {
+        window.selectDestStation = function (inputId, resultsId, hiddenIdStr, stop, entryNum, dirId) {
             document.getElementById(inputId).value = stop.name;
             document.getElementById(hiddenIdStr).value = stop.stop_id;
             document.getElementById(resultsId).style.display = 'none';
 
-            // Auto-resolve direction_id!
             var startId = parseInt(document.getElementById('entry' + entryNum + '_start_id').value);
             var destId = stop.stop_id;
             var type = parseInt(document.getElementById('entry' + entryNum + '_type').value);
+            var dirField = document.getElementById('entry' + entryNum + '_direction_id');
 
-            var directionId = resolveDirection(startId, destId, type);
-            if (directionId !== null) {
-                document.getElementById('entry' + entryNum + '_direction_id').value = directionId;
-                console.log('Resolved direction_id:', directionId);
+            // If the dest sub-picker handed us a direction (tram sibling
+            // chosen explicitly), or the start picker already pinned one,
+            // keep it. Otherwise fall back to resolveDirection's heuristic.
+            if (dirId !== null && dirId !== undefined) {
+                dirField.value = dirId;
+            } else if (!dirField.value) {
+                var directionId = resolveDirection(startId, destId, type);
+                if (directionId !== null) {
+                    dirField.value = directionId;
+                    console.log('Resolved direction_id:', directionId);
+                }
             }
 
             updateStatus(entryNum);
@@ -1089,6 +1314,7 @@
             disableVibrationEl.checked = false;
             disableRippleVfxEl.checked = false;
             disableTimerShakeEl.checked = false;
+            darkThemeEl.checked = false;
             serverUrlEl.value = serverBase;
             updateSectionVisibility();
 
