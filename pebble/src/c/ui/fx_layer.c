@@ -7,7 +7,8 @@
 #include <string.h>
 
 // Frame interval; ~17 fps feels smooth for these effects without burning CPU.
-#define FX_STEP_MS 60
+#define FX_STEP_MS       60
+#define FX_IDLE_STEP_MS  1000
 
 // ---- Ripple (effect 0) -------------------------------------------------
 #define RIPPLE_RING_COUNT 4
@@ -344,10 +345,21 @@ static void fx_update_proc(Layer *layer, GContext *ctx) {
 
 static void fx_tick(void *context);
 
+// Alert mode is idle most of the time — no active disruption means the
+// draw is a no-op. Poll at 1 Hz in that state so we still pick up a
+// newly-arrived disruption within a second, but save the per-60ms wake
+// otherwise. Every other effect animates continuously and needs 60 ms.
+static uint32_t tick_interval_for(FxData *d) {
+  if (d->mode == BG_FX_ALERT && !current_watch_has_major_disruption()) {
+    return FX_IDLE_STEP_MS;
+  }
+  return FX_STEP_MS;
+}
+
 static void schedule_tick(Layer *layer) {
   FxData *d = (FxData *)layer_get_data(layer);
   if (d->timer) app_timer_cancel(d->timer);
-  d->timer = app_timer_register(FX_STEP_MS, fx_tick, layer);
+  d->timer = app_timer_register(tick_interval_for(d), fx_tick, layer);
 }
 
 static void fx_tick(void *context) {
@@ -355,12 +367,17 @@ static void fx_tick(void *context) {
   FxData *d = (FxData *)layer_get_data(layer);
   d->timer = NULL;
   if (g_app_state.flags.disable_ripple_vfx) {
-    layer_mark_dirty(layer);
+    // Battery-saver mode: we already painted the static bg once on
+    // window_load; skip further redraws until the flag flips.
     return;
   }
   d->frame++;
   d->ripple_phase = (uint16_t)((d->ripple_phase + RIPPLE_PHASE_STEP) % d->max_radius);
-  layer_mark_dirty(layer);
+  // Alert idle: draw_alert will no-op. Skipping the mark_dirty tells
+  // Pebble's OS the display is static, which keeps the LCD off the bus.
+  if (!(d->mode == BG_FX_ALERT && !current_watch_has_major_disruption())) {
+    layer_mark_dirty(layer);
+  }
   schedule_tick(layer);
 }
 
