@@ -2,7 +2,7 @@
 
 #include <pebble.h>
 
-// unified background-fx layer used behind the watch-window countdown
+// old bg fx ids fall back to rings
 
 Layer *fx_layer_create(GRect bounds);
 void fx_layer_destroy(Layer *layer);
