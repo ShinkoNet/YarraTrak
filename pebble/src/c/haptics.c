@@ -3,7 +3,9 @@
 
 #include <pebble.h>
 
-#define MAX_SEGMENTS 40
+// Worst case 11h 59m = 11 hours (×2) + 5 tens (×2) + 9 ones (×2) ≈ 50.
+// 64 is comfortable headroom.
+#define MAX_SEGMENTS 64
 
 static void play_pattern(const uint32_t *segments, uint32_t count) {
   if (g_app_state.flags.disable_vibration) {
@@ -17,14 +19,23 @@ static void play_pattern(const uint32_t *segments, uint32_t count) {
   vibes_enqueue_custom_pattern(pat);
 }
 
-// Shave-and-a-haircut: "NOW" pattern. Total ~7 segments.
+// "Shave and a haircut" — matches V1 byte-for-byte:
+//   [43, 300, 43, 71, 43, 43, 43, 100, 43, 300, 43, 643, 43, 300, 43]
+// Eight 43 ms taps with carefully spaced gaps so the rhythm reads as the
+// jingle on the watch's voice coil. Don't touch the numbers without
+// ear-testing on hardware — they were tuned by hand.
 static void play_shave_and_haircut(void) {
   static const uint32_t pat[] = {
-    200, 100, 100, 100, 200, 150, 400
+    43, 300, 43, 71, 43, 43, 43, 100, 43, 300, 43, 643, 43, 300, 43
   };
   play_pattern(pat, sizeof(pat) / sizeof(pat[0]));
 }
 
+// Minute-to-pattern encoder. Matches V1's calculateVibration:
+//   Hours:  800 ms ON / 300 ms OFF each, +200 ms pause if tens/ones follow
+//   Tens:   300 ms ON / 150 ms OFF each, +100 ms pause if ones follow
+//   Ones:    80 ms ON / 180 ms OFF each
+// Minutes are clamped to [0, 720] so an out-of-range value can't overflow.
 void haptics_play_for_minutes(int32_t minutes) {
   if (g_app_state.flags.disable_vibration) {
     return;
@@ -34,41 +45,39 @@ void haptics_play_for_minutes(int32_t minutes) {
     play_shave_and_haircut();
     return;
   }
-
-  uint32_t segments[MAX_SEGMENTS];
-  uint32_t count = 0;
+  if (minutes > 720) minutes = 720;
 
   int32_t hours = minutes / 60;
   int32_t remaining = minutes % 60;
   int32_t tens = remaining / 10;
   int32_t ones = remaining % 10;
 
-  // Long buzzes for each hour.
-  for (int32_t i = 0; i < hours && count < MAX_SEGMENTS - 1; i++) {
-    if (count > 0) segments[count++] = 300;  // gap
-    segments[count++] = 700;
+  uint32_t pat[MAX_SEGMENTS];
+  uint32_t n = 0;
+
+  for (int32_t i = 0; i < hours && n + 1 < MAX_SEGMENTS; i++) {
+    pat[n++] = 800;
+    pat[n++] = 300;
   }
-  if (hours > 0 && tens + ones > 0 && count < MAX_SEGMENTS - 1) {
-    segments[count++] = 500;
+  if (hours > 0 && (tens > 0 || ones > 0) && n > 0) {
+    pat[n - 1] += 200;
   }
 
-  // Medium buzzes for each ten-minute.
-  for (int32_t i = 0; i < tens && count < MAX_SEGMENTS - 1; i++) {
-    if (count > 0) segments[count++] = 200;
-    segments[count++] = 350;
+  for (int32_t i = 0; i < tens && n + 1 < MAX_SEGMENTS; i++) {
+    pat[n++] = 300;
+    pat[n++] = 150;
   }
-  if (tens > 0 && ones > 0 && count < MAX_SEGMENTS - 1) {
-    segments[count++] = 400;
-  }
-
-  // Short buzzes for each single-minute.
-  for (int32_t i = 0; i < ones && count < MAX_SEGMENTS - 1; i++) {
-    if (count > 0) segments[count++] = 150;
-    segments[count++] = 120;
+  if (tens > 0 && ones > 0 && n > 0) {
+    pat[n - 1] += 100;
   }
 
-  if (count > 0) {
-    play_pattern(segments, count);
+  for (int32_t i = 0; i < ones && n + 1 < MAX_SEGMENTS; i++) {
+    pat[n++] = 80;
+    pat[n++] = 180;
+  }
+
+  if (n > 0) {
+    play_pattern(pat, n);
   }
 }
 
