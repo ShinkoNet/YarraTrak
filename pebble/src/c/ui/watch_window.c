@@ -16,7 +16,7 @@ static Window *s_window = NULL;
 static Layer     *s_ripple_layer = NULL;
 static TextLayer *s_status_layer = NULL;
 static TextLayer *s_countdown_layer = NULL;
-static TextLayer *s_platform_layer = NULL;
+static Layer     *s_info_layer = NULL;  // boxed platform badge + departure time
 static TextLayer *s_route_layer = NULL;
 static TextLayer *s_bottom_layer = NULL;
 static Layer     *s_progress_layer = NULL;
@@ -25,7 +25,8 @@ static AppTimer  *s_tick_timer = NULL;
 static char s_status_buf[24];
 static char s_countdown_buf[16];
 static char s_countdown_prev[16];
-static char s_platform_buf[24];
+static char s_platform_badge[8];    // e.g. "P2", "P13", "PA" — "" if no platform
+static char s_time_buf[10];         // "17:27" or "5:27 PM" — "" if unknown
 static char s_route_buf[48];
 static char s_bottom_buf[48];
 
@@ -78,6 +79,59 @@ static bool is_numeric_countdown(const char *s) {
     return false;
   }
   return *s != '\0';
+}
+
+// Draws the "[P2]  17:27" badge + time row centred in its own frame. A
+// bordered rectangle wraps the platform label so it reads as a symbol, not
+// a word; the time floats to the right with a small gap.
+static void info_layer_update_proc(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
+  GColor fg = theme_fg();
+  graphics_context_set_text_color(ctx, fg);
+  graphics_context_set_stroke_color(ctx, fg);
+  graphics_context_set_stroke_width(ctx, 1);
+
+  GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+
+  GSize plat_sz = GSize(0, 0);
+  if (s_platform_badge[0]) {
+    plat_sz = graphics_text_layout_get_content_size(
+        s_platform_badge, font, GRect(0, 0, 80, 30),
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
+  }
+  GSize time_sz = GSize(0, 0);
+  if (s_time_buf[0]) {
+    time_sz = graphics_text_layout_get_content_size(
+        s_time_buf, font, GRect(0, 0, 120, 30),
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+  }
+
+  const int16_t BOX_PAD_X = 4;
+  const int16_t BOX_H = 20;
+  const int16_t GAP = 6;
+  int16_t box_w = s_platform_badge[0] ? plat_sz.w + BOX_PAD_X * 2 : 0;
+  int16_t total_w = box_w + (s_platform_badge[0] && s_time_buf[0] ? GAP : 0) + time_sz.w;
+  int16_t x = (bounds.size.w - total_w) / 2;
+  int16_t y = (bounds.size.h - BOX_H) / 2;
+
+  if (s_platform_badge[0]) {
+    GRect box = GRect(x, y, box_w, BOX_H);
+    graphics_draw_rect(ctx, box);
+    // Nudge text up 3px because GOTHIC_18_BOLD has an ascender-heavy
+    // bounding box — centres visually, not numerically.
+    graphics_draw_text(ctx, s_platform_badge, font,
+                       GRect(x, y - 3, box_w, BOX_H),
+                       GTextOverflowModeTrailingEllipsis,
+                       GTextAlignmentCenter, NULL);
+    x += box_w + GAP;
+  }
+
+  if (s_time_buf[0]) {
+    graphics_draw_text(ctx, s_time_buf, font,
+                       GRect(x, y - 3, time_sz.w + 4, BOX_H),
+                       GTextOverflowModeTrailingEllipsis,
+                       GTextAlignmentLeft, NULL);
+  }
 }
 
 static void progress_update_proc(Layer *layer, GContext *ctx) {
@@ -248,33 +302,26 @@ static void render(void) {
     s_last_seconds = new_sec;
   }
 
-  // Platform + absolute departure time. The LECO countdown shows how long
-  // you've got; the HH:MM tells you which physical service you're tracking
-  // — handy when you need to explain "I'm on the 5:27" to someone or when
-  // you flip to Service After.
-  char time_buf[8] = "";
+  // Platform badge (drawn as a bordered "P<num>" box by s_info_layer) +
+  // absolute HH:MM time. Countdown tells you how long; time tells you
+  // *which* service. 12h mode tacks a PM/AM suffix per the user's flag.
+  s_time_buf[0] = '\0';
   if (dep && dep->has_data && dep->departure_unix != 0) {
     time_t t = dep->departure_unix;
     struct tm *lt = localtime(&t);
     if (lt) {
-      const char *fmt = g_app_state.flags.use_24hr_time ? "%H:%M" : "%l:%M";
-      strftime(time_buf, sizeof(time_buf), fmt, lt);
-      // %l pads with a leading space — trim so "5:27" not " 5:27".
-      if (time_buf[0] == ' ') memmove(time_buf, time_buf + 1, strlen(time_buf));
+      const char *fmt = g_app_state.flags.use_24hr_time ? "%H:%M" : "%l:%M %p";
+      strftime(s_time_buf, sizeof(s_time_buf), fmt, lt);
+      if (s_time_buf[0] == ' ') memmove(s_time_buf, s_time_buf + 1, strlen(s_time_buf));
     }
   }
 
-  const char *plat = (dep && dep->has_data) ? dep->platform : "";
-  if (plat[0] && time_buf[0]) {
-    snprintf(s_platform_buf, sizeof(s_platform_buf), "Plat %s · %s", plat, time_buf);
-  } else if (plat[0]) {
-    snprintf(s_platform_buf, sizeof(s_platform_buf), "Platform %s", plat);
-  } else if (time_buf[0]) {
-    snprintf(s_platform_buf, sizeof(s_platform_buf), "at %s", time_buf);
-  } else {
-    s_platform_buf[0] = '\0';
+  s_platform_badge[0] = '\0';
+  if (dep && dep->has_data && dep->platform[0]) {
+    snprintf(s_platform_badge, sizeof(s_platform_badge), "P%s", dep->platform);
   }
-  text_layer_set_text(s_platform_layer, s_platform_buf);
+
+  if (s_info_layer) layer_mark_dirty(s_info_layer);
 
   // Bottom: disruption, live distance (metro only, non-zero), or vehicle desc.
   s_bottom_buf[0] = '\0';
@@ -428,12 +475,9 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(s_countdown_layer, GTextAlignmentCenter);
   layer_add_child(root, text_layer_get_layer(s_countdown_layer));
 
-  s_platform_layer = text_layer_create(GRect(4, bounds.size.h / 2 + 20, bounds.size.w - 8, 18));
-  text_layer_set_font(s_platform_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_text_color(s_platform_layer, fg);
-  text_layer_set_background_color(s_platform_layer, GColorClear);
-  text_layer_set_text_alignment(s_platform_layer, GTextAlignmentCenter);
-  layer_add_child(root, text_layer_get_layer(s_platform_layer));
+  s_info_layer = layer_create(GRect(4, bounds.size.h / 2 + 18, bounds.size.w - 8, 24));
+  layer_set_update_proc(s_info_layer, info_layer_update_proc);
+  layer_add_child(root, s_info_layer);
 
   s_bottom_layer = text_layer_create(GRect(4, bounds.size.h - 40, bounds.size.w - 8, 18));
   text_layer_set_font(s_bottom_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
@@ -470,7 +514,7 @@ static void window_unload(Window *window) {
   if (s_status_layer) { text_layer_destroy(s_status_layer); s_status_layer = NULL; }
   if (s_route_layer) { text_layer_destroy(s_route_layer); s_route_layer = NULL; }
   if (s_countdown_layer) { text_layer_destroy(s_countdown_layer); s_countdown_layer = NULL; }
-  if (s_platform_layer) { text_layer_destroy(s_platform_layer); s_platform_layer = NULL; }
+  if (s_info_layer) { layer_destroy(s_info_layer); s_info_layer = NULL; }
   if (s_bottom_layer) { text_layer_destroy(s_bottom_layer); s_bottom_layer = NULL; }
   if (s_progress_layer) { layer_destroy(s_progress_layer); s_progress_layer = NULL; }
   window_destroy(s_window);
