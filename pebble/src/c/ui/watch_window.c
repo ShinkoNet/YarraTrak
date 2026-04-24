@@ -30,6 +30,14 @@ static char s_time_buf[10];         // "17:27" or "5:27 PM" — "" if unknown
 static char s_route_buf[48];
 static char s_bottom_buf[48];
 
+// shadow buffers of the last value fed into each text layer
+static char s_status_prev[24];
+static char s_route_prev[48];
+static char s_bottom_prev[48];
+static char s_platform_badge_prev[8];
+static char s_time_buf_prev[10];
+static GColor s_bottom_color_prev;
+
 static int32_t s_last_vibrated_minutes = -1;
 static bool    s_now_pattern_fired = false;  // NOW played for the active run
 static char s_last_run_ref[RUN_REF_LEN] = "";
@@ -170,8 +178,14 @@ static void cancel_running_anim(void) {
   s_shake_anim = NULL;
 }
 
+// static bg only needs one paint
+static bool animations_suppressed(void) {
+  return g_app_state.flags.disable_timer_shake ||
+         g_app_state.flags.disable_ripple_vfx;
+}
+
 static void trigger_bounce(void) {
-  if (g_app_state.flags.disable_timer_shake) return;
+  if (animations_suppressed()) return;
   if (!s_countdown_layer) return;
   cancel_running_anim();
 
@@ -197,7 +211,7 @@ static void trigger_bounce(void) {
 }
 
 static void trigger_shake(void) {
-  if (g_app_state.flags.disable_timer_shake) return;
+  if (animations_suppressed()) return;
   if (!s_countdown_layer) return;
   cancel_running_anim();
 
@@ -262,24 +276,34 @@ static void render(void) {
     strncpy(s_status_buf, label, sizeof(s_status_buf) - 1);
   }
   s_status_buf[sizeof(s_status_buf) - 1] = '\0';
-  text_layer_set_text(s_status_layer, s_status_buf);
+  // unchanged text does not need repainting
+  if (strcmp(s_status_prev, s_status_buf) != 0) {
+    text_layer_set_text(s_status_layer, s_status_buf);
+    strncpy(s_status_prev, s_status_buf, sizeof(s_status_prev) - 1);
+    s_status_prev[sizeof(s_status_prev) - 1] = '\0';
+  }
 
   // Route text
   fmt_watch_route(e, s_route_buf, sizeof(s_route_buf));
-  text_layer_set_text(s_route_layer, s_route_buf);
+  if (strcmp(s_route_prev, s_route_buf) != 0) {
+    text_layer_set_text(s_route_layer, s_route_buf);
+    strncpy(s_route_prev, s_route_buf, sizeof(s_route_prev) - 1);
+    s_route_prev[sizeof(s_route_prev) - 1] = '\0';
+  }
 
   Departure *dep = get_watched_departure();
 
   // Countdown — swap to a square numeric font when the string is all digits.
   int32_t sec = dep ? departure_seconds_until(dep) : INT32_MAX;
   fmt_countdown(sec, dep, s_countdown_buf, sizeof(s_countdown_buf));
-  text_layer_set_font(s_countdown_layer, fonts_get_system_font(
-      is_numeric_countdown(s_countdown_buf) ? FONT_KEY_LECO_42_NUMBERS
-                                            : FONT_KEY_BITHAM_42_BOLD));
-  text_layer_set_text(s_countdown_layer, s_countdown_buf);
 
   bool changed = strcmp(s_countdown_prev, s_countdown_buf) != 0;
   if (changed) {
+    // font swap + text update only when the string actually changed
+    text_layer_set_font(s_countdown_layer, fonts_get_system_font(
+        is_numeric_countdown(s_countdown_buf) ? FONT_KEY_LECO_42_NUMBERS
+                                              : FONT_KEY_BITHAM_42_BOLD));
+    text_layer_set_text(s_countdown_layer, s_countdown_buf);
     strncpy(s_countdown_prev, s_countdown_buf, sizeof(s_countdown_prev) - 1);
     s_countdown_prev[sizeof(s_countdown_prev) - 1] = '\0';
 
@@ -314,7 +338,16 @@ static void render(void) {
     snprintf(s_platform_badge, sizeof(s_platform_badge), "P%s", dep->platform);
   }
 
-  if (s_info_layer) layer_mark_dirty(s_info_layer);
+  // dirty the info row when its inputs move
+  if (s_info_layer &&
+      (strcmp(s_platform_badge, s_platform_badge_prev) != 0 ||
+       strcmp(s_time_buf,       s_time_buf_prev)       != 0)) {
+    layer_mark_dirty(s_info_layer);
+    strncpy(s_platform_badge_prev, s_platform_badge, sizeof(s_platform_badge_prev) - 1);
+    s_platform_badge_prev[sizeof(s_platform_badge_prev) - 1] = '\0';
+    strncpy(s_time_buf_prev, s_time_buf, sizeof(s_time_buf_prev) - 1);
+    s_time_buf_prev[sizeof(s_time_buf_prev) - 1] = '\0';
+  }
 
   // Bottom: disruption, live distance (metro only, non-zero), or vehicle desc.
   s_bottom_buf[0] = '\0';
@@ -337,10 +370,18 @@ static void render(void) {
     strncpy(s_bottom_buf, g_app_state.watched_vehicle_desc, sizeof(s_bottom_buf) - 1);
   }
   s_bottom_buf[sizeof(s_bottom_buf) - 1] = '\0';
-  text_layer_set_text_color(s_bottom_layer,
-      bottom_disruption ? theme_disruption(bottom_disruption) : theme_fg());
-  text_layer_set_text(s_bottom_layer, s_bottom_buf);
+  GColor bottom_color = bottom_disruption ? theme_disruption(bottom_disruption) : theme_fg();
+  if (!gcolor_equal(bottom_color, s_bottom_color_prev)) {
+    text_layer_set_text_color(s_bottom_layer, bottom_color);
+    s_bottom_color_prev = bottom_color;
+  }
+  if (strcmp(s_bottom_prev, s_bottom_buf) != 0) {
+    text_layer_set_text(s_bottom_layer, s_bottom_buf);
+    strncpy(s_bottom_prev, s_bottom_buf, sizeof(s_bottom_prev) - 1);
+    s_bottom_prev[sizeof(s_bottom_prev) - 1] = '\0';
+  }
 
+  // progress bar changes every second
   if (s_progress_layer) layer_mark_dirty(s_progress_layer);
 
   // auto-advance if current departure has fully passed
@@ -491,6 +532,12 @@ static void window_load(Window *window) {
   window_set_click_config_provider(window, click_config_provider);
 
   s_countdown_prev[0] = '\0';
+  s_status_prev[0] = '\0';
+  s_route_prev[0] = '\0';
+  s_bottom_prev[0] = '\0';
+  s_platform_badge_prev[0] = '\0';
+  s_time_buf_prev[0] = '\0';
+  s_bottom_color_prev = GColorClear;
 
   // Kick first render + watch_start.
   Departure *dep = get_watched_departure();
