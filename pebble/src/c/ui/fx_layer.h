@@ -8,15 +8,14 @@
 // factory return NULL and the start/stop helpers no-op.
 //
 // Effects implemented:
-//   0 BG_FX_RIPPLE     — concentric dotted rings (original ripple)
+//   0 BG_FX_RIPPLE     — concentric dotted rings (default)
 //   1 BG_FX_STARFIELD  — perspective starfield
-//   2 BG_FX_PLASMA     — 8x8 blocked sin-field colour cycle
-//   3 BG_FX_FIRE       — bottom-up Doom-menu fire
-//   4 BG_FX_CUBE       — rotating wireframe cube (Amiga-demo classic)
+//   3 BG_FX_ALERT      — minimal bottom-row fire, only flares on major
+//                        disruptions on the current watched service
+//   4 BG_FX_CUBE       — rotating wireframe cube
 //
-// Aplite falls back to the rings effect for anything other than 0 — the
-// 1-bit display can't reasonably carry the others without dithering that
-// would fight the large centred countdown.
+// Value 2 is reserved — used to be a full-frame plasma effect, removed.
+// All remaining effects render correctly on both colour and aplite.
 
 Layer *fx_layer_create(GRect bounds);
 void fx_layer_destroy(Layer *layer);

@@ -23,18 +23,16 @@
 #define STAR_SPAWN_RANGE 80     // x/y world extents when respawning
 #define STAR_FOV 130            // perspective focal length (bigger = more spread)
 
-// ---- Plasma (effect 2) -------------------------------------------------
-#define PLASMA_BLOCK 8          // pixel size of each plasma cell
-// Small 64-entry sin LUT spanning a full period at fixed-point 127.
-// Computed once on layer create.
-#define PLASMA_SIN_STEPS 64
-
-// ---- Fire (effect 3) ---------------------------------------------------
-// Low-res heat grid, blitted as 4x4 blocks. 36x42 = 1512 bytes + gives a
-// chunky "retro" look that matches a demoscene vibe better than smooth fire.
+// ---- Alert (effect 3) --------------------------------------------------
+// Minimal bottom-row fire, lit only when the currently watched departure
+// reports a major disruption. Grid is kept shallow so it sits under the
+// progress bar without encroaching on the disruption label row. Works on
+// both colour and aplite: on aplite we threshold the heat to black pixels
+// so flickering shows as a crackling silhouette across the bottom strip.
 #define FIRE_W 36
-#define FIRE_H 42
+#define FIRE_H 14
 #define FIRE_BLOCK 4
+#define FIRE_COOL_MAX 4         // max decay per propagation step
 
 // ---- Cube (effect 4) ---------------------------------------------------
 #define CUBE_UNIT 40            // half edge length in world units
@@ -62,8 +60,7 @@ typedef struct {
   uint16_t max_radius;          // ripple
   uint16_t ripple_phase;        // ripple
   Star stars[STAR_COUNT];       // starfield
-  int8_t sin_lut[PLASMA_SIN_STEPS];  // plasma
-  uint8_t heat[FIRE_W * FIRE_H];     // fire
+  uint8_t heat[FIRE_W * FIRE_H];     // alert
   int32_t cube_yaw;             // cube angle in pebble trig-ratio (0..TRIG_MAX_ANGLE)
   int32_t cube_pitch;
 } FxData;
@@ -82,33 +79,17 @@ static uint32_t fx_rand(uint32_t *s) {
 // Colour palette helpers ------------------------------------------------
 
 #if defined(PBL_COLOR)
-// Map a byte 0..255 to a fire palette: black -> dark red -> red -> orange
-// -> yellow -> white. Only uses named constants in Pebble's standard
-// 64-colour set.
+// Map a byte 0..255 to a fire palette: dark red -> red -> orange -> yellow
+// -> white. Used by the Alert effect only; the lower buckets get skipped
+// entirely rather than painted dark so the band reads as "embers" against
+// the watch background instead of a black horizon line.
 static GColor fire_palette(uint8_t h) {
-  if (h < 40)  return GColorBlack;
-  if (h < 80)  return GColorBulgarianRose;
-  if (h < 120) return GColorDarkCandyAppleRed;
+  if (h < 60)  return GColorBulgarianRose;
+  if (h < 110) return GColorDarkCandyAppleRed;
   if (h < 160) return GColorRed;
   if (h < 200) return GColorOrange;
   if (h < 230) return GColorYellow;
   return GColorWhite;
-}
-
-// Cool-only plasma palette: blue → cyan → mint → cyan → blue. No warm
-// tones, no purples — those make black-on-plasma text unreadable and look
-// muddy against the rest of the watch chrome.
-static GColor plasma_palette(uint8_t h) {
-  switch (h >> 5) {  // 0..7 buckets
-    case 0:  return GColorBlueMoon;
-    case 1:  return GColorPictonBlue;
-    case 2:  return GColorVividCerulean;
-    case 3:  return GColorCyan;
-    case 4:  return GColorMediumAquamarine;
-    case 5:  return GColorMalachite;
-    case 6:  return GColorVividCerulean;
-    default: return GColorPictonBlue;
-  }
 }
 
 static GColor star_color(uint8_t z) {
@@ -123,6 +104,20 @@ static GColor cube_color(void) {
   return GColorVividCerulean;
 }
 #endif
+
+// True when the currently watched favourite has a "major" disruption
+// (anything theme_is_major_disruption returns true for). Used by the
+// Alert effect to decide whether to render flames at all — absent
+// disruptions, the layer stays empty so it's a silent default.
+static bool current_watch_has_major_disruption(void) {
+  if (g_app_state.watching_button == 0) return false;
+  Entry *e = app_state_get_entry(g_app_state.watching_button);
+  if (!e || e->disruption_count == 0) return false;
+  for (uint8_t i = 0; i < e->disruption_count; i++) {
+    if (theme_is_major_disruption(e->disruptions[i])) return true;
+  }
+  return false;
+}
 
 // ---- Ripple draw ------------------------------------------------------
 
@@ -215,64 +210,24 @@ static void draw_starfield(Layer *layer, GContext *ctx, FxData *d) {
   }
 }
 
-// ---- Plasma draw ------------------------------------------------------
-
-static void init_sin_lut(FxData *d) {
-  // Build a small sin lookup scaled to +/-127. Cheap fixed-point generator
-  // via the Pebble trig helpers, done once at layer create.
-  for (int i = 0; i < PLASMA_SIN_STEPS; i++) {
-    int32_t ang = (TRIG_MAX_ANGLE * i) / PLASMA_SIN_STEPS;
-    d->sin_lut[i] = (int8_t)((sin_lookup(ang) * 127) / TRIG_MAX_RATIO);
-  }
-}
-
-static void draw_plasma(Layer *layer, GContext *ctx, FxData *d) {
-  GRect bounds = layer_get_bounds(layer);
-  uint16_t t = d->frame;
-  int nx = (bounds.size.w + PLASMA_BLOCK - 1) / PLASMA_BLOCK;
-  int ny = (bounds.size.h + PLASMA_BLOCK - 1) / PLASMA_BLOCK;
-
-  for (int by = 0; by < ny; by++) {
-    for (int bx = 0; bx < nx; bx++) {
-      // Four summed sin waves, two of which depend on time — classic plasma.
-      int8_t s1 = d->sin_lut[(bx * 3 + t) & (PLASMA_SIN_STEPS - 1)];
-      int8_t s2 = d->sin_lut[(by * 5 + (t >> 1)) & (PLASMA_SIN_STEPS - 1)];
-      int8_t s3 = d->sin_lut[((bx + by) * 2 + t) & (PLASMA_SIN_STEPS - 1)];
-      int8_t s4 = d->sin_lut[((bx * bx + by * by) >> 2) & (PLASMA_SIN_STEPS - 1)];
-      int sum = (int)s1 + (int)s2 + (int)s3 + (int)s4;  // -508..+508
-      uint8_t h = (uint8_t)((sum + 512) >> 2);          // 0..255
-
-#if defined(PBL_COLOR)
-      graphics_context_set_fill_color(ctx, plasma_palette(h));
-#else
-      // Aplite: rings fallback is used, this path only runs on colour.
-      graphics_context_set_fill_color(ctx, (h & 0x80) ? theme_fg() : theme_bg());
-#endif
-      GRect cell = GRect(bx * PLASMA_BLOCK, by * PLASMA_BLOCK,
-                         PLASMA_BLOCK, PLASMA_BLOCK);
-      graphics_fill_rect(ctx, cell, 0, GCornerNone);
-    }
-  }
-}
-
-// ---- Fire draw --------------------------------------------------------
+// ---- Alert draw -------------------------------------------------------
 
 static void fire_step(FxData *d, uint32_t *seed) {
-  // Bottom row = fuel. Light it brightly, with a bit of per-column jitter so
-  // flames aren't uniform.
+  // Bottom row = fuel. Narrower flame-count than the full fire effect so
+  // the strip reads as embers, not a full blaze. Per-column jitter keeps
+  // the silhouette animated.
   for (int x = 0; x < FIRE_W; x++) {
     uint32_t r = fx_rand(seed);
-    d->heat[(FIRE_H - 1) * FIRE_W + x] = 230 + (uint8_t)(r & 0x1f);
+    d->heat[(FIRE_H - 1) * FIRE_W + x] = 200 + (uint8_t)(r & 0x2f);
   }
-  // Propagate upward with slight horizontal wander and a cooling factor.
   for (int y = 0; y < FIRE_H - 1; y++) {
     for (int x = 0; x < FIRE_W; x++) {
       uint32_t r = fx_rand(seed);
-      int rand3 = (int)(r & 3) - 1;   // -1, 0, 1 (biased slightly low)
+      int rand3 = (int)(r & 3) - 1;   // -1, 0, 1
       int src_x = x + rand3;
       if (src_x < 0) src_x = 0;
       if (src_x >= FIRE_W) src_x = FIRE_W - 1;
-      int decay = (int)((r >> 4) & 3);
+      int decay = (int)((r >> 4) & (FIRE_COOL_MAX - 1));
       int below = d->heat[(y + 1) * FIRE_W + src_x];
       int val = below - decay;
       if (val < 0) val = 0;
@@ -281,7 +236,15 @@ static void fire_step(FxData *d, uint32_t *seed) {
   }
 }
 
-static void draw_fire(Layer *layer, GContext *ctx, FxData *d) {
+static void draw_alert(Layer *layer, GContext *ctx, FxData *d) {
+  // Alert only flares when the current watch has a major disruption.
+  // Everything else: silent. Clears the heat buffer so the flame dies
+  // down smoothly if the disruption is dismissed mid-watch.
+  if (!current_watch_has_major_disruption()) {
+    memset(d->heat, 0, sizeof(d->heat));
+    return;
+  }
+
   GRect bounds = layer_get_bounds(layer);
   uint32_t seed = 0xabcdef01u ^ d->frame;
   fire_step(d, &seed);
@@ -292,10 +255,13 @@ static void draw_fire(Layer *layer, GContext *ctx, FxData *d) {
   for (int y = 0; y < FIRE_H; y++) {
     for (int x = 0; x < FIRE_W; x++) {
       uint8_t h = d->heat[y * FIRE_W + x];
-      if (h < 20) continue;  // transparent / very dark cells skip the blit
+      if (h < 40) continue;
 #if defined(PBL_COLOR)
       graphics_context_set_fill_color(ctx, fire_palette(h));
 #else
+      // Aplite: binary threshold on the heat value gives a crackling
+      // silhouette that reads as fire without colour.
+      if (h < 120) continue;
       graphics_context_set_fill_color(ctx, theme_fg());
 #endif
       graphics_fill_rect(ctx,
@@ -369,10 +335,7 @@ static void fx_update_proc(Layer *layer, GContext *ctx) {
 
   switch (d->mode) {
     case BG_FX_STARFIELD: draw_starfield(layer, ctx, d); break;
-#if defined(PBL_COLOR)
-    case BG_FX_PLASMA:    draw_plasma(layer, ctx, d);    break;
-    case BG_FX_FIRE:      draw_fire(layer, ctx, d);      break;
-#endif
+    case BG_FX_ALERT:     draw_alert(layer, ctx, d);     break;
     case BG_FX_CUBE:      draw_cube(layer, ctx, d);      break;
     case BG_FX_RIPPLE:
     default:              draw_ripple(layer, ctx, d);    break;
@@ -409,7 +372,6 @@ static void seed_state(FxData *d, GRect bounds) {
     d->stars[i].z = STAR_Z_MIN + (uint8_t)(fx_rand(&seed) % (STAR_Z_MAX - STAR_Z_MIN));
   }
   memset(d->heat, 0, sizeof(d->heat));
-  init_sin_lut(d);
   uint16_t half = (bounds.size.w > bounds.size.h ? bounds.size.w : bounds.size.h) / 2;
   d->max_radius = (uint16_t)(half * 6 / 5);
   d->ripple_phase = 0;
@@ -425,12 +387,13 @@ Layer *fx_layer_create(GRect bounds) {
   FxData *d = (FxData *)layer_get_data(layer);
   memset(d, 0, sizeof(*d));
   d->mode = g_app_state.flags.bg_fx;
-#if !defined(PBL_COLOR)
-  // Plasma / fire want colour; fall back to rings on aplite.
-  if (d->mode == BG_FX_PLASMA || d->mode == BG_FX_FIRE) {
+  // Value 2 was BG_FX_PLASMA in an earlier build. If a user's persist
+  // still has it, fall through to the default rings instead of rendering
+  // nothing.
+  if (d->mode != BG_FX_RIPPLE && d->mode != BG_FX_STARFIELD &&
+      d->mode != BG_FX_ALERT && d->mode != BG_FX_CUBE) {
     d->mode = BG_FX_RIPPLE;
   }
-#endif
   d->timer = NULL;
   seed_state(d, bounds);
   layer_set_update_proc(layer, fx_update_proc);

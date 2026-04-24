@@ -45,11 +45,15 @@ static Departure *get_watched_departure(void) {
   return departures_get(e, g_app_state.watching_offset);
 }
 
-static bool has_alternate_service(void) {
+static bool has_service_at_offset(uint8_t offset) {
   Entry *e = app_state_get_entry(g_app_state.watching_button);
   if (!e) return false;
-  Departure *d = departures_get(e, 1);
+  Departure *d = departures_get(e, offset);
   return d && d->has_data;
+}
+
+static bool has_alternate_service(void) {
+  return has_service_at_offset(1);
 }
 
 static void send_watch_start_if_needed(Departure *dep) {
@@ -87,7 +91,7 @@ static bool is_numeric_countdown(const char *s) {
 // a word; the time floats to the right with a small gap.
 static void info_layer_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
-  GColor fg = theme_watch_fg();
+  GColor fg = theme_fg();
   graphics_context_set_text_color(ctx, fg);
   graphics_context_set_stroke_color(ctx, fg);
   graphics_context_set_stroke_width(ctx, 1);
@@ -251,19 +255,26 @@ static void render(void) {
     return;
   }
 
-  // Auto-correct: if we're on "service after" but there's no valid alternate,
-  // snap back to "next service" silently.
-  if (g_app_state.watching_offset == 1 && !has_alternate_service()) {
-    g_app_state.watching_offset = 0;
+  // Auto-correct: if the current offset no longer has data (service ran
+  // through, cache shrank after a sync), fall back one step at a time
+  // until we land on one that does — never past 0.
+  while (g_app_state.watching_offset > 0 &&
+         !has_service_at_offset(g_app_state.watching_offset)) {
+    g_app_state.watching_offset--;
   }
 
-  // Status text
+  // Status text. Three browseable slots total: Next / After / 3rd. The
+  // labels stay short to fit the narrow status row without ellipses.
   if (g_app_state.conn_state != CONN_CONNECTED) {
     strncpy(s_status_buf, "Reconnecting...", sizeof(s_status_buf) - 1);
-  } else if (g_app_state.watching_offset == 0) {
-    strncpy(s_status_buf, "Next Service", sizeof(s_status_buf) - 1);
   } else {
-    strncpy(s_status_buf, "Service After", sizeof(s_status_buf) - 1);
+    const char *label;
+    switch (g_app_state.watching_offset) {
+      case 0:  label = "Next Service";   break;
+      case 1:  label = "Service After";  break;
+      default: label = "Third Service";  break;
+    }
+    strncpy(s_status_buf, label, sizeof(s_status_buf) - 1);
   }
   s_status_buf[sizeof(s_status_buf) - 1] = '\0';
   text_layer_set_text(s_status_layer, s_status_buf);
@@ -348,7 +359,7 @@ static void render(void) {
   }
   s_bottom_buf[sizeof(s_bottom_buf) - 1] = '\0';
   text_layer_set_text_color(s_bottom_layer,
-      bottom_disruption ? theme_watch_disruption(bottom_disruption) : theme_watch_fg());
+      bottom_disruption ? theme_disruption(bottom_disruption) : theme_fg());
   text_layer_set_text(s_bottom_layer, s_bottom_buf);
 
   if (s_progress_layer) layer_mark_dirty(s_progress_layer);
@@ -422,36 +433,33 @@ static void schedule_tick(void) {
   s_tick_timer = app_timer_register(1000, tick_cb, NULL);
 }
 
+static void change_offset(uint8_t new_offset) {
+  if (g_app_state.watching_offset == new_offset) return;
+  g_app_state.watching_offset = new_offset;
+  s_last_run_ref[0] = '\0';
+  s_last_vibrated_minutes = -1;
+  s_now_pattern_fired = false;
+  s_last_seconds = INT32_MAX;
+  render();
+  Departure *dep = get_watched_departure();
+  if (dep) send_watch_start_if_needed(dep);
+}
+
 static void up_click(ClickRecognizerRef rec, void *context) {
-  if (g_app_state.watching_offset != 0) {
-    g_app_state.watching_offset = 0;
-    s_last_run_ref[0] = '\0';
-    s_last_vibrated_minutes = -1;
-    s_now_pattern_fired = false;
-    s_last_seconds = INT32_MAX;
-    render();
-    Departure *dep = get_watched_departure();
-    if (dep) send_watch_start_if_needed(dep);
-  }
+  // Step one slot closer to "now": 2 -> 1 -> 0 -> stop.
+  uint8_t cur = g_app_state.watching_offset;
+  if (cur == 0) return;
+  change_offset(cur - 1);
 }
 
 static void down_click(ClickRecognizerRef rec, void *context) {
-  Entry *e = app_state_get_entry(g_app_state.watching_button);
-  if (!e) return;
-  Departure *next = departures_get(e, 1);
-  if (!next || !next->has_data) {
-    // No valid service-after — stay silently on Next Service rather than
-    // swapping into an empty state or buzzing the user for a no-op.
-    return;
-  }
-  if (g_app_state.watching_offset == 1) return;
-
-  g_app_state.watching_offset = 1;
-  s_last_run_ref[0] = '\0';
-  s_last_vibrated_minutes = -1;
-  s_last_seconds = INT32_MAX;
-  render();
-  send_watch_start_if_needed(next);
+  // Step one slot further out: 0 -> 1 -> 2 -> stop. Skip if the next
+  // slot has no data (server only shipped N deps, or we're at the back
+  // of the cache).
+  uint8_t cur = g_app_state.watching_offset;
+  if (cur >= MAX_DEPS_PER_ENTRY - 1) return;
+  if (!has_service_at_offset(cur + 1)) return;
+  change_offset(cur + 1);
 }
 
 static void click_config_provider(void *context) {
