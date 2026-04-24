@@ -7,8 +7,7 @@
 #include <string.h>
 
 // Frame interval; ~17 fps feels smooth for these effects without burning CPU.
-#define FX_STEP_MS       60
-#define FX_IDLE_STEP_MS  1000
+#define FX_STEP_MS 60
 
 // ---- Ripple (effect 0) -------------------------------------------------
 #define RIPPLE_RING_COUNT 4
@@ -24,21 +23,10 @@
 #define STAR_SPAWN_RANGE 80     // x/y world extents when respawning
 #define STAR_FOV 130            // perspective focal length (bigger = more spread)
 
-// ---- Alert (effect 3) --------------------------------------------------
-// Minimal bottom-row fire, lit only when the currently watched departure
-// reports a major disruption. Grid is kept shallow so it sits under the
-// progress bar without encroaching on the disruption label row. Works on
-// both colour and aplite: on aplite we threshold the heat to black pixels
-// so flickering shows as a crackling silhouette across the bottom strip.
-#define FIRE_W 36
-#define FIRE_H 14
-#define FIRE_BLOCK 4
-#define FIRE_COOL_MAX 4         // max decay per propagation step
-
 // ---- Cube (effect 4) ---------------------------------------------------
-#define CUBE_UNIT 40            // half edge length in world units
-#define CUBE_FOV 140
-#define CUBE_CAM_Z 180          // camera offset along +z
+#define CUBE_UNIT 56            // half edge length in world units
+#define CUBE_FOV 170
+#define CUBE_CAM_Z 200          // camera offset along +z
 #define CUBE_YAW_STEP  700      // trig-ratio units per frame
 #define CUBE_PITCH_STEP 450
 
@@ -61,7 +49,6 @@ typedef struct {
   uint16_t max_radius;          // ripple
   uint16_t ripple_phase;        // ripple
   Star stars[STAR_COUNT];       // starfield
-  uint8_t heat[FIRE_W * FIRE_H];     // alert
   int32_t cube_yaw;             // cube angle in pebble trig-ratio (0..TRIG_MAX_ANGLE)
   int32_t cube_pitch;
 } FxData;
@@ -80,19 +67,6 @@ static uint32_t fx_rand(uint32_t *s) {
 // Colour palette helpers ------------------------------------------------
 
 #if defined(PBL_COLOR)
-// Map a byte 0..255 to a fire palette: dark red -> red -> orange -> yellow
-// -> white. Used by the Alert effect only; the lower buckets get skipped
-// entirely rather than painted dark so the band reads as "embers" against
-// the watch background instead of a black horizon line.
-static GColor fire_palette(uint8_t h) {
-  if (h < 60)  return GColorBulgarianRose;
-  if (h < 110) return GColorDarkCandyAppleRed;
-  if (h < 160) return GColorRed;
-  if (h < 200) return GColorOrange;
-  if (h < 230) return GColorYellow;
-  return GColorWhite;
-}
-
 static GColor star_color(uint8_t z) {
   if (z < 60)  return GColorWhite;
   if (z < 160) return GColorLightGray;
@@ -105,20 +79,6 @@ static GColor cube_color(void) {
   return GColorVividCerulean;
 }
 #endif
-
-// True when the currently watched favourite has a "major" disruption
-// (anything theme_is_major_disruption returns true for). Used by the
-// Alert effect to decide whether to render flames at all — absent
-// disruptions, the layer stays empty so it's a silent default.
-static bool current_watch_has_major_disruption(void) {
-  if (g_app_state.watching_button == 0) return false;
-  Entry *e = app_state_get_entry(g_app_state.watching_button);
-  if (!e || e->disruption_count == 0) return false;
-  for (uint8_t i = 0; i < e->disruption_count; i++) {
-    if (theme_is_major_disruption(e->disruptions[i])) return true;
-  }
-  return false;
-}
 
 // ---- Ripple draw ------------------------------------------------------
 
@@ -211,68 +171,6 @@ static void draw_starfield(Layer *layer, GContext *ctx, FxData *d) {
   }
 }
 
-// ---- Alert draw -------------------------------------------------------
-
-static void fire_step(FxData *d, uint32_t *seed) {
-  // Bottom row = fuel. Narrower flame-count than the full fire effect so
-  // the strip reads as embers, not a full blaze. Per-column jitter keeps
-  // the silhouette animated.
-  for (int x = 0; x < FIRE_W; x++) {
-    uint32_t r = fx_rand(seed);
-    d->heat[(FIRE_H - 1) * FIRE_W + x] = 200 + (uint8_t)(r & 0x2f);
-  }
-  for (int y = 0; y < FIRE_H - 1; y++) {
-    for (int x = 0; x < FIRE_W; x++) {
-      uint32_t r = fx_rand(seed);
-      int rand3 = (int)(r & 3) - 1;   // -1, 0, 1
-      int src_x = x + rand3;
-      if (src_x < 0) src_x = 0;
-      if (src_x >= FIRE_W) src_x = FIRE_W - 1;
-      int decay = (int)((r >> 4) & (FIRE_COOL_MAX - 1));
-      int below = d->heat[(y + 1) * FIRE_W + src_x];
-      int val = below - decay;
-      if (val < 0) val = 0;
-      d->heat[y * FIRE_W + x] = (uint8_t)val;
-    }
-  }
-}
-
-static void draw_alert(Layer *layer, GContext *ctx, FxData *d) {
-  // Alert only flares when the current watch has a major disruption.
-  // Everything else: silent. Clears the heat buffer so the flame dies
-  // down smoothly if the disruption is dismissed mid-watch.
-  if (!current_watch_has_major_disruption()) {
-    memset(d->heat, 0, sizeof(d->heat));
-    return;
-  }
-
-  GRect bounds = layer_get_bounds(layer);
-  uint32_t seed = 0xabcdef01u ^ d->frame;
-  fire_step(d, &seed);
-  int off_x = (bounds.size.w - FIRE_W * FIRE_BLOCK) / 2;
-  int off_y = bounds.size.h - FIRE_H * FIRE_BLOCK;
-  if (off_y < 0) off_y = 0;
-
-  for (int y = 0; y < FIRE_H; y++) {
-    for (int x = 0; x < FIRE_W; x++) {
-      uint8_t h = d->heat[y * FIRE_W + x];
-      if (h < 40) continue;
-#if defined(PBL_COLOR)
-      graphics_context_set_fill_color(ctx, fire_palette(h));
-#else
-      // Aplite: binary threshold on the heat value gives a crackling
-      // silhouette that reads as fire without colour.
-      if (h < 120) continue;
-      graphics_context_set_fill_color(ctx, theme_fg());
-#endif
-      graphics_fill_rect(ctx,
-          GRect(off_x + x * FIRE_BLOCK, off_y + y * FIRE_BLOCK,
-                FIRE_BLOCK, FIRE_BLOCK),
-          0, GCornerNone);
-    }
-  }
-}
-
 // ---- Cube draw --------------------------------------------------------
 
 static void rotate_y(int32_t *x, int32_t *z, int32_t cosA, int32_t sinA) {
@@ -336,7 +234,6 @@ static void fx_update_proc(Layer *layer, GContext *ctx) {
 
   switch (d->mode) {
     case BG_FX_STARFIELD: draw_starfield(layer, ctx, d); break;
-    case BG_FX_ALERT:     draw_alert(layer, ctx, d);     break;
     case BG_FX_CUBE:      draw_cube(layer, ctx, d);      break;
     case BG_FX_RIPPLE:
     default:              draw_ripple(layer, ctx, d);    break;
@@ -345,21 +242,10 @@ static void fx_update_proc(Layer *layer, GContext *ctx) {
 
 static void fx_tick(void *context);
 
-// Alert mode is idle most of the time — no active disruption means the
-// draw is a no-op. Poll at 1 Hz in that state so we still pick up a
-// newly-arrived disruption within a second, but save the per-60ms wake
-// otherwise. Every other effect animates continuously and needs 60 ms.
-static uint32_t tick_interval_for(FxData *d) {
-  if (d->mode == BG_FX_ALERT && !current_watch_has_major_disruption()) {
-    return FX_IDLE_STEP_MS;
-  }
-  return FX_STEP_MS;
-}
-
 static void schedule_tick(Layer *layer) {
   FxData *d = (FxData *)layer_get_data(layer);
   if (d->timer) app_timer_cancel(d->timer);
-  d->timer = app_timer_register(tick_interval_for(d), fx_tick, layer);
+  d->timer = app_timer_register(FX_STEP_MS, fx_tick, layer);
 }
 
 static void fx_tick(void *context) {
@@ -373,11 +259,7 @@ static void fx_tick(void *context) {
   }
   d->frame++;
   d->ripple_phase = (uint16_t)((d->ripple_phase + RIPPLE_PHASE_STEP) % d->max_radius);
-  // Alert idle: draw_alert will no-op. Skipping the mark_dirty tells
-  // Pebble's OS the display is static, which keeps the LCD off the bus.
-  if (!(d->mode == BG_FX_ALERT && !current_watch_has_major_disruption())) {
-    layer_mark_dirty(layer);
-  }
+  layer_mark_dirty(layer);
   schedule_tick(layer);
 }
 
@@ -388,7 +270,6 @@ static void seed_state(FxData *d, GRect bounds) {
     // Pre-stagger the depth so stars don't all spawn at the far plane.
     d->stars[i].z = STAR_Z_MIN + (uint8_t)(fx_rand(&seed) % (STAR_Z_MAX - STAR_Z_MIN));
   }
-  memset(d->heat, 0, sizeof(d->heat));
   uint16_t half = (bounds.size.w > bounds.size.h ? bounds.size.w : bounds.size.h) / 2;
   d->max_radius = (uint16_t)(half * 6 / 5);
   d->ripple_phase = 0;
@@ -404,11 +285,11 @@ Layer *fx_layer_create(GRect bounds) {
   FxData *d = (FxData *)layer_get_data(layer);
   memset(d, 0, sizeof(*d));
   d->mode = g_app_state.flags.bg_fx;
-  // Value 2 was BG_FX_PLASMA in an earlier build. If a user's persist
-  // still has it, fall through to the default rings instead of rendering
-  // nothing.
+  // Values 2 (plasma) and 3 (alert) were earlier-build effects that have
+  // since been removed. Persisted configs from those builds fall through
+  // to the rings default rather than rendering nothing.
   if (d->mode != BG_FX_RIPPLE && d->mode != BG_FX_STARFIELD &&
-      d->mode != BG_FX_ALERT && d->mode != BG_FX_CUBE) {
+      d->mode != BG_FX_CUBE) {
     d->mode = BG_FX_RIPPLE;
   }
   d->timer = NULL;

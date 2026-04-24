@@ -7,9 +7,9 @@
 typedef enum {
   BG_FX_RIPPLE    = 0,  // concentric expanding rings (default)
   BG_FX_STARFIELD = 1,  // perspective starfield, Amiga style
-  // value 2 reserved — used to be BG_FX_PLASMA. Left as a gap so persisted
-  // enum values from older installs still decode to the fallback path.
-  BG_FX_ALERT     = 3,  // minimal bottom-row fire, only flares on major disruption
+  // values 2 and 3 reserved — used to be BG_FX_PLASMA and BG_FX_ALERT.
+  // Left as gaps so persisted enum values from older installs decode to
+  // the rings fallback in fx_layer_create.
   BG_FX_CUBE      = 4,  // rotating wireframe cube
 } BgFxMode;
 

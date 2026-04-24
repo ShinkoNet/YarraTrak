@@ -10,11 +10,10 @@
 // Effects implemented:
 //   0 BG_FX_RIPPLE     — concentric dotted rings (default)
 //   1 BG_FX_STARFIELD  — perspective starfield
-//   3 BG_FX_ALERT      — minimal bottom-row fire, only flares on major
-//                        disruptions on the current watched service
 //   4 BG_FX_CUBE       — rotating wireframe cube
 //
-// Value 2 is reserved — used to be a full-frame plasma effect, removed.
+// Values 2 and 3 are reserved — used to be plasma and a disruption-
+// triggered fire effect respectively, both removed for being too noisy.
 // All remaining effects render correctly on both colour and aplite.
 
 Layer *fx_layer_create(GRect bounds);
