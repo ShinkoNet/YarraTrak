@@ -65,7 +65,9 @@ static void handle_flags_sync(const char *data) {
   g_app_state.settings_received = true;
 }
 
-// ENTRY_SYNC format: "index|name;full_name;stop_id;dest_name;full_dest_name;dest_id;route_type;direction_id"
+// ENTRY_SYNC format: "index|name;stop_id;dest_name;route_type;direction_id"
+// Only the fields the watch actually uses. full_name / full_dest_name /
+// dest_id remain in PKJS localStorage for the config page.
 static void handle_entry_sync(char *data) {
   char *top_parts[2];
   int top_count = split_in_place(data, '|', top_parts, 2);
@@ -74,28 +76,23 @@ static void handle_entry_sync(char *data) {
   int idx = atoi(top_parts[0]);
   if (idx < 1 || idx > MAX_ENTRIES) return;
 
-  char *fields[8];
-  int fc = split_in_place(top_parts[1], ';', fields, 8);
-  if (fc < 3) return;
+  char *fields[5];
+  int fc = split_in_place(top_parts[1], ';', fields, 5);
+  if (fc < 2) return;
 
   Entry *e = &g_app_state.entries[idx - 1];
   memset(e, 0, sizeof(*e));
   e->configured = true;
 
-  copy_bounded(e->name,           fc > 0 ? fields[0] : "", sizeof(e->name));
-  copy_bounded(e->full_name,      fc > 1 ? fields[1] : "", sizeof(e->full_name));
-  e->stop_id      = fc > 2 ? atoi(fields[2]) : 0;
-  copy_bounded(e->dest_name,      fc > 3 ? fields[3] : "", sizeof(e->dest_name));
-  copy_bounded(e->full_dest_name, fc > 4 ? fields[4] : "", sizeof(e->full_dest_name));
-  e->dest_id      = fc > 5 ? atoi(fields[5]) : 0;
-  e->route_type   = fc > 6 ? (uint8_t)atoi(fields[6]) : 0;
-  e->direction_id = fc > 7 ? atoi(fields[7]) : 0;
+  copy_bounded(e->name,      fc > 0 ? fields[0] : "", sizeof(e->name));
+  e->stop_id      = fc > 1 ? atoi(fields[1]) : 0;
+  copy_bounded(e->dest_name, fc > 2 ? fields[2] : "", sizeof(e->dest_name));
+  e->route_type   = fc > 3 ? (uint8_t)atoi(fields[3]) : 0;
+  e->direction_id = fc > 4 ? atoi(fields[4]) : 0;
 
   if (idx > g_app_state.entry_count) {
     g_app_state.entry_count = (uint8_t)idx;
   }
-  settings_store_save_entries();
-  menu_window_refresh();
 }
 
 // FAV_UPDATE format:
@@ -205,7 +202,22 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       break;
     case IN_ENTRY_SYNC:
       handle_entry_sync(data);
+      settings_store_save_entries();
+      menu_window_refresh();
       break;
+    case IN_ENTRY_SYNC_BULK: {
+      // "entry1\x1fentry2\x1f..." where each sub-chunk is the same format
+      // IN_ENTRY_SYNC accepts: "index|name;full_name;stop_id;dest_name;
+      // full_dest_name;dest_id;route_type;direction_id".
+      char *chunks[MAX_ENTRIES];
+      int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
+      for (int i = 0; i < cc; i++) {
+        if (chunks[i][0]) handle_entry_sync(chunks[i]);
+      }
+      settings_store_save_entries();
+      menu_window_refresh();
+      break;
+    }
     case IN_CLEAR_ENTRIES:
       app_state_clear_entries();
       settings_store_save_entries();

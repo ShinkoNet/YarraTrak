@@ -28,6 +28,7 @@ var IN_POSITION_UPDATE = 3;
 var IN_FLAGS_SYNC      = 4;
 var IN_ENTRY_SYNC      = 5;
 var IN_CLEAR_ENTRIES   = 6;
+var IN_ENTRY_SYNC_BULK = 8;
 
 // Outbound (C -> JS) types.
 var OUT_READY       = 1;
@@ -221,21 +222,45 @@ function syncFlagsToWatch() {
 function syncEntriesToWatch() {
     sendToWatch(IN_CLEAR_ENTRIES, '');
     var count = getConfiguredEntryCount();
+    var chunks = [];
     for (var i = 1; i <= count; i++) {
         var stopId = getOption('entry' + i + '_stop_id');
         if (!stopId) continue;
+        // Only the fields the watch needs. full_name / full_dest_name /
+        // dest_id stay on the phone for the config page; the watch renders
+        // menu rows from `name` + `dest_name` and issues watch_start from
+        // stop_id/route_type/direction_id (+ run_ref from the departure).
         var fields = [
             getOption('entry' + i + '_name') || '',
-            getOption('entry' + i + '_full_name') || '',
             stopId || '0',
             getOption('entry' + i + '_dest_name') || '',
-            getOption('entry' + i + '_full_dest_name') || '',
-            getOption('entry' + i + '_dest_id') || '0',
             getOption('entry' + i + '_route_type') || '0',
             getOption('entry' + i + '_direction_id') || '0'
         ];
-        var payload = i + '|' + fields.join(';');
-        sendToWatch(IN_ENTRY_SYNC, payload);
+        chunks.push(i + '|' + fields.join(';'));
+    }
+    if (chunks.length === 0) return;
+
+    // Batch into as few AppMessages as possible — each send costs ~150-300ms
+    // of phone/watch roundtrip, so populating the menu one entry at a time
+    // looked like entries were popping in individually. The watch's inbox is
+    // 1024 bytes; leave 64 bytes of headroom for keys/type/overhead.
+    var INBOX_BUDGET = 960;
+    var SEP = '\x1f';  // unit separator
+
+    var batch = '';
+    for (var j = 0; j < chunks.length; j++) {
+        var piece = chunks[j];
+        var candidate = batch.length ? (batch + SEP + piece) : piece;
+        if (candidate.length > INBOX_BUDGET && batch.length > 0) {
+            sendToWatch(IN_ENTRY_SYNC_BULK, batch);
+            batch = piece;
+        } else {
+            batch = candidate;
+        }
+    }
+    if (batch.length > 0) {
+        sendToWatch(IN_ENTRY_SYNC_BULK, batch);
     }
 }
 

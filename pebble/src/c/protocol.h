@@ -17,6 +17,7 @@ enum {
   IN_ENTRY_SYNC      = 5,
   IN_CLEAR_ENTRIES   = 6,
   IN_WATCH_ACK       = 7,
+  IN_ENTRY_SYNC_BULK = 8,
 };
 
 // Outbound message types (C -> JS).

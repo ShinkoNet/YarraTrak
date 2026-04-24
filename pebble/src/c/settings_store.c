@@ -38,12 +38,9 @@ void settings_store_load(void) {
     if (!e->configured) {
       continue;
     }
-    read_string(entry_key(i, PKEY_ENTRY_NAME),           e->name,           sizeof(e->name));
-    read_string(entry_key(i, PKEY_ENTRY_FULL_NAME),      e->full_name,      sizeof(e->full_name));
-    read_string(entry_key(i, PKEY_ENTRY_DEST_NAME),      e->dest_name,      sizeof(e->dest_name));
-    read_string(entry_key(i, PKEY_ENTRY_FULL_DEST_NAME), e->full_dest_name, sizeof(e->full_dest_name));
+    read_string(entry_key(i, PKEY_ENTRY_NAME),      e->name,      sizeof(e->name));
+    read_string(entry_key(i, PKEY_ENTRY_DEST_NAME), e->dest_name, sizeof(e->dest_name));
     e->stop_id      = persist_read_int(entry_key(i, PKEY_ENTRY_STOP_ID));
-    e->dest_id      = persist_read_int(entry_key(i, PKEY_ENTRY_DEST_ID));
     e->direction_id = persist_read_int(entry_key(i, PKEY_ENTRY_DIRECTION_ID));
     e->route_type   = (uint8_t)persist_read_int(entry_key(i, PKEY_ENTRY_ROUTE_TYPE));
   }
@@ -67,13 +64,10 @@ void settings_store_save_entries(void) {
     if (!e->configured) {
       continue;
     }
-    persist_write_string(entry_key(i, PKEY_ENTRY_NAME),           e->name);
-    persist_write_string(entry_key(i, PKEY_ENTRY_FULL_NAME),      e->full_name);
-    persist_write_string(entry_key(i, PKEY_ENTRY_DEST_NAME),      e->dest_name);
-    persist_write_string(entry_key(i, PKEY_ENTRY_FULL_DEST_NAME), e->full_dest_name);
-    persist_write_int(entry_key(i, PKEY_ENTRY_STOP_ID),           e->stop_id);
-    persist_write_int(entry_key(i, PKEY_ENTRY_DEST_ID),           e->dest_id);
-    persist_write_int(entry_key(i, PKEY_ENTRY_DIRECTION_ID),      e->direction_id);
-    persist_write_int(entry_key(i, PKEY_ENTRY_ROUTE_TYPE),        e->route_type);
+    persist_write_string(entry_key(i, PKEY_ENTRY_NAME),      e->name);
+    persist_write_string(entry_key(i, PKEY_ENTRY_DEST_NAME), e->dest_name);
+    persist_write_int(entry_key(i, PKEY_ENTRY_STOP_ID),      e->stop_id);
+    persist_write_int(entry_key(i, PKEY_ENTRY_DIRECTION_ID), e->direction_id);
+    persist_write_int(entry_key(i, PKEY_ENTRY_ROUTE_TYPE),   e->route_type);
   }
 }

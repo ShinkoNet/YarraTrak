@@ -7,12 +7,11 @@
 #define MAX_DEPS_PER_ENTRY  2
 #define MAX_DISRUPTIONS     3
 
-#define NAME_LEN        24
-#define FULL_NAME_LEN   48
-#define RUN_REF_LEN     24
-#define PLATFORM_LEN    8
-#define ROUTE_ID_LEN    12
-#define DISRUPTION_LEN  32
+#define NAME_LEN         33  // matches truncateName(…, 32) in config/settings.html + NUL
+#define RUN_REF_LEN      24
+#define PLATFORM_LEN     8
+#define ROUTE_ID_LEN     12
+#define DISRUPTION_LEN   32
 #define VEHICLE_DESC_LEN 40
 
 typedef struct {
@@ -28,12 +27,12 @@ typedef struct {
 
 typedef struct {
   bool configured;
+  // Only the fields the watch itself needs to display or issue watch_start.
+  // full_name / full_dest_name / dest_id remain in PKJS localStorage for the
+  // config page — they don't belong on the watch.
   char name[NAME_LEN];
-  char full_name[FULL_NAME_LEN];
   char dest_name[NAME_LEN];
-  char full_dest_name[FULL_NAME_LEN];
   int32_t stop_id;
-  int32_t dest_id;
   int32_t direction_id;
   uint8_t route_type;
 

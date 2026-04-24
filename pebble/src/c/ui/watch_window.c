@@ -282,9 +282,8 @@ static void down_click(ClickRecognizerRef rec, void *context) {
   if (!e) return;
   Departure *next = departures_get(e, 1);
   if (!next || !next->has_data) {
-    // No valid service-after — give a tiny haptic bump and stay put rather
-    // than swapping into a stale/empty state.
-    haptics_short();
+    // No valid service-after — stay silently on Next Service rather than
+    // swapping into an empty state or buzzing the user for a no-op.
     return;
   }
   if (g_app_state.watching_offset == 1) return;

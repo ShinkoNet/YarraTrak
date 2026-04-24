@@ -11,7 +11,11 @@ static GBitmap *s_logo_bitmap = NULL;
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
-  window_set_background_color(window, GColorBlack);
+  // V1 used #291381 (deep indigo) on colour platforms so the logo's blue
+  // plate blends into the full-screen background. Aplite has no colour —
+  // fall back to black.
+  window_set_background_color(window,
+      PBL_IF_COLOR_ELSE(GColorFromHEX(0x291381), GColorBlack));
 
 #if defined(PBL_BW)
   // Aplite has no logo resource. Use text only.
@@ -35,7 +39,7 @@ static void window_load(Window *window) {
   }
 #endif
 
-  s_sub_text_layer = text_layer_create(GRect(0, bounds.size.h - 40, bounds.size.w, 24));
+  s_sub_text_layer = text_layer_create(GRect(0, bounds.size.h - 30, bounds.size.w, 24));
   text_layer_set_text(s_sub_text_layer, "Connecting...");
   text_layer_set_font(s_sub_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
   text_layer_set_text_color(s_sub_text_layer, GColorWhite);

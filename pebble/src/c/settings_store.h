@@ -16,13 +16,10 @@
 #define PKEY_ENTRY_STRIDE          10
 #define PKEY_ENTRY_CONFIGURED      0
 #define PKEY_ENTRY_NAME            1
-#define PKEY_ENTRY_FULL_NAME       2
-#define PKEY_ENTRY_DEST_NAME       3
-#define PKEY_ENTRY_FULL_DEST_NAME  4
-#define PKEY_ENTRY_STOP_ID         5
-#define PKEY_ENTRY_DEST_ID         6
-#define PKEY_ENTRY_DIRECTION_ID    7
-#define PKEY_ENTRY_ROUTE_TYPE      8
+#define PKEY_ENTRY_DEST_NAME       2
+#define PKEY_ENTRY_STOP_ID         3
+#define PKEY_ENTRY_DIRECTION_ID    4
+#define PKEY_ENTRY_ROUTE_TYPE      5
 
 #define PKEY_ENTRY_COUNT           199
 
