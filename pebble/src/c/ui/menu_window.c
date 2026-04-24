@@ -1,5 +1,6 @@
 #include "menu_window.h"
 #include "watch_window.h"
+#include "query_window.h"
 #include "theme.h"
 #include "../app_state.h"
 #include "../protocol.h"
@@ -9,6 +10,16 @@
 #include <pebble.h>
 #include <string.h>
 #include <stdio.h>
+
+// Ask row: prepended to the menu when the platform has a microphone and the
+// AI assistant flag is enabled. Tapping it opens the voice query flow.
+#if defined(PBL_MICROPHONE)
+static bool has_ask_row(void) {
+  return !g_app_state.flags.disable_ai_assistant;
+}
+#else
+static bool has_ask_row(void) { return false; }
+#endif
 
 #define TIME_BAR_HEIGHT 16
 
@@ -63,7 +74,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 }
 
 static uint16_t get_num_rows(MenuLayer *menu_layer, uint16_t section_index, void *context) {
-  return g_app_state.entry_count > 0 ? g_app_state.entry_count : 1;
+  uint16_t n = g_app_state.entry_count > 0 ? g_app_state.entry_count : 1;
+  if (has_ask_row()) n += 1;
+  return n;
 }
 
 static void draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *context) {
@@ -75,6 +88,18 @@ static void draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_ind
   title[0] = '\0';
   subtitle[0] = '\0';
 
+  uint16_t row = cell_index->row;
+  if (has_ask_row()) {
+    if (row == 0) {
+      strncpy(title, "Ask", sizeof(title) - 1);
+      title[sizeof(title) - 1] = '\0';
+      strncpy(subtitle, "Voice assistant", sizeof(subtitle) - 1);
+      subtitle[sizeof(subtitle) - 1] = '\0';
+      goto draw;
+    }
+    row -= 1;
+  }
+
   if (g_app_state.entry_count == 0) {
     strncpy(title, "No favourites", sizeof(title) - 1);
     title[sizeof(title) - 1] = '\0';
@@ -83,7 +108,6 @@ static void draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_ind
     goto draw;
   }
 
-  uint16_t row = cell_index->row;
   if (row < g_app_state.entry_count) {
     Entry *e = &g_app_state.entries[row];
     fmt_menu_title(e, title, sizeof(title));
@@ -141,12 +165,20 @@ static int16_t get_cell_height(MenuLayer *menu_layer, MenuIndex *cell_index, voi
 }
 
 static void select_click(MenuLayer *menu_layer, MenuIndex *cell_index, void *context) {
+  uint16_t row = cell_index->row;
+  if (has_ask_row()) {
+    if (row == 0) {
+      query_window_start();
+      return;
+    }
+    row -= 1;
+  }
+
   if (g_app_state.entry_count == 0) {
     protocol_send_open_config();
     return;
   }
 
-  uint16_t row = cell_index->row;
   if (row < g_app_state.entry_count) {
     uint8_t button_id = (uint8_t)(row + 1);
     watch_window_push(button_id);

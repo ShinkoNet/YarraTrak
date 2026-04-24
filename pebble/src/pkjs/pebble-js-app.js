@@ -29,6 +29,10 @@ var IN_FLAGS_SYNC      = 4;
 var IN_ENTRY_SYNC      = 5;
 var IN_CLEAR_ENTRIES   = 6;
 var IN_ENTRY_SYNC_BULK = 8;
+var IN_QUERY_RESULT    = 9;
+var IN_QUERY_CLARIFY   = 10;
+var IN_QUERY_ERROR     = 11;
+var IN_QUERY_SAVED     = 12;
 
 // Outbound (C -> JS) types.
 var OUT_READY       = 1;
@@ -36,6 +40,18 @@ var OUT_WATCH_START = 2;
 var OUT_WATCH_STOP  = 3;
 var OUT_OPEN_CONFIG = 4;
 var OUT_REFRESH     = 5;
+var OUT_QUERY       = 6;
+
+// Memory caps — the watch inbox is 1024 bytes; leave 64 bytes for the
+// AppMessage key/type overhead so bloated LLM text can never OOM the watch.
+// The watch's card body buffer is 512 bytes, so cap further for the result
+// path to sidestep mid-word truncation on its display as well.
+var MAX_APPMSG_PAYLOAD  = 960;
+var MAX_TTS_TEXT        = 480;
+var MAX_CLARIFY_OPTIONS = 8;
+var MAX_CLARIFY_LABEL   = 30;
+var MAX_CLARIFY_VALUE   = 46;
+var MAX_CLARIFY_QUESTION = 60;
 
 // Connection states.
 var CONN_OFFLINE    = 0;
@@ -467,6 +483,14 @@ function connect() {
                 handlePositionUpdate(msg);
                 return;
             }
+            // Everything else with an id → an AI query response / error /
+            // clarification. The server also attaches learned_stop and
+            // button_config on the same frame; handleQueryMessage pulls
+            // those out before dispatching to the watch card.
+            if (msg.id != null && pendingQueries[msg.id]) {
+                handleQueryMessage(msg);
+                return;
+            }
         } catch (e) {
             console.log('WebSocket parse error: ' + e);
         }
@@ -490,6 +514,127 @@ function connect() {
 function wsSend(obj) {
     if (!ws || !wsConnected) return;
     try { ws.send(JSON.stringify(obj)); } catch (e) { console.log('ws.send failed: ' + e); }
+}
+
+// ---- AI query transport -----------------------------------------------
+
+var nextQueryId = 0;
+var pendingQueries = {};  // id -> { timeout }
+var sessionId = null;
+
+function queryInFlight() {
+    for (var _ in pendingQueries) return true;
+    return false;
+}
+
+function cancelPendingQueries() {
+    for (var id in pendingQueries) {
+        if (pendingQueries[id].timeout) clearTimeout(pendingQueries[id].timeout);
+    }
+    pendingQueries = {};
+}
+
+function truncate(str, max) {
+    if (typeof str !== 'string') return '';
+    if (str.length <= max) return str;
+    return str.slice(0, max - 1);  // leave room for safety; NUL added on C side
+}
+
+function startQuery(text) {
+    if (boolOption('disable_ai_assistant')) {
+        sendToWatch(IN_QUERY_ERROR, 'AI assistant disabled in settings');
+        return;
+    }
+    if (!ws || !wsConnected) {
+        sendToWatch(IN_QUERY_ERROR, 'Not connected');
+        return;
+    }
+    var llmKey = getOption('llm_api_key') || '';
+    if (!llmKey) {
+        sendToWatch(IN_QUERY_ERROR,
+            'Add an Anthropic API key in the phone app settings to use Ask.');
+        return;
+    }
+
+    cancelPendingQueries();
+
+    var id = String(++nextQueryId);
+    pendingQueries[id] = {
+        timeout: setTimeout(function () {
+            if (pendingQueries[id]) {
+                delete pendingQueries[id];
+                sendToWatch(IN_QUERY_ERROR, 'Timed out after 30s');
+            }
+        }, 30000)
+    };
+
+    wsSend({
+        type: 'query',
+        id: id,
+        text: truncate(String(text || ''), 400),
+        session_id: sessionId,
+        llm_api_key: llmKey,
+    });
+}
+
+function handleQueryMessage(msg) {
+    var pending = pendingQueries[msg.id];
+    if (!pending) return;
+    if (pending.timeout) clearTimeout(pending.timeout);
+    delete pendingQueries[msg.id];
+
+    if (msg.session_id) sessionId = msg.session_id;
+    if (msg.button_config) saveButtonConfig(msg.button_config);
+
+    if (msg.type === 'error') {
+        sendToWatch(IN_QUERY_ERROR,
+            truncate(msg.error || 'Unknown error', MAX_TTS_TEXT));
+        return;
+    }
+
+    var data = msg.data || msg;
+    var payload = data && data.payload;
+    var kind = data && data.type;
+
+    if (kind === 'RESULT' && payload) {
+        var text = payload.tts_text || 'No info';
+        sendToWatch(IN_QUERY_RESULT, truncate(text, MAX_TTS_TEXT));
+    } else if (kind === 'CLARIFICATION' && payload) {
+        var question = truncate(payload.question_text || 'Please clarify',
+                                MAX_CLARIFY_QUESTION);
+        var opts = (payload.options || []).slice(0, MAX_CLARIFY_OPTIONS);
+        var encoded = [question];
+        for (var i = 0; i < opts.length; i++) {
+            var label = truncate(opts[i].label || '', MAX_CLARIFY_LABEL);
+            var value = truncate(opts[i].value || label, MAX_CLARIFY_VALUE);
+            if (!label) continue;
+            encoded.push(label + '\x1f' + value);
+        }
+        var payloadStr = encoded.join('\x1e');
+        if (payloadStr.length > MAX_APPMSG_PAYLOAD) {
+            payloadStr = payloadStr.slice(0, MAX_APPMSG_PAYLOAD);
+        }
+        sendToWatch(IN_QUERY_CLARIFY, payloadStr);
+    } else {
+        sendToWatch(IN_QUERY_ERROR, 'Unsupported response');
+    }
+}
+
+function saveButtonConfig(config) {
+    if (!config || !config.button_id) return;
+    var id = parseInt(config.button_id, 10);
+    if (!(id >= 1 && id <= 10)) return;
+    setOption('entry' + id + '_name', config.name || ('Entry ' + id));
+    setOption('entry' + id + '_stop_id', config.stop_id);
+    setOption('entry' + id + '_route_type', config.route_type || 0);
+    if (config.dest_name) setOption('entry' + id + '_dest_name', config.dest_name);
+    if (config.dest_id != null) setOption('entry' + id + '_dest_id', config.dest_id);
+    if (config.direction_id != null) setOption('entry' + id + '_direction_id', config.direction_id);
+
+    var currentCount = getConfiguredEntryCount();
+    if (id > currentCount) setOption('entry_count', id);
+    syncEntriesToWatch();
+    sendToWatch(IN_QUERY_SAVED, String(id));
 }
 
 // ---- Outbound message handlers from watch ------------------------------
@@ -543,6 +688,9 @@ Pebble.addEventListener('appmessage', function (e) {
             } else {
                 connect();
             }
+            break;
+        case OUT_QUERY:
+            startQuery(data);
             break;
     }
 });

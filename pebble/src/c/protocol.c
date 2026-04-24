@@ -3,6 +3,8 @@
 #include "settings_store.h"
 #include "ui/menu_window.h"
 #include "ui/watch_window.h"
+#include "ui/query_window.h"
+#include "haptics.h"
 
 #include <pebble.h>
 #include <string.h>
@@ -224,6 +226,20 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       settings_store_save_entries();
       menu_window_refresh();
       break;
+    case IN_QUERY_RESULT:
+      query_window_show_result(data);
+      break;
+    case IN_QUERY_CLARIFY:
+      query_window_show_clarification(data);
+      break;
+    case IN_QUERY_ERROR:
+      query_window_show_error(data);
+      break;
+    case IN_QUERY_SAVED:
+      // Agent stashed a favourite; PKJS is about to re-sync entries so we
+      // just buzz to confirm and let the menu update itself.
+      haptics_short();
+      break;
     default:
       break;
   }
@@ -277,6 +293,10 @@ void protocol_send_open_config(void) {
 
 void protocol_send_refresh(void) {
   send_outbound(OUT_REFRESH, "");
+}
+
+void protocol_send_query(const char *text) {
+  send_outbound(OUT_QUERY, text ? text : "");
 }
 
 void protocol_init(void) {
