@@ -3021,7 +3021,14 @@ async def websocket_endpoint(
                         "error": "Empty query"
                     })
                     continue
-                
+
+                # ack buys the agent more time
+                await websocket.send_json({
+                    "type": "query_status",
+                    "id": msg_id,
+                    "phase": "received",
+                })
+
                 try:
                     # Run speculative fetch with client-provided history
                     prefetched = await tools.speculative_fetch(query_history)
@@ -3032,6 +3039,13 @@ async def websocket_endpoint(
                     # tell the agent how full the list is
                     subscribed = _favourite_subscriptions.get(websocket) or []
                     current_entries_count = len(subscribed)
+
+                    # LLM is about to start tool-calling; bump PKJS budget.
+                    await websocket.send_json({
+                        "type": "query_status",
+                        "id": msg_id,
+                        "phase": "reasoning",
+                    })
 
                     # Run agent with resolved key
                     result = await agent_engine.run_agent(
