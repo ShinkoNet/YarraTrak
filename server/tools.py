@@ -147,30 +147,28 @@ async def get_departures(stop_id: int, route_type: int = RouteType.TRAIN) -> str
 
             result.append(info)
 
-        # Add disruptions only for routes shown in departures
+        # Always emit a [DISRUPTIONS:...] block — even when empty — so the
+        # agent has explicit signal when the user asks "is the line down?".
+        # Without this, the agent infers from departure cadence and may
+        # invent a "running normally" answer that contradicts reality.
+        shown_route_ids = set(d.get('route_id') for d in departures[:15])
+        relevant_disruptions: list[str] = []
         if disruptions:
-            # Get route IDs from shown departures
-            shown_route_ids = set(d.get('route_id') for d in departures[:15])
-
-            relevant_disruptions = []
             for d_id, d in disruptions.items():
                 if d.get('disruption_status') != 'Current':
                     continue
-
-                # Check if disruption affects any shown route
                 affected_routes = set(r.get('route_id') for r in d.get('routes', []))
                 if not affected_routes.intersection(shown_route_ids):
                     continue
-
                 title = d.get('title', '').lower()
-                # Only show service-affecting disruptions
                 if 'terminate' in title or 'replace' in title or 'delay' in title:
-                    relevant_disruptions.append(f"[!] {d.get('title', '')}")
+                    relevant_disruptions.append(d.get('title', '') or '')
 
-            if relevant_disruptions:
-                result.append("")
-                result.append("DISRUPTIONS:")
-                result.extend(relevant_disruptions[:3])
+        result.append("")
+        if relevant_disruptions:
+            result.append("[DISRUPTIONS: " + " | ".join(relevant_disruptions[:3]) + "]")
+        else:
+            result.append("[DISRUPTIONS: None reported on shown routes]")
 
         return "\n".join(result)
     except httpx.HTTPStatusError as e:
@@ -581,24 +579,85 @@ Direction ID resolved: {direction_id}.
 Your Pebble app will be updated automatically."""
 
 
-async def setup_pebble_button(
-    button_id: int,
+# "city" / "cbd" / "downtown" reach the agent via dictation but the local
+# fuzzy matcher returns nonsense ("Crib Point Station") because none of them
+# substring-match a real station name. Resolve the common shorthand to
+# Flinders Street before matching so the happy path doesn't bottom out on
+# an alias miss.
+_STATION_NAME_ALIASES = {
+    "city": "Flinders Street",
+    "the city": "Flinders Street",
+    "cbd": "Flinders Street",
+    "cdb": "Flinders Street",
+    "downtown": "Flinders Street",
+    "central": "Flinders Street",
+    "city centre": "Flinders Street",
+    "city center": "Flinders Street",
+}
+
+
+def _resolve_station_alias(name: str) -> str:
+    if not isinstance(name, str):
+        return name
+    key = name.lower().strip()
+    return _STATION_NAME_ALIASES.get(key, name)
+
+
+async def setup_favourite_entry(
+    entry_id: int,
     start_station: str,
     destination: str,
-    route_type: str = "TRAIN"
+    route_type: str = "TRAIN",
+    current_entries: int | None = None,
 ) -> str:
     """
-    Smart Pebble button setup. Just provide station NAMES - all IDs resolved automatically.
+    Smart favourite-entry setup. Just provide station NAMES - all IDs resolved automatically.
     Returns actionable guidance on failure to help the agent recover.
-    
+
     Args:
-        button_id: Which button (1, 2, or 3)
+        entry_id: Which entry slot (1-10). Users may call this entry / button / favourite / saved stop / slot.
         start_station: Name of the START station (e.g., "Narre Warren")
         destination: Name of the DESTINATION station (e.g., "Flinders Street")
         route_type: "TRAIN", "TRAM", or "VLINE"
+        current_entries: How many entry slots the user currently has filled (0-10).
+            Injected by the server. None means "unknown — proceed without slot guarding".
     """
     import json
-    
+
+    # --- Slot validation ---
+    # Hard bound: storage only has slots 1-10.
+    if not isinstance(entry_id, int) or entry_id < 1 or entry_id > 10:
+        return f"""[ERROR] entry_id {entry_id} is out of range. Valid slots are 1-10.
+ACTION: Call return_error to tell the user: "Favourite entries are numbered 1 to 10. Please pick a slot in that range." """
+
+    # Gap guard: refuse picks that would leave empty slots between filled ones
+    # (e.g. user asks for slot 7 with only 3 filled would leave slots 4-6 empty).
+    # Overwriting an *existing* slot is fine — trust the user's explicit pick;
+    # the watch UI handles the "are you sure?" confirmation. Skip when
+    # current_entries is unknown (legacy callers, HTTP entry-point, tests).
+    if (
+        current_entries is not None
+        and 0 <= current_entries <= 10
+        and entry_id > current_entries + 1
+    ):
+        next_slot = current_entries + 1
+        overwrite_options = "\n".join(
+            f'  - label "Overwrite entry #{i}" value "{i}"'
+            for i in range(1, min(current_entries, 3) + 1)
+        )
+        return f"""[ERROR] User asked for entry {entry_id} but only {current_entries} are filled — picking {entry_id} would leave slots {next_slot}..{entry_id - 1} empty.
+ACTION: Call ask_clarification with question "You only have {current_entries} favourite entries set up. Should I add this as entry #{next_slot}, or overwrite an existing entry?".
+After the user picks a slot, call setup_favourite_entry AGAIN with the user's chosen entry_id, and the SAME start_station="{start_station}" and destination="{destination}" you used this time.
+Options:
+  - label "Add as entry #{next_slot}" value "{next_slot}"
+{overwrite_options}"""
+
+    # Resolve dictated/casual aliases ("city" -> "Flinders Street") before
+    # the fuzzy match, otherwise the matcher returns wildly wrong suggestions
+    # and the agent bottoms out.
+    start_station = _resolve_station_alias(start_station)
+    destination = _resolve_station_alias(destination)
+
     # Convert route type string to int
     rt_map = {"TRAIN": RouteType.TRAIN, "TRAM": RouteType.TRAM, "VLINE": RouteType.VLINE, "BUS": RouteType.BUS}
     rt = rt_map.get(route_type.upper(), RouteType.TRAIN)
@@ -692,7 +751,7 @@ ACTION: Call ask_clarification to ask: "Do you want trains FROM {start_name} or 
 
     # --- Success! Build config ---
     config = {
-        "button_id": button_id,
+        "entry_id": entry_id,
         "name": start_name,
         "stop_id": start_id,
         "route_type": rt,
@@ -701,15 +760,15 @@ ACTION: Call ask_clarification to ask: "Do you want trains FROM {start_name} or 
         "direction_id": direction_id,
         "direction_name": direction_name
     }
-    
-    return f"""[BUTTON_CONFIG:{json.dumps(config)}]
 
-SUCCESS! Button {button_id} configured:
+    return f"""[ENTRY_CONFIG:{json.dumps(config)}]
+
+SUCCESS! Entry {entry_id} configured:
   From: {start_name}
   To: {dest_name}
   Line: {route_name}
   Direction: {direction_name} (ID: {direction_id})
-  
+
 The Pebble app will be updated automatically."""
 
 

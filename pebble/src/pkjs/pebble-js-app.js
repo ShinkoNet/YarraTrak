@@ -632,7 +632,7 @@ function connect() {
             }
             // Everything else with an id → an AI query response / error /
             // clarification. The server also attaches learned_stop and
-            // button_config on the same frame; handleQueryMessage pulls
+            // entry_config on the same frame; handleQueryMessage pulls
             // those out before dispatching to the watch card.
             if (msg.id != null && pendingQueries[msg.id]) {
                 handleQueryMessage(msg);
@@ -737,7 +737,7 @@ function startQuery(text) {
     var llmKey = getOption('llm_api_key') || '';
     if (!llmKey) {
         sendToWatch(IN_QUERY_ERROR,
-            'Add an Anthropic API key in the phone app settings to use Ask.');
+            'Add an OpenRouter API key in the phone app settings to use Ask.');
         return;
     }
 
@@ -772,7 +772,7 @@ function handleQueryMessage(msg) {
     delete pendingQueries[msg.id];
 
     if (msg.session_id) sessionId = msg.session_id;
-    if (msg.button_config) saveButtonConfig(msg.button_config);
+    if (msg.entry_config) saveEntryConfig(msg.entry_config);
 
     if (msg.type === 'error') {
         sendToWatch(IN_QUERY_ERROR,
@@ -811,9 +811,12 @@ function handleQueryMessage(msg) {
     }
 }
 
-function saveButtonConfig(config) {
-    if (!config || !config.button_id) return;
-    var id = parseInt(config.button_id, 10);
+function saveEntryConfig(config) {
+    if (!config) return;
+    // Accept legacy `button_id` from older server builds for one transition cycle.
+    var rawId = config.entry_id != null ? config.entry_id : config.button_id;
+    if (rawId == null) return;
+    var id = parseInt(rawId, 10);
     if (!(id >= 1 && id <= 10)) return;
     setOption('entry' + id + '_name', config.name || ('Entry ' + id));
     setOption('entry' + id + '_stop_id', config.stop_id);

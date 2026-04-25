@@ -60,33 +60,34 @@ async def search_and_get_departures(query: str, route_type: int = RouteType.TRAI
     return await tools.search_and_get_departures(query, route_type)
 
 @mcp.tool()
-async def setup_pebble_button(
-    button_id: int,
+async def setup_favourite_entry(
+    entry_id: int,
     start_station: str,
     destination: str,
     route_type: str = "TRAIN"
 ) -> str:
     """
-    Set up a Pebble watch button for quick departure checks.
+    Configure a favourite-entry slot on the Pebble watch (slots 1-10).
+    Users may call these entries / buttons / favourites / saved stops / slots.
     Just provide the station NAMES - all IDs and directions are resolved automatically!
-    
+
     Args:
-        button_id: Which button to configure (1, 2, or 3)
+        entry_id: Which entry slot to configure (1-10)
         start_station: Name of the START station (e.g., "Narre Warren", "Richmond")
         destination: Name of the DESTINATION station (e.g., "Flinders Street", "the city")
         route_type: "TRAIN", "TRAM", or "VLINE" (default: TRAIN)
-    
+
     Example: For commuting from Narre Warren to the city:
-        setup_pebble_button(1, "Narre Warren", "Flinders Street")
-    
+        setup_favourite_entry(1, "Narre Warren", "Flinders Street")
+
     If there's an error (wrong spelling, stations not on same line), the response
     will tell you exactly what to do next (ask clarification, retry, etc).
     """
-    return await tools.setup_pebble_button(
-        button_id=button_id,
+    return await tools.setup_favourite_entry(
+        entry_id=entry_id,
         start_station=start_station,
         destination=destination,
-        route_type=route_type
+        route_type=route_type,
     )
 
 if __name__ == "__main__":

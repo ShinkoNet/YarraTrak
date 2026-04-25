@@ -25,7 +25,7 @@ YarraTrak shows live train, tram, and V/Line departure times directly on your wr
 1. Install YarraTrak from the Rebble Appstore
 2. The app comes pre-loaded with 4 demo entries — open it and you'll see live departures immediately
 3. Open Settings on your phone to customise your favourite stations
-4. (Optional) Add an Anthropic API key in Settings to enable the voice/text AI assistant
+4. (Optional) Add an OpenRouter API key (sk-or-...) in Settings to enable the voice/text AI assistant
 
 ### For Self-Hosters
 
@@ -51,6 +51,8 @@ uvicorn server.api:app --host 0.0.0.0 --port 8000
 | `METRICS_LOG_INTERVAL_SECONDS` | No | Metrics normalization/capture interval. Default: `60` |
 | `METRICS_HISTORY_INTERVAL_SECONDS` | No | Dashboard history sampling interval. Default: `60` |
 | `METRICS_HISTORY_MAX_POINTS` | No | Retained in-memory history points. Default: `10080` (7 days at 60s sampling) |
+| `OPENROUTER_MODEL` | No | OpenRouter model slug used for agent queries. Default: `deepseek/deepseek-v4-flash` |
+| `OPENROUTER_BASE_URL` | No | OpenRouter API base URL. Default: `https://openrouter.ai/api/v1` |
 
 Register for PTV API credentials at [ptv.vic.gov.au](https://www.ptv.vic.gov.au/footer/data-and-reporting/datasets/ptv-timetable-api/).
 

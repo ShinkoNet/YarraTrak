@@ -2,7 +2,7 @@
 YarraTrak API - FastAPI server for public transport queries.
 
 Open-data architecture: departure/station endpoints are unauthenticated.
-Agent (LLM) endpoints use Bring-Your-Own-Key (BYOK) via Anthropic API key.
+Agent (LLM) endpoints use Bring-Your-Own-Key (BYOK) via OpenRouter API key.
 """
 
 from collections import defaultdict, deque
@@ -2600,12 +2600,39 @@ def stop_metrics_task():
 
 # --- Helper: resolve LLM API key ---
 
+# Message sent back to clients still configured with a legacy Anthropic key.
+# Routed through the normal RESULT path so the watch shows it on its query
+# card rather than as a transient error overlay.
+LEGACY_KEY_UPGRADE_MESSAGE = "Please upgrade the app and use an OpenRouter key"
+
+
 def _resolve_llm_key(provided_key: str | None) -> str | None:
-    """Return the user-provided key, or None if not provided (BYOK only)."""
+    """Return the user-provided key normalized, or None if not provided."""
     if not provided_key:
         return None
     provided_key = provided_key.strip()
     return provided_key if provided_key else None
+
+
+def _classify_llm_key(provided_key: str | None) -> tuple[str, str | None]:
+    """
+    Classify the BYOK key the client supplied.
+
+    Returns (status, value):
+      - ("ok", normalized_key)        — proceed with this key
+      - ("missing", message)          — no key supplied
+      - ("legacy", upgrade_message)   — sk-ant-* key from a pre-OpenRouter app
+      - ("invalid", rejection_message) — anything else
+    """
+    normalized = _resolve_llm_key(provided_key)
+    if not normalized:
+        return "missing", "OpenRouter API key required. Configure in settings."
+    lower = normalized.lower()
+    if lower.startswith("sk-ant"):
+        return "legacy", LEGACY_KEY_UPGRADE_MESSAGE
+    if not lower.startswith("sk-or"):
+        return "invalid", "API key not recognised — provide an OpenRouter key (sk-or-...)."
+    return "ok", normalized
 
 
 # --- Endpoints ---
@@ -2785,9 +2812,20 @@ async def text_query(agent_request: AgentRequest, request: Request):
     if not _check_rate_limit(_http_query_limiters, client_ip, HTTP_QUERY_RATE_LIMIT):
         raise HTTPException(status_code=429, detail="Too many AI queries. Please slow down.")
 
-    llm_key = _resolve_llm_key(agent_request.llm_api_key)
-    if not llm_key:
-        raise HTTPException(status_code=401, detail="Anthropic API key required. Provide llm_api_key in request body.")
+    key_status, key_value = _classify_llm_key(agent_request.llm_api_key)
+    if key_status == "legacy":
+        # Pre-OpenRouter clients still hold sk-ant keys. Hand back a normal
+        # success-shaped response so the watch surfaces the upgrade prompt
+        # via its result card without forcing a UX-breaking error path.
+        return {
+            "status": "success",
+            "session_id": agent_request.session_id or str(uuid.uuid4()),
+            "learned_stop": None,
+            "data": {"type": "RESULT", "payload": {"tts_text": key_value}},
+        }
+    if key_status != "ok":
+        raise HTTPException(status_code=401, detail=key_value)
+    llm_key = key_value
 
     try:
         query_text = _validate_query_text(agent_request.query)
@@ -2804,7 +2842,14 @@ async def text_query(agent_request: AgentRequest, request: Request):
     prefetched = await tools.speculative_fetch(history_list)
     prefetched_context = tools.format_speculative_context(prefetched)
 
-    result = await agent_engine.run_agent(query_text, scoped_session_id, prefetched_context, llm_api_key=llm_key)
+    # HTTP path doesn't carry an entry-count signal yet (no URL params), so
+    # leave current_entries=None and let the slot guard skip.
+    result = await agent_engine.run_agent(
+        query_text,
+        scoped_session_id,
+        prefetched_context,
+        llm_api_key=llm_key,
+    )
 
     # Extract learned stop
     payload = result.get("payload", {})
@@ -2848,7 +2893,7 @@ async def websocket_endpoint(
         "id": "1",                    // Correlation ID
         "text": "next train from richmond",
         "session_id": "abc123",       // Optional
-        "llm_api_key": "sk-ant-...",  // Required for agent queries
+        "llm_api_key": "sk-or-...",   // Required for agent queries (OpenRouter)
         "query_history": [...]        // Optional, for speculative fetch
     }
     
@@ -3023,15 +3068,27 @@ async def websocket_endpoint(
                 )
                 activity["ws_queries"] = int(activity["ws_queries"]) + 1
 
-                resolved_key = _resolve_llm_key(message.get("llm_api_key"))
-                
-                if not resolved_key:
+                key_status, key_value = _classify_llm_key(message.get("llm_api_key"))
+                if key_status == "legacy":
+                    # Pre-OpenRouter clients still hold sk-ant keys. Surface
+                    # the upgrade prompt as a RESULT so the watch displays it
+                    # on its query card, mirroring a normal agent reply.
+                    await websocket.send_json({
+                        "type": "result",
+                        "id": msg_id,
+                        "session_id": session_id,
+                        "data": {"type": "RESULT", "payload": {"tts_text": key_value}},
+                        "learned_stop": None,
+                    })
+                    continue
+                if key_status != "ok":
                     await websocket.send_json({
                         "type": "error",
                         "id": msg_id,
-                        "error": "Anthropic API key required for agent queries. Configure in settings."
+                        "error": key_value,
                     })
                     continue
+                resolved_key = key_value
                 
                 if not query_text:
                     await websocket.send_json({
@@ -3047,30 +3104,42 @@ async def websocket_endpoint(
                     prefetched_context = tools.format_speculative_context(prefetched)
 
                     scoped_session_id = _scoped_session_id(session_id, client_ip, resolved_key)
-                    
+
+                    # Tell the agent how many favourite entries this client
+                    # already has so the slot guard can fire when they ask
+                    # for, e.g. "entry 7" while only 3 are filled.
+                    subscribed = _favourite_subscriptions.get(websocket) or []
+                    current_entries_count = len(subscribed)
+
                     # Run agent with resolved key
-                    result = await agent_engine.run_agent(query_text, scoped_session_id, prefetched_context, llm_api_key=resolved_key)
-                    
+                    result = await agent_engine.run_agent(
+                        query_text,
+                        scoped_session_id,
+                        prefetched_context,
+                        llm_api_key=resolved_key,
+                        current_entries=current_entries_count,
+                    )
+
                     # Extract learned stop if present
                     learned_stop = None
-                    button_config = None
+                    entry_config = None
                     payload = result.get("payload", {})
-                    
+
                     if result.get("type") == "RESULT":
                         departure = payload.get("departure")
                         if departure:
                             if hasattr(departure, "model_dump"):
                                 departure = departure.model_dump()
-                        
+
                         if payload.get("_stop_info"):
                             learned_stop = payload.pop("_stop_info")
-                        
-                        # Extract button config
-                        if result.get("_button_config"):
-                            button_config = result.pop("_button_config")
-                        elif payload.get("_button_config"):
-                            button_config = payload.pop("_button_config")
-                    
+
+                        # Extract entry config
+                        if result.get("_entry_config"):
+                            entry_config = result.pop("_entry_config")
+                        elif payload.get("_entry_config"):
+                            entry_config = payload.pop("_entry_config")
+
                     # Send response
                     response = {
                         "type": result.get("type", "RESULT").lower(),
@@ -3079,8 +3148,8 @@ async def websocket_endpoint(
                         "data": result,
                         "learned_stop": learned_stop
                     }
-                    if button_config:
-                        response["button_config"] = button_config
+                    if entry_config:
+                        response["entry_config"] = entry_config
                     
                     if _is_websocket_active(websocket):
                         await websocket.send_json(response)

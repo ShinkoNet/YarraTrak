@@ -317,11 +317,11 @@
     <div id="ai_settings_group">
         <h2>AI Agent (Optional)</h2>
         <div class="form-group">
-            <label>Anthropic API Key</label>
+            <label>OpenRouter API Key</label>
             <div style="display: flex; gap: 10px;">
-                <input type="password" id="llm_api_key" placeholder="sk-ant-..." style="flex-grow: 1;">
+                <input type="password" id="llm_api_key" placeholder="sk-or-..." style="flex-grow: 1;">
             </div>
-            <div class="hint">Optional — enables voice/text queries via Claude. Get a key at <a href="https://console.anthropic.com" style="color: #ff6b00;">console.anthropic.com</a></div>
+            <div class="hint">Optional — enables voice/text queries through OpenRouter. Keys must start with <code>sk-or-</code>. Get one at <a href="https://openrouter.ai/keys" style="color: #ff6b00;">openrouter.ai/keys</a></div>
         </div>
     </div>
 
@@ -772,6 +772,23 @@
         document.getElementById('save').addEventListener('click', function () {
             var llmKey = llmKeyEl.value.trim();
             var serverUrl = serverUrlEl.value.trim() || serverBase;
+
+            // OpenRouter-only: reject sk-ant-* (Anthropic) keys and anything
+            // that doesn't look like an sk-or-* OpenRouter key. Empty is OK
+            // — the AI assistant is optional.
+            if (llmKey) {
+                var keyLower = llmKey.toLowerCase();
+                if (keyLower.indexOf('sk-ant') === 0) {
+                    alert('Anthropic keys are no longer supported. Please use an OpenRouter API key (sk-or-...). Get one at openrouter.ai/keys');
+                    llmKeyEl.focus();
+                    return;
+                }
+                if (keyLower.indexOf('sk-or') !== 0) {
+                    alert('Unrecognised API key. OpenRouter keys must start with sk-or-. Get one at openrouter.ai/keys');
+                    llmKeyEl.focus();
+                    return;
+                }
+            }
 
             var newOptions = {
                 server_url: serverUrl,
