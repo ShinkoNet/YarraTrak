@@ -47,8 +47,8 @@
     "flint"
   ],
   "uuid": "61ae3254-ce00-49db-aad8-23143f649b91",
-  "versionCode": 3,
-  "versionLabel": "2.0",
+  "versionCode": 4,
+  "versionLabel": "2.01",
   "watchapp": {
     "watchface": false
   }
