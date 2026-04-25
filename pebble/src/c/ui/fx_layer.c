@@ -67,9 +67,10 @@ static uint32_t fx_rand(uint32_t *s) {
 
 #if defined(PBL_COLOR)
 static GColor star_color(uint8_t z) {
-  if (z < 60)  return GColorWhite;
-  if (z < 160) return GColorLightGray;
-  return GColorDarkGray;
+  // blue stars read better on colour screens
+  if (z < 60)  return GColorWhite;            // popping up close
+  if (z < 160) return GColorVividCerulean;    // matches theme_accent / cube
+  return GColorBlueMoon;                      // recedes into the deep
 }
 
 static GColor cube_color(void) {
