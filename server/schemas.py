@@ -269,10 +269,10 @@ GET_ROUTE_DIRECTIONS_SCHEMA = {
     "additionalProperties": False
 }
 
-SETUP_PEBBLE_BUTTON_SCHEMA = {
+SETUP_FAVOURITE_ENTRY_SCHEMA = {
     "type": "object",
     "properties": {
-        "button_id": {"type": "integer", "enum": [1, 2, 3], "description": "Button number (1, 2, or 3)"},
+        "entry_id": {"type": "integer", "enum": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "description": "Favourite entry slot to configure (1-10). Users may call this an entry, button, favourite, saved stop, or slot."},
         "start_station": {"type": "string", "description": "Name of START station (e.g., 'Narre Warren', 'Richmond')"},
         "destination": {"type": "string", "description": "Name of DESTINATION station (e.g., 'Flinders Street', 'the city')"},
         "route_type": {
@@ -282,7 +282,7 @@ SETUP_PEBBLE_BUTTON_SCHEMA = {
             "description": "Transport mode"
         }
     },
-    "required": ["button_id", "start_station", "destination"],
+    "required": ["entry_id", "start_station", "destination"],
     "additionalProperties": False
 }
 
