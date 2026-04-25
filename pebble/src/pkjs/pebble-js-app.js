@@ -465,6 +465,28 @@ var reconnectTimer = null;
 var reconnectDelay = RECONNECT_MIN_MS;
 var watchingRunRef = null;  // reconciles against server position_update stream
 
+// Read the current configured entries out of localStorage as the array shape
+// the server's subscribe_favourites handler expects. Used both to seed the
+// buttons URL on connect and to push updates after saveEntryConfig.
+function getButtonConfigs() {
+    var count = getConfiguredEntryCount();
+    var btns = [];
+    for (var i = 1; i <= count; i++) {
+        var stopId = getOption('entry' + i + '_stop_id');
+        if (!stopId) continue;
+        btns.push({
+            button_id: i,
+            stop_id: parseInt(stopId, 10),
+            route_type: parseInt(getOption('entry' + i + '_route_type') || '0', 10),
+            direction_id: getOption('entry' + i + '_direction_id') !== null
+                ? parseInt(getOption('entry' + i + '_direction_id'), 10) : null,
+            dest_id: getOption('entry' + i + '_dest_id') !== null
+                ? parseInt(getOption('entry' + i + '_dest_id'), 10) : null,
+        });
+    }
+    return btns;
+}
+
 function buildWsUrl() {
     var base = getServerUrl()
         .replace(/^https:/, 'wss:')
@@ -475,23 +497,30 @@ function buildWsUrl() {
     var params = [];
     params.push('client_id=' + encodeURIComponent(clientId));
 
-    var count = getConfiguredEntryCount();
     var parts = [];
-    for (var i = 1; i <= count; i++) {
-        var stopId = getOption('entry' + i + '_stop_id');
-        if (!stopId) continue;
-        var routeType = getOption('entry' + i + '_route_type') || '0';
-        var directionId = getOption('entry' + i + '_direction_id') || '';
-        var destId = getOption('entry' + i + '_dest_id') || '';
-        var part = i + ':' + stopId + ':' + routeType;
-        if (directionId !== '' || destId !== '') part += ':' + directionId;
-        if (destId !== '') part += ':' + destId;
+    var btns = getButtonConfigs();
+    for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        var part = b.button_id + ':' + b.stop_id + ':' + b.route_type;
+        var hasDir = b.direction_id !== null && !isNaN(b.direction_id);
+        var hasDest = b.dest_id !== null && !isNaN(b.dest_id);
+        if (hasDir || hasDest) part += ':' + (hasDir ? b.direction_id : '');
+        if (hasDest) part += ':' + b.dest_id;
         parts.push(part);
     }
     if (parts.length > 0) {
         params.push('buttons=' + encodeURIComponent(parts.join(',')));
     }
     return url + '?' + params.join('&');
+}
+
+// Push the current entry list to the server over the live websocket so the
+// server's favourite_subscriptions matches what's on the watch. Without this,
+// any entry added/changed mid-session never gets `favourite_update` traffic
+// and the menu row stays stuck on "Waiting...".
+function pushSubscribeFavourites() {
+    if (!ws || !wsConnected) return;
+    wsSend({ type: 'subscribe_favourites', buttons: getButtonConfigs() });
 }
 
 function clearTimers() {
@@ -878,6 +907,7 @@ function saveEntryConfig(config) {
     var currentCount = getConfiguredEntryCount();
     if (id > currentCount) setOption('entry_count', id);
     syncEntriesToWatch();
+    pushSubscribeFavourites();
     sendToWatch(IN_QUERY_SAVED, String(id));
 }
 
