@@ -28,6 +28,11 @@ static char s_platform_badge[8];    // e.g. "P2", "P13", "PA" — "" if no platf
 static char s_time_buf[10];         // "17:27" or "5:27 PM" — "" if unknown
 static char s_route_buf[48];
 static char s_bottom_buf[48];
+// "1.23 km away" — populated only for trains while a fresh position update
+// is in. When non-empty AND distance info isn't disabled, info_layer
+// alternates between the [P2] HH:MM badge and this string every 3s.
+static char s_distance_buf[20];
+static bool s_info_show_distance = false;  // current rotation slot
 
 // 32-bit hashes of the last value fed into each text layer. Collisions are
 // astronomically unlikely across the bounded set of strings this UI ever
@@ -123,7 +128,9 @@ static bool is_numeric_countdown(const char *s) {
 
 // Draws the "[P2]  17:27" badge + time row centred in its own frame. A
 // bordered rectangle wraps the platform label so it reads as a symbol, not
-// a word; the time floats to the right with a small gap.
+// a word; the time floats to the right with a small gap. When the rotation
+// is in the "distance" slot (s_info_show_distance), draws "X.XX km away"
+// centred instead so the badge/time and the live distance share this row.
 static void info_layer_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   GColor fg = theme_fg();
@@ -132,6 +139,19 @@ static void info_layer_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_width(ctx, 1);
 
   GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+
+  if (s_info_show_distance && s_distance_buf[0]) {
+    // Centred single-line text using the same 20-px box and -3 ascender
+    // fudge as the badge below, so the rotation looks like the time row
+    // just swapped its text — no vertical jump.
+    const int16_t BOX_H = 20;
+    int16_t y = (bounds.size.h - BOX_H) / 2;
+    graphics_draw_text(ctx, s_distance_buf, font,
+                       GRect(0, y - 3, bounds.size.w, BOX_H),
+                       GTextOverflowModeTrailingEllipsis,
+                       GTextAlignmentCenter, NULL);
+    return;
+  }
 
   GSize plat_sz = GSize(0, 0);
   if (s_platform_badge[0]) {
@@ -211,13 +231,13 @@ static void cancel_running_anim(void) {
   s_shake_anim = NULL;
 }
 
-// Suppressed in battery-saver mode too: when the user disables background
-// FX we treat that as "only redraw when something actually changes" and
-// skip the per-tick bump and the delay shake along with it. The long
-// haptic pulse on delay still fires so the information isn't lost.
+// Single combined animations kill. The settings page exposes one toggle
+// for both the background FX and the per-tick countdown bump / delay shake;
+// they ride together through g_app_state.flags.disable_animations. The long
+// haptic pulse on delay still fires so the information isn't lost when the
+// shake is suppressed.
 static bool animations_suppressed(void) {
-  return g_app_state.flags.disable_timer_shake ||
-         g_app_state.flags.disable_ripple_vfx;
+  return g_app_state.flags.disable_animations;
 }
 
 // V1 'bounce': the countdown ticked down — tiny +1y bob then back.
@@ -405,33 +425,50 @@ static void render(void) {
     snprintf(s_platform_badge, sizeof(s_platform_badge), "P%s", dep->platform);
   }
 
-  // info_layer renders the platform badge + time through a custom
-  // update_proc, so only re-mark it dirty when one of its inputs changes.
-  uint32_t plat_h = hash_str(s_platform_badge);
-  uint32_t time_h = hash_str(s_time_buf);
-  if (s_info_layer &&
-      (plat_h != s_platform_badge_hash || time_h != s_time_buf_hash)) {
-    layer_mark_dirty(s_info_layer);
-    s_platform_badge_hash = plat_h;
-    s_time_buf_hash = time_h;
-  }
-
-  // Bottom: disruption, live distance (metro only, non-zero), or vehicle desc.
-  s_bottom_buf[0] = '\0';
-  const char *bottom_disruption = NULL;
+  // Distance: trains only, non-zero distance, fresh run match. Leave the
+  // buffer empty otherwise so the rotation collapses back to a static
+  // [P2] HH:MM display. The disable_distance_info flag (default off, the
+  // settings UI labels it "Disable train distance info") gates this entirely.
   bool have_position = (g_app_state.watched_distance_km_x100 != INT32_MIN &&
                         g_app_state.watched_distance_km_x100 > 0 &&
                         dep && strcmp(g_app_state.watched_run_ref, dep->run_ref) == 0);
+  s_distance_buf[0] = '\0';
+  if (have_position && e->route_type == 0 /* metro train */ &&
+      !g_app_state.flags.disable_distance_info) {
+    int32_t whole = g_app_state.watched_distance_km_x100 / 100;
+    int32_t frac = g_app_state.watched_distance_km_x100 % 100;
+    if (frac < 0) frac = -frac;
+    snprintf(s_distance_buf, sizeof(s_distance_buf),
+             "%ld.%02ld km away", (long)whole, (long)frac);
+  }
 
+  // 3-second flip between the badge/time and the distance. Matches the
+  // disruption-rotation cadence so the watch's "things shift on the 3s
+  // tick" feels coherent.
+  bool want_distance_now = (s_distance_buf[0] && (time(NULL) / 3) % 2 == 1);
+
+  // info_layer renders the platform badge + time (or the distance, when
+  // rotated to that slot) through a custom update_proc — re-mark it dirty
+  // when any of its inputs OR the rotation slot flips.
+  uint32_t plat_h = hash_str(s_platform_badge);
+  uint32_t time_h = hash_str(s_time_buf);
+  if (s_info_layer &&
+      (plat_h != s_platform_badge_hash || time_h != s_time_buf_hash ||
+       want_distance_now != s_info_show_distance)) {
+    layer_mark_dirty(s_info_layer);
+    s_platform_badge_hash = plat_h;
+    s_time_buf_hash = time_h;
+    s_info_show_distance = want_distance_now;
+  }
+
+  // Bottom: disruption first, vehicle desc second. Distance lives in the
+  // info row now (rotated with the timestamp) so it's not in this priority.
+  s_bottom_buf[0] = '\0';
+  const char *bottom_disruption = NULL;
   if (e->disruption_count > 0) {
     uint32_t which = (uint32_t)(time(NULL) / 3) % e->disruption_count;
     bottom_disruption = e->disruptions[which];
     strncpy(s_bottom_buf, bottom_disruption, sizeof(s_bottom_buf) - 1);
-  } else if (have_position && e->route_type == 0 /* metro train */) {
-    int32_t whole = g_app_state.watched_distance_km_x100 / 100;
-    int32_t frac = g_app_state.watched_distance_km_x100 % 100;
-    if (frac < 0) frac = -frac;
-    snprintf(s_bottom_buf, sizeof(s_bottom_buf), "%ld.%02ld km away", (long)whole, (long)frac);
   } else if (g_app_state.watched_vehicle_desc[0] &&
              dep && strcmp(g_app_state.watched_run_ref, dep->run_ref) == 0) {
     strncpy(s_bottom_buf, g_app_state.watched_vehicle_desc, sizeof(s_bottom_buf) - 1);
@@ -647,6 +684,8 @@ static void window_unload(Window *window) {
   s_last_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
   s_now_pattern_fired = false;
+  s_distance_buf[0] = '\0';
+  s_info_show_distance = false;
   haptics_cancel();
   protocol_send_watch_stop();
 }

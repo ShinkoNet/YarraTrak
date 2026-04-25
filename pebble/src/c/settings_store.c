@@ -18,13 +18,17 @@ static void read_string(uint32_t key, char *out, size_t out_size) {
 
 void settings_store_load(void) {
   Flags *f = &g_app_state.flags;
-  f->disable_vibration   = persist_read_bool(PKEY_FLAG_VIBE_DISABLED);
-  f->disable_ripple_vfx  = persist_read_bool(PKEY_FLAG_RIPPLE_DISABLED);
-  f->disable_timer_shake = persist_read_bool(PKEY_FLAG_SHAKE_DISABLED);
-  f->disable_ai_assistant = persist_read_bool(PKEY_FLAG_AI_DISABLED);
-  f->use_24hr_time       = persist_read_bool(PKEY_FLAG_24H_TIME);
-  f->dark_theme          = persist_read_bool(PKEY_FLAG_DARK_THEME);
-  f->bg_fx               = (uint8_t)persist_read_int(PKEY_FLAG_BG_FX);
+  f->disable_vibration       = persist_read_bool(PKEY_FLAG_VIBE_DISABLED);
+  f->disable_animations      = persist_read_bool(PKEY_FLAG_ANIMATIONS_DISABLED);
+  f->disable_distance_info   = persist_read_bool(PKEY_FLAG_DISTANCE_DISABLED);
+  // PKEY_FLAG_AI_DISABLED defaults true (no key present) → AI off out-of-the-box.
+  // The matching default in PKJS / settings.html keeps the watch and phone in sync
+  // before the first FLAGS_SYNC arrives.
+  f->disable_ai_assistant    = persist_exists(PKEY_FLAG_AI_DISABLED)
+                                  ? persist_read_bool(PKEY_FLAG_AI_DISABLED) : true;
+  f->use_24hr_time           = persist_read_bool(PKEY_FLAG_24H_TIME);
+  f->dark_theme              = persist_read_bool(PKEY_FLAG_DARK_THEME);
+  f->bg_fx                   = (uint8_t)persist_read_int(PKEY_FLAG_BG_FX);
 
   g_app_state.entry_count = 0;
   if (persist_exists(PKEY_ENTRY_COUNT)) {
@@ -50,13 +54,13 @@ void settings_store_load(void) {
 
 void settings_store_save_flags(void) {
   const Flags *f = &g_app_state.flags;
-  persist_write_bool(PKEY_FLAG_VIBE_DISABLED,    f->disable_vibration);
-  persist_write_bool(PKEY_FLAG_RIPPLE_DISABLED,  f->disable_ripple_vfx);
-  persist_write_bool(PKEY_FLAG_SHAKE_DISABLED,   f->disable_timer_shake);
-  persist_write_bool(PKEY_FLAG_AI_DISABLED,      f->disable_ai_assistant);
-  persist_write_bool(PKEY_FLAG_24H_TIME,         f->use_24hr_time);
-  persist_write_bool(PKEY_FLAG_DARK_THEME,       f->dark_theme);
-  persist_write_int(PKEY_FLAG_BG_FX,             f->bg_fx);
+  persist_write_bool(PKEY_FLAG_VIBE_DISABLED,        f->disable_vibration);
+  persist_write_bool(PKEY_FLAG_ANIMATIONS_DISABLED,  f->disable_animations);
+  persist_write_bool(PKEY_FLAG_DISTANCE_DISABLED,    f->disable_distance_info);
+  persist_write_bool(PKEY_FLAG_AI_DISABLED,          f->disable_ai_assistant);
+  persist_write_bool(PKEY_FLAG_24H_TIME,             f->use_24hr_time);
+  persist_write_bool(PKEY_FLAG_DARK_THEME,           f->dark_theme);
+  persist_write_int(PKEY_FLAG_BG_FX,                 f->bg_fx);
 }
 
 void settings_store_save_entries(void) {

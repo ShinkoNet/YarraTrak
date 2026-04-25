@@ -89,11 +89,17 @@ static void handle_conn_state(char *data) {
 }
 
 // FLAGS_SYNC format: "flag_bits[|bg_fx]"
-// bit0 disable_vibration, bit1 disable_ripple_vfx, bit2 disable_timer_shake,
-// bit3 disable_ai_assistant, bit4 use_24hr_time, bit5 dark_theme.
 // Optional 2nd pipe-delimited token is the background fx enum (0=rings,
-// 1=starfield, 2=plasma, 3=fire). Old clients without the field default
-// to rings.
+// 1=starfield, 2=plasma, 3=fire, 4=cube). Old clients without the field
+// default to rings.
+//
+// bit layout (post-reorg):
+//   1  disable_vibration
+//   2  disable_animations     (was disable_ripple_vfx — now also covers shake)
+//   4  disable_distance_info  (was disable_timer_shake — repurposed)
+//   8  disable_ai_assistant
+//   16 use_24hr_time
+//   32 dark_theme
 static void handle_flags_sync(char *data) {
   char *bg_token = NULL;
   for (char *p = data; *p; p++) {
@@ -101,12 +107,12 @@ static void handle_flags_sync(char *data) {
   }
   int bits = atoi(data);
   Flags *f = &g_app_state.flags;
-  f->disable_vibration    = (bits & 1)  != 0;
-  f->disable_ripple_vfx   = (bits & 2)  != 0;
-  f->disable_timer_shake  = (bits & 4)  != 0;
-  f->disable_ai_assistant = (bits & 8)  != 0;
-  f->use_24hr_time        = (bits & 16) != 0;
-  f->dark_theme           = (bits & 32) != 0;
+  f->disable_vibration      = (bits & 1)  != 0;
+  f->disable_animations     = (bits & 2)  != 0;
+  f->disable_distance_info  = (bits & 4)  != 0;
+  f->disable_ai_assistant   = (bits & 8)  != 0;
+  f->use_24hr_time          = (bits & 16) != 0;
+  f->dark_theme             = (bits & 32) != 0;
   f->bg_fx = 0;
   if (bg_token && *bg_token) {
     int v = atoi(bg_token);

@@ -255,7 +255,7 @@ static void fx_tick(void *context) {
   Layer *layer = (Layer *)context;
   FxData *d = (FxData *)layer_get_data(layer);
   d->timer = NULL;
-  if (g_app_state.flags.disable_ripple_vfx) {
+  if (g_app_state.flags.disable_animations) {
     // Battery-saver mode: we already painted the static bg once on
     // window_load; skip further redraws until the flag flips.
     return;
@@ -284,7 +284,7 @@ static void seed_state(FxData *d, GRect bounds) {
 }
 
 Layer *fx_layer_create(GRect bounds) {
-  if (g_app_state.flags.disable_ripple_vfx) return NULL;
+  if (g_app_state.flags.disable_animations) return NULL;
 
   Layer *layer = layer_create_with_data(bounds, sizeof(FxData));
   FxData *d = (FxData *)layer_get_data(layer);

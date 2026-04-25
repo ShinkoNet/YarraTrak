@@ -95,6 +95,17 @@ function boolOption(name) {
     return v === 'true' || v === '1' || v === true;
 }
 
+// AI defaults OFF when no value is stored — out-of-the-box installs get
+// the assistant disabled until the user explicitly enables it in settings.
+// boolOption() can't express "default true" because a missing key returns
+// null, which it treats as false. Centralise the default here so the bit-
+// packing and the runtime check (startQuery) agree.
+function aiAssistantDisabled() {
+    var v = getOption('disable_ai_assistant');
+    if (v === null || v === undefined || v === '') return true;
+    return v === 'true' || v === '1' || v === true;
+}
+
 function getOrCreateClientId() {
     var id = getOption('client_id');
     if (!id) {
@@ -167,8 +178,8 @@ function migrateLegacyBtnKeys() {
             }
             var flagKeys = ['server_url', 'llm_api_key', 'use_24hr_time',
                             'disable_ai_assistant', 'enable_third_party_endpoint',
-                            'disable_vibration', 'disable_ripple_vfx',
-                            'disable_timer_shake', 'dark_theme', 'client_id'];
+                            'disable_vibration', 'disable_animations',
+                            'disable_distance_info', 'dark_theme', 'client_id'];
             for (var k = 0; k < flagKeys.length; k++) {
                 var fv = blob[flagKeys[k]];
                 if (fv !== undefined && fv !== null && fv !== '') {
@@ -226,7 +237,7 @@ function collectSettingsSnapshot() {
     var snapshot = {};
     var keys = ['server_url', 'llm_api_key', 'use_24hr_time', 'disable_ai_assistant',
                 'enable_third_party_endpoint', 'disable_vibration',
-                'disable_ripple_vfx', 'disable_timer_shake', 'dark_theme',
+                'disable_animations', 'disable_distance_info', 'dark_theme',
                 'bg_fx', 'entry_count', 'client_id'];
     for (var i = 0; i < keys.length; i++) {
         var v = getOption(keys[i]);
@@ -355,12 +366,19 @@ function runStartupDiagnosticIfStillOffline() {
 
 function syncFlagsToWatch() {
     var bits = 0;
-    if (boolOption('disable_vibration'))    bits |= 1;
-    if (boolOption('disable_ripple_vfx'))   bits |= 2;
-    if (boolOption('disable_timer_shake'))  bits |= 4;
-    if (boolOption('disable_ai_assistant')) bits |= 8;
-    if (boolOption('use_24hr_time'))        bits |= 16;
-    if (boolOption('dark_theme'))           bits |= 32;
+    // Bit layout matches handle_flags_sync in pebble/src/c/protocol.c:
+    //   1  disable_vibration
+    //   2  disable_animations    (combined; was split between fx + shake)
+    //   4  disable_distance_info (was disable_timer_shake)
+    //   8  disable_ai_assistant  (DEFAULTS TRUE — AI is off out-of-the-box)
+    //   16 use_24hr_time
+    //   32 dark_theme
+    if (boolOption('disable_vibration'))      bits |= 1;
+    if (boolOption('disable_animations'))     bits |= 2;
+    if (boolOption('disable_distance_info'))  bits |= 4;
+    if (aiAssistantDisabled())                bits |= 8;
+    if (boolOption('use_24hr_time'))          bits |= 16;
+    if (boolOption('dark_theme'))             bits |= 32;
     // Pipe-append the bg-fx enum (0=rings, 1=starfield, 2=plasma, 3=fire,
     // 4=cube). Older watch builds ignore the trailing token.
     var bg = parseInt(getOption('bg_fx') || '0', 10);
@@ -726,7 +744,7 @@ function truncate(str, max) {
 }
 
 function startQuery(text) {
-    if (boolOption('disable_ai_assistant')) {
+    if (aiAssistantDisabled()) {
         sendToWatch(IN_QUERY_ERROR, 'AI assistant disabled in settings');
         return;
     }

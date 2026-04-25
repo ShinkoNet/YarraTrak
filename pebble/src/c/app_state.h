@@ -15,8 +15,12 @@ typedef enum {
 
 typedef struct {
   bool disable_vibration;
-  bool disable_ripple_vfx;   // master kill for all background fx
-  bool disable_timer_shake;
+  // Single combined animations kill: covers the background-fx layer AND the
+  // per-tick countdown bump / delay shake. Replaces the old split between
+  // disable_ripple_vfx + disable_timer_shake — they were always toggled
+  // together in practice and the settings page now exposes just one toggle.
+  bool disable_animations;
+  bool disable_distance_info;  // suppress the "X.XX km away" rotation in the info row
   bool disable_ai_assistant;
   bool use_24hr_time;
   bool dark_theme;           // false = light (default), true = dark

@@ -4,8 +4,9 @@
 
 // Unified background-fx layer used behind the watch-window countdown.
 // The active effect is selected by g_app_state.flags.bg_fx; the master kill
-// switch is still g_app_state.flags.disable_ripple_vfx, which makes the
-// factory return NULL and the start/stop helpers no-op.
+// switch is g_app_state.flags.disable_animations, which makes the factory
+// return NULL and the start/stop helpers no-op. The same flag also kills
+// the per-tick countdown bump and delay shake in watch_window.c.
 //
 // Effects implemented:
 //   0 BG_FX_RIPPLE     — concentric dotted rings (default)

@@ -158,6 +158,20 @@
             pointer-events: none;
         }
 
+        /* Inputs that hang off a toggle (API key under "Disable AI assistant",
+           server URL under "Use 3rd-Party endpoint", FX style under "Disable
+           animations"). The vertical bar makes the parent-child relationship
+           obvious without nesting them visually inside the toggle row. */
+        .conditional-panel {
+            padding: 8px 12px 4px 12px;
+            margin: 4px 0 8px 8px;
+            border-left: 2px solid #444;
+        }
+
+        .conditional-panel.hidden {
+            display: none;
+        }
+
         .search-results {
             margin-top: 5px;
             background: #333;
@@ -335,24 +349,99 @@
         <span id="save_status" style="color: #4CAF50; font-size: 14px;"></span>
     </div>
 
-    <div id="server_settings_group">
-        <h2>Server</h2>
-        <div class="form-group">
-            <label>Server URL</label>
-            <input type="text" id="server_url" placeholder="https://ptv.netcavy.net">
-            <div class="hint">Default: https://ptv.netcavy.net</div>
-        </div>
-    </div>
+    <div id="extra_settings" style="padding: 15px; background: #222; border-radius: 8px; margin-bottom: 25px;">
+        <h2 style="margin-top: 0;">Settings</h2>
 
-    <div id="ai_settings_group">
-        <h2>AI Agent (Optional)</h2>
-        <div class="form-group">
-            <label>OpenRouter API Key</label>
-            <div style="display: flex; gap: 10px;">
-                <input type="password" id="llm_api_key" placeholder="sk-or-..." style="flex-grow: 1;">
+        <div id="ai_toggle_block">
+            <label class="toggle-row" for="disable_ai_assistant">
+                <span class="toggle-copy">
+                    <span class="toggle-title">Disable AI assistant</span>
+                    <span class="toggle-hint">When off, the Ask voice flow appears in the watch menu and the API key field below is shown.</span>
+                </span>
+                <input type="checkbox" id="disable_ai_assistant">
+            </label>
+            <div id="ai_key_panel" class="conditional-panel">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>OpenRouter API Key</label>
+                    <input type="password" id="llm_api_key" placeholder="sk-or-...">
+                    <div class="hint">Keys must start with <code>sk-or-</code>. Get one at <a href="https://openrouter.ai/keys" style="color: #ff6b00;">openrouter.ai/keys</a></div>
+                </div>
             </div>
-            <div class="hint">Optional — enables voice/text queries through OpenRouter. Keys must start with <code>sk-or-</code>. Get one at <a href="https://openrouter.ai/keys" style="color: #ff6b00;">openrouter.ai/keys</a></div>
+            <div class="divider"></div>
         </div>
+
+        <label class="toggle-row" for="enable_third_party_endpoint">
+            <span class="toggle-copy">
+                <span class="toggle-title">Use 3rd-Party endpoint</span>
+                <span class="toggle-hint">When off, YarraTrak always uses ptv.netcavy.net.</span>
+            </span>
+            <input type="checkbox" id="enable_third_party_endpoint">
+        </label>
+        <div id="endpoint_panel" class="conditional-panel">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Server URL</label>
+                <input type="text" id="server_url" placeholder="https://ptv.netcavy.net">
+                <div class="hint">Default: https://ptv.netcavy.net</div>
+            </div>
+        </div>
+        <div class="divider"></div>
+
+        <label class="toggle-row" for="use_24hr_time">
+            <span class="toggle-copy">
+                <span class="toggle-title">Use 24-hour time</span>
+                <span class="toggle-hint">Shows the menu clock, watch-page departure times, and planned disruption times as 16:30 instead of 4:30 PM.</span>
+            </span>
+            <input type="checkbox" id="use_24hr_time">
+        </label>
+        <div class="divider"></div>
+
+        <label class="toggle-row" for="dark_theme">
+            <span class="toggle-copy">
+                <span class="toggle-title">Dark theme</span>
+                <span class="toggle-hint">Flips the menu and watch page to a black background with white text.</span>
+            </span>
+            <input type="checkbox" id="dark_theme">
+        </label>
+        <div class="divider"></div>
+
+        <label class="toggle-row" for="disable_animations">
+            <span class="toggle-copy">
+                <span class="toggle-title">Disable animations</span>
+                <span class="toggle-hint">Saves battery by drawing less each second, such as background FX and stopwatch nudges.</span>
+            </span>
+            <input type="checkbox" id="disable_animations">
+        </label>
+        <div id="fx_panel" class="conditional-panel">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="bg_fx" style="margin-bottom: 6px;">Background FX style</label>
+                <select id="bg_fx">
+                    <option value="0">Rings — concentric ripple</option>
+                    <option value="1">Starfield — fly through space</option>
+                    <option value="4">Cube — rotating wireframe</option>
+                </select>
+                <div class="hint">Pick the demoscene vibe you want behind the countdown.</div>
+            </div>
+        </div>
+        <div class="divider"></div>
+
+        <label class="toggle-row" for="disable_vibration">
+            <span class="toggle-copy">
+                <span class="toggle-title">Disable vibration</span>
+                <span class="toggle-hint">Turns off all haptics, including countdown and confirmation vibrations.</span>
+            </span>
+            <input type="checkbox" id="disable_vibration">
+        </label>
+        <div class="divider"></div>
+
+        <label class="toggle-row" for="disable_distance_info">
+            <span class="toggle-copy">
+                <span class="toggle-title">Disable train distance info</span>
+                <span class="toggle-hint">Stops the "X.XX km away" line from rotating with the departure time on the watch (metro trains only).</span>
+            </span>
+            <input type="checkbox" id="disable_distance_info">
+        </label>
+
+        <button id="reset_defaults" style="background: #4CAF50; margin-top: 16px; margin-bottom: 0;">Reset to Default</button>
     </div>
 
     <h2>Favourite Entries</h2>
@@ -366,80 +455,6 @@
     <div id="entries_container"></div>
 
     <button id="save">Save Settings</button>
-
-    <details style="margin-top: 30px;">
-        <summary style="color: #888; cursor: pointer; font-size: 14px;">Extra Settings</summary>
-        <div style="padding: 15px; background: #222; border-radius: 8px; margin-top: 10px;">
-            <label class="toggle-row" for="use_24hr_time">
-                <span class="toggle-copy">
-                    <span class="toggle-title">Use 24-hour time</span>
-                    <span class="toggle-hint">Shows the menu clock, watch-page departure times, and planned disruption times as 16:30 instead of 4:30 PM.</span>
-                </span>
-                <input type="checkbox" id="use_24hr_time">
-            </label>
-            <div id="ai_toggle_block">
-                <div class="divider"></div>
-                <label class="toggle-row" for="disable_ai_assistant">
-                    <span class="toggle-copy">
-                        <span class="toggle-title">Disable AI assistant</span>
-                        <span class="toggle-hint">Hides the Ask menu option and the API key field on this page.</span>
-                    </span>
-                    <input type="checkbox" id="disable_ai_assistant">
-                </label>
-            </div>
-            <div class="divider"></div>
-            <label class="toggle-row" for="enable_third_party_endpoint">
-                <span class="toggle-copy">
-                    <span class="toggle-title">Enable 3rd-Party endpoint</span>
-                    <span class="toggle-hint">Shows the endpoint form. When off, YarraTrak always uses ptv.netcavy.net.</span>
-                </span>
-                <input type="checkbox" id="enable_third_party_endpoint">
-            </label>
-            <div class="divider"></div>
-            <label class="toggle-row" for="disable_vibration">
-                <span class="toggle-copy">
-                    <span class="toggle-title">Disable vibration</span>
-                    <span class="toggle-hint">Turns off all haptics, including countdown and confirmation vibrations.</span>
-                </span>
-                <input type="checkbox" id="disable_vibration">
-            </label>
-            <div class="divider"></div>
-            <label class="toggle-row" for="disable_ripple_vfx">
-                <span class="toggle-copy">
-                    <span class="toggle-title">Disable background FX</span>
-                    <span class="toggle-hint">Battery-saver mode. Uses a plain background instead of the animated effect on the watch page, and also suppresses the per-second bump and the delay shake so the countdown is a single frame update per tick.</span>
-                </span>
-                <input type="checkbox" id="disable_ripple_vfx">
-            </label>
-            <div class="divider"></div>
-            <div class="form-group" style="margin-bottom: 4px;">
-                <label for="bg_fx" style="margin-bottom: 6px;">Background FX style</label>
-                <select id="bg_fx">
-                    <option value="0">Rings — concentric ripple</option>
-                    <option value="1">Starfield — fly through space</option>
-                    <option value="4">Cube — rotating wireframe</option>
-                </select>
-                <div class="hint">Pick the demoscene vibe you want behind the countdown.</div>
-            </div>
-            <div class="divider"></div>
-            <label class="toggle-row" for="disable_timer_shake">
-                <span class="toggle-copy">
-                    <span class="toggle-title">Disable timer shake</span>
-                    <span class="toggle-hint">Stops the watch timer bump and shake animations while it updates.</span>
-                </span>
-                <input type="checkbox" id="disable_timer_shake">
-            </label>
-            <div class="divider"></div>
-            <label class="toggle-row" for="dark_theme">
-                <span class="toggle-copy">
-                    <span class="toggle-title">Dark theme</span>
-                    <span class="toggle-hint">Flips the menu and watch page to a black background with white text.</span>
-                </span>
-                <input type="checkbox" id="dark_theme">
-            </label>
-            <button id="reset_defaults" style="background: #4CAF50; margin-top: 0; margin-bottom: 0;">Reset to Default</button>
-        </div>
-    </details>
 
     <script>
         // Hardcoded production server - can be overridden in settings
@@ -469,52 +484,67 @@
         var disableAiAssistantEl = document.getElementById('disable_ai_assistant');
         var enableThirdPartyEndpointEl = document.getElementById('enable_third_party_endpoint');
         var disableVibrationEl = document.getElementById('disable_vibration');
-        var disableRippleVfxEl = document.getElementById('disable_ripple_vfx');
-        var disableTimerShakeEl = document.getElementById('disable_timer_shake');
+        var disableAnimationsEl = document.getElementById('disable_animations');
+        var disableDistanceInfoEl = document.getElementById('disable_distance_info');
         var darkThemeEl = document.getElementById('dark_theme');
         var bgFxEl = document.getElementById('bg_fx');
+        var aiKeyPanel = document.getElementById('ai_key_panel');
+        var endpointPanel = document.getElementById('endpoint_panel');
+        var fxPanel = document.getElementById('fx_panel');
 
-        // All background effects now render on any platform — rings,
-        // starfield, alert and cube all use pixel/line primitives that
-        // work on 1-bit aplite. Platform detection is instead used below
-        // to hide the AI-related inputs on aplite, since that hardware
-        // has no microphone for the dictation-driven assistant flow.
+        // Aplite has no microphone so the dictation-driven Ask flow is gated
+        // out entirely on that platform — hide the whole AI block instead of
+        // letting the user toggle it on to no effect.
         var platform = String(options._platform || '').toLowerCase();
         var isAplite = platform === 'aplite';
         if (isAplite) {
-            var aiGroupEl = document.getElementById('ai_settings_group');
-            var aiToggleEl = document.getElementById('ai_toggle_block');
-            if (aiGroupEl)  aiGroupEl.style.display = 'none';
-            if (aiToggleEl) aiToggleEl.style.display = 'none';
+            var aiBlock = document.getElementById('ai_toggle_block');
+            if (aiBlock) aiBlock.style.display = 'none';
         }
-        var serverSettingsGroupEl = document.getElementById('server_settings_group');
-        var aiSettingsGroupEl = document.getElementById('ai_settings_group');
+
+        // One-time migration: legacy split anim toggles fold into the new
+        // combined "Disable animations". If either side was off before, the
+        // combined toggle starts off too — preserves the user's preference
+        // through the rename without forcing them to reconfigure.
+        if (options.disable_animations === undefined &&
+            (isTruthyOption(options.disable_ripple_vfx) ||
+             isTruthyOption(options.disable_timer_shake))) {
+            options.disable_animations = true;
+        }
+
         serverUrlEl.value = options.server_url || serverBase;
         if (options.llm_api_key) {
             llmKeyEl.value = options.llm_api_key;
         }
         use24hrTimeEl.checked = isTruthyOption(options.use_24hr_time);
-        disableAiAssistantEl.checked = isTruthyOption(options.disable_ai_assistant);
+        // AI defaults DISABLED when no value is stored (matches PKJS
+        // aiAssistantDisabled() and the watch-side persist default).
+        disableAiAssistantEl.checked = (options.disable_ai_assistant === undefined ||
+                                        options.disable_ai_assistant === null ||
+                                        options.disable_ai_assistant === '')
+            ? true
+            : isTruthyOption(options.disable_ai_assistant);
         enableThirdPartyEndpointEl.checked = isTruthyOption(options.enable_third_party_endpoint);
         disableVibrationEl.checked = isTruthyOption(options.disable_vibration);
-        disableRippleVfxEl.checked = isTruthyOption(options.disable_ripple_vfx);
-        disableTimerShakeEl.checked = isTruthyOption(options.disable_timer_shake);
+        disableAnimationsEl.checked = isTruthyOption(options.disable_animations);
+        disableDistanceInfoEl.checked = isTruthyOption(options.disable_distance_info);
         darkThemeEl.checked = isTruthyOption(options.dark_theme);
         if (options.bg_fx !== undefined && options.bg_fx !== null) {
             bgFxEl.value = String(options.bg_fx);
         }
 
         function updateSectionVisibility() {
-            serverSettingsGroupEl.style.display = enableThirdPartyEndpointEl.checked ? 'block' : 'none';
-            // Aplite has no mic so the AI flow is gated out entirely; don't
-            // un-hide the API-key group even if the checkbox gets flipped.
-            if (!isAplite) {
-                aiSettingsGroupEl.style.display = disableAiAssistantEl.checked ? 'none' : 'block';
-            }
+            endpointPanel.classList.toggle('hidden', !enableThirdPartyEndpointEl.checked);
+            // Aplite hides the entire AI block above; the panel reveal here is
+            // a no-op there because the parent is display:none anyway.
+            aiKeyPanel.classList.toggle('hidden', disableAiAssistantEl.checked);
+            // FX dropdown only matters when animations are running.
+            fxPanel.classList.toggle('hidden', disableAnimationsEl.checked);
         }
 
         disableAiAssistantEl.addEventListener('change', updateSectionVisibility);
         enableThirdPartyEndpointEl.addEventListener('change', updateSectionVisibility);
+        disableAnimationsEl.addEventListener('change', updateSectionVisibility);
         updateSectionVisibility();
 
         // Dynamic Entry Management
@@ -889,10 +919,15 @@
                 disable_ai_assistant: disableAiAssistantEl.checked,
                 enable_third_party_endpoint: enableThirdPartyEndpointEl.checked,
                 disable_vibration: disableVibrationEl.checked,
-                disable_ripple_vfx: disableRippleVfxEl.checked,
+                disable_animations: disableAnimationsEl.checked,
                 bg_fx: parseInt(bgFxEl.value, 10) || 0,
-                disable_timer_shake: disableTimerShakeEl.checked,
-                dark_theme: darkThemeEl.checked
+                disable_distance_info: disableDistanceInfoEl.checked,
+                dark_theme: darkThemeEl.checked,
+                // Legacy split-anim flags removed — explicitly null them out
+                // so the PKJS storage doesn't keep stale values around once
+                // we've migrated forward.
+                disable_ripple_vfx: null,
+                disable_timer_shake: null
             };
             for (var i = 1; i <= entryCount; i++) {
                 var startIdEl = document.getElementById('entry' + i + '_start_id');
@@ -1465,14 +1500,16 @@
             }
 
             use24hrTimeEl.checked = false;
-            disableAiAssistantEl.checked = false;
+            // AI defaults DISABLED on reset, matching the first-launch behaviour.
+            disableAiAssistantEl.checked = true;
             enableThirdPartyEndpointEl.checked = false;
             disableVibrationEl.checked = false;
-            disableRippleVfxEl.checked = false;
-            disableTimerShakeEl.checked = false;
+            disableAnimationsEl.checked = false;
+            disableDistanceInfoEl.checked = false;
             darkThemeEl.checked = false;
             bgFxEl.value = '0';
             serverUrlEl.value = serverBase;
+            llmKeyEl.value = '';
             updateSectionVisibility();
 
             // First, clear all entries
