@@ -603,7 +603,14 @@
                 'Swanston St': 'Swnst St',
                 'Sydney Rd': 'Syd Rd',
                 'Queen Victoria Market': 'QVM',
-                'Barkly Square': 'Barkly Sq'
+                'Barkly Square': 'Barkly Sq',
+                'Royal Melbourne Hospital': 'RMH',
+                "Royal Children's Hospital": 'RCH',
+                'Melbourne University': 'Melb Uni',
+                'University of Melbourne': 'Melb Uni',
+                'Domain Interchange': 'Domain Int',
+                'Federation Square': 'Fed Sq',
+                "St Vincent's Plaza": 'St Vncnts'
             };
             for (var fullTram in tramAbbrevs) {
                 if (name.indexOf(fullTram) !== -1) {
@@ -616,6 +623,14 @@
             name = name.replace(/\bEast\b/gi, 'E');
             name = name.replace(/\bWest\b/gi, 'W');
             name = name.replace(/\bMount\b/gi, 'Mt');
+            // Generic word substitutions catch anything the named-stop list above
+            // missed (e.g. "Box Hill Hospital", "La Trobe University").
+            name = name.replace(/\bHospital\b/gi, 'Hosp');
+            name = name.replace(/\bUniversity\b/gi, 'Uni');
+            name = name.replace(/\bJunction\b/gi, 'Jct');
+            name = name.replace(/\bShopping Centre\b/gi, 'SC');
+            name = name.replace(/\bSquare\b/gi, 'Sq');
+            name = name.replace(/\bGardens\b/gi, 'Gdns');
 
             if (name.length <= maxLen) return name;
             return name.substring(0, maxLen - 3) + '...';
