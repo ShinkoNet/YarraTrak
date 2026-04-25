@@ -322,6 +322,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     case IN_QUERY_ERROR:
       query_window_show_error(data);
       break;
+    case IN_QUERY_PROGRESS:
+      query_window_show_progress(data);
+      break;
     case IN_QUERY_SAVED:
       // Agent stashed a favourite; PKJS is about to re-sync entries so we
       // just buzz to confirm and let the menu update itself.
@@ -344,12 +347,19 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
 
 static void send_outbound(uint8_t type, const char *data) {
   DictionaryIterator *iter;
-  if (app_message_outbox_begin(&iter) != APP_MSG_OK) {
+  AppMessageResult begin_res = app_message_outbox_begin(&iter);
+  if (begin_res != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "outbox_begin failed: type=%u res=%d",
+            (unsigned)type, (int)begin_res);
     return;
   }
   dict_write_uint8(iter, KEY_OUTBOUND_TYPE, type);
   dict_write_cstring(iter, KEY_OUTBOUND_DATA, data ? data : "");
-  app_message_outbox_send();
+  AppMessageResult send_res = app_message_outbox_send();
+  if (send_res != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "outbox_send failed: type=%u res=%d",
+            (unsigned)type, (int)send_res);
+  }
 }
 
 void protocol_send_ready(void) {

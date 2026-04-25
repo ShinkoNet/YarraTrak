@@ -284,6 +284,16 @@ void query_window_show_error(const char *message) {
   set_card_text("Error", message && message[0] ? message : "Query failed");
 }
 
+void query_window_show_progress(const char *label) {
+  if (!s_card_window) return;
+  // Preserve the "You: <transcription>" body, just retitle. Pass s_body_buf
+  // through a tmp because set_card_text writes into s_body_buf via strncpy.
+  char body_copy[BODY_TEXT_LEN];
+  strncpy(body_copy, s_body_buf, sizeof(body_copy) - 1);
+  body_copy[sizeof(body_copy) - 1] = '\0';
+  set_card_text(label && label[0] ? label : "Processing...", body_copy);
+}
+
 bool query_window_is_open(void) {
   return s_card_window != NULL;
 }
@@ -297,6 +307,7 @@ void query_window_start(void) { (void)0; }
 void query_window_show_result(const char *t)        { (void)t; }
 void query_window_show_clarification(char *p)       { (void)p; }
 void query_window_show_error(const char *m)         { (void)m; }
+void query_window_show_progress(const char *l)      { (void)l; }
 bool query_window_is_open(void) { return false; }
 
 #endif

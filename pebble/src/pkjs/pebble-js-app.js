@@ -32,6 +32,7 @@ var IN_QUERY_CLARIFY   = 10;
 var IN_QUERY_ERROR     = 11;
 var IN_QUERY_SAVED     = 12;
 var IN_ENTRY_SYNC_REPLACE = 13;
+var IN_QUERY_PROGRESS  = 14;  // data: progress label (e.g. "Thinking...")
 
 // Outbound (C -> JS) types.
 var OUT_READY       = 1;
@@ -648,6 +649,14 @@ function connect() {
                 handlePositionUpdate(msg);
                 return;
             }
+            // Server heartbeat: the agent can take 20s+ on a complex query,
+            // so the server pings 'received' on accept and 'reasoning' just
+            // before the LLM call. We extend the PKJS timeout per phase and
+            // forward a friendly label to the watch's Processing card.
+            if (msg.type === 'query_status' && msg.id != null) {
+                handleQueryStatus(msg);
+                return;
+            }
             // Everything else with an id → an AI query response / error /
             // clarification. The server also attaches learned_stop and
             // entry_config on the same frame; handleQueryMessage pulls
@@ -763,15 +772,11 @@ function startQuery(text) {
 
     var id = String(++nextQueryId);
     var queryText = truncate(String(text || ''), 400);
-    pendingQueries[id] = {
-        text: queryText,
-        timeout: setTimeout(function () {
-            if (pendingQueries[id]) {
-                delete pendingQueries[id];
-                sendToWatch(IN_QUERY_ERROR, 'Timed out after 30s');
-            }
-        }, 30000)
-    };
+    pendingQueries[id] = { text: queryText, timeout: null };
+    // Initial budget: 30s to land a transport ack from the server. If the
+    // server's `received` heartbeat lands, we extend; if it doesn't, the
+    // timeout fires and the watch sees an honest "No response from server."
+    armQueryTimeout(id, 30000, 'No response from server.');
 
     wsSend({
         type: 'query',
@@ -781,6 +786,33 @@ function startQuery(text) {
         llm_api_key: llmKey,
         query_history: queryHistory,
     });
+}
+
+function armQueryTimeout(id, ms, errMsg) {
+    var pending = pendingQueries[id];
+    if (!pending) return;
+    if (pending.timeout) clearTimeout(pending.timeout);
+    pending.timeout = setTimeout(function () {
+        if (pendingQueries[id]) {
+            delete pendingQueries[id];
+            sendToWatch(IN_QUERY_ERROR, errMsg);
+        }
+    }, ms);
+}
+
+function handleQueryStatus(msg) {
+    var pending = pendingQueries[msg.id];
+    if (!pending) return;
+    if (msg.phase === 'reasoning') {
+        // LLM running — give it a generous 120s.
+        armQueryTimeout(msg.id, 120000, 'Server timed out after 120s.');
+        sendToWatch(IN_QUERY_PROGRESS, 'Thinking...');
+    } else {
+        // 'received' or any other phase — server has the query, just bump
+        // the transport budget while we wait for reasoning to start.
+        armQueryTimeout(msg.id, 60000, 'Server timed out.');
+        sendToWatch(IN_QUERY_PROGRESS, 'Sent...');
+    }
 }
 
 function handleQueryMessage(msg) {
@@ -867,8 +899,15 @@ Pebble.addEventListener('ready', function () {
 
 Pebble.addEventListener('appmessage', function (e) {
     var p = e.payload || {};
-    var type = p[KEY_OUTBOUND_TYPE];
-    var data = p[KEY_OUTBOUND_DATA] || '';
+    // The real Pebble mobile app delivers payloads keyed by the symbolic
+    // names from appinfo.json appKeys ("OUTBOUND_TYPE", "OUTBOUND_DATA"),
+    // while pypkjs (emulator) delivers numeric keys (3, 4). Read both so
+    // the same JS works in both environments.
+    var type = p['OUTBOUND_TYPE'];
+    if (type === undefined) type = p[KEY_OUTBOUND_TYPE];
+    var data = p['OUTBOUND_DATA'];
+    if (data === undefined) data = p[KEY_OUTBOUND_DATA];
+    if (data == null) data = '';
     switch (type) {
         case OUT_READY:
             // Watch just booted / reopened; resend settings and current conn state.

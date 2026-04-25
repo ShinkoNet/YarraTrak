@@ -3097,7 +3097,16 @@ async def websocket_endpoint(
                         "error": "Empty query"
                     })
                     continue
-                
+
+                # Transport ack so PKJS can extend its timeout (the agent may
+                # take 20s+ on a complex query) and the watch can swap the
+                # Processing card title to confirm the server got us.
+                await websocket.send_json({
+                    "type": "query_status",
+                    "id": msg_id,
+                    "phase": "received",
+                })
+
                 try:
                     # Run speculative fetch with client-provided history
                     prefetched = await tools.speculative_fetch(query_history)
@@ -3110,6 +3119,13 @@ async def websocket_endpoint(
                     # for, e.g. "entry 7" while only 3 are filled.
                     subscribed = _favourite_subscriptions.get(websocket) or []
                     current_entries_count = len(subscribed)
+
+                    # LLM is about to start tool-calling; bump PKJS budget.
+                    await websocket.send_json({
+                        "type": "query_status",
+                        "id": msg_id,
+                        "phase": "reasoning",
+                    })
 
                     # Run agent with resolved key
                     result = await agent_engine.run_agent(
