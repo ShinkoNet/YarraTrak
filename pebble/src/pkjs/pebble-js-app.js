@@ -85,6 +85,13 @@ function boolOption(name) {
     return v === 'true' || v === '1' || v === true;
 }
 
+// ai starts off unless the user enables it
+function aiAssistantDisabled() {
+    var v = getOption('disable_ai_assistant');
+    if (v === null || v === undefined || v === '') return true;
+    return v === 'true' || v === '1' || v === true;
+}
+
 function getOrCreateClientId() {
     var id = getOption('client_id');
     if (!id) {
@@ -141,8 +148,8 @@ function migrateLegacyBtnKeys() {
             }
             var flagKeys = ['server_url', 'llm_api_key', 'use_24hr_time',
                             'disable_ai_assistant', 'enable_third_party_endpoint',
-                            'disable_vibration', 'disable_ripple_vfx',
-                            'disable_timer_shake', 'dark_theme', 'client_id'];
+                            'disable_vibration', 'disable_animations',
+                            'disable_distance_info', 'dark_theme', 'client_id'];
             for (var k = 0; k < flagKeys.length; k++) {
                 var fv = blob[flagKeys[k]];
                 if (fv !== undefined && fv !== null && fv !== '') {
@@ -199,7 +206,7 @@ function collectSettingsSnapshot() {
     var snapshot = {};
     var keys = ['server_url', 'llm_api_key', 'use_24hr_time', 'disable_ai_assistant',
                 'enable_third_party_endpoint', 'disable_vibration',
-                'disable_ripple_vfx', 'disable_timer_shake', 'dark_theme',
+                'disable_animations', 'disable_distance_info', 'dark_theme',
                 'bg_fx', 'entry_count', 'client_id'];
     for (var i = 0; i < keys.length; i++) {
         var v = getOption(keys[i]);
@@ -317,12 +324,13 @@ function runStartupDiagnosticIfStillOffline() {
 
 function syncFlagsToWatch() {
     var bits = 0;
-    if (boolOption('disable_vibration'))    bits |= 1;
-    if (boolOption('disable_ripple_vfx'))   bits |= 2;
-    if (boolOption('disable_timer_shake'))  bits |= 4;
-    if (boolOption('disable_ai_assistant')) bits |= 8;
-    if (boolOption('use_24hr_time'))        bits |= 16;
-    if (boolOption('dark_theme'))           bits |= 32;
+    // flag bits must match the watch
+    if (boolOption('disable_vibration'))      bits |= 1;
+    if (boolOption('disable_animations'))     bits |= 2;
+    if (boolOption('disable_distance_info'))  bits |= 4;
+    if (aiAssistantDisabled())                bits |= 8;
+    if (boolOption('use_24hr_time'))          bits |= 16;
+    if (boolOption('dark_theme'))             bits |= 32;
     var bg = parseInt(getOption('bg_fx') || '0', 10);
     if (isNaN(bg) || bg < 0 || bg > 4) bg = 0;
     sendToWatch(IN_FLAGS_SYNC, String(bits) + '|' + String(bg));
@@ -667,7 +675,7 @@ function truncate(str, max) {
 }
 
 function startQuery(text) {
-    if (boolOption('disable_ai_assistant')) {
+    if (aiAssistantDisabled()) {
         sendToWatch(IN_QUERY_ERROR, 'AI assistant disabled in settings');
         return;
     }

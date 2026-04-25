@@ -88,12 +88,12 @@ static void handle_flags_sync(char *data) {
   }
   int bits = atoi(data);
   Flags *f = &g_app_state.flags;
-  f->disable_vibration    = (bits & 1)  != 0;
-  f->disable_ripple_vfx   = (bits & 2)  != 0;
-  f->disable_timer_shake  = (bits & 4)  != 0;
-  f->disable_ai_assistant = (bits & 8)  != 0;
-  f->use_24hr_time        = (bits & 16) != 0;
-  f->dark_theme           = (bits & 32) != 0;
+  f->disable_vibration      = (bits & 1)  != 0;
+  f->disable_animations     = (bits & 2)  != 0;
+  f->disable_distance_info  = (bits & 4)  != 0;
+  f->disable_ai_assistant   = (bits & 8)  != 0;
+  f->use_24hr_time          = (bits & 16) != 0;
+  f->dark_theme             = (bits & 32) != 0;
   f->bg_fx = 0;
   if (bg_token && *bg_token) {
     int v = atoi(bg_token);

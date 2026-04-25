@@ -13,8 +13,9 @@ typedef enum {
 
 typedef struct {
   bool disable_vibration;
-  bool disable_ripple_vfx;   // master kill for all background fx
-  bool disable_timer_shake;
+  // one flag kills all motion
+  bool disable_animations;
+  bool disable_distance_info;  // suppress the "X.XX km away" rotation in the info row
   bool disable_ai_assistant;
   bool use_24hr_time;
   bool dark_theme;           // false = light (default), true = dark
