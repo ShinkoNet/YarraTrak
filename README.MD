@@ -82,7 +82,7 @@ pebble/          Native Pebble SDK 4.x watchapp
   config/        Settings HTML page (stop picker, flags)
 server/          FastAPI Python server
   api.py            REST + WebSocket endpoints
-  agent_engine.py   AI agent (Anthropic Claude)
+  agent_engine.py   AI agent
   tools.py          Agent tool implementations
   ptv_client.py     PTV Timetable API client
   *.json            Pre-built station databases
