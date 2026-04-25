@@ -484,7 +484,17 @@ def resolve_trip_patterns(
             start_seq = dir_info.get("seq")
             dest_seq = dest_dirs.get(dir_id, {}).get("seq")
 
-            if start_seq is not None and dest_seq is not None and start_seq < dest_seq:
+            # In stops_tram.json each side of a paired tram platform has its
+            # own stop_id; the side NOT served by trams travelling in this
+            # direction stores `seq=0` as a sentinel. Treating that as a
+            # legitimate origin lets us "resolve" a direction the user can't
+            # actually board, and PTV then returns zero matching departures
+            # ("Waiting..." forever). Require both ends to be real (>0) stops.
+            if (
+                start_seq is not None and dest_seq is not None
+                and start_seq > 0 and dest_seq > 0
+                and start_seq < dest_seq
+            ):
                 patterns.append({
                     "route_id": int(route_id),
                     "route_name": route_info.get("name", ""),
@@ -738,8 +748,15 @@ ACTION: Call return_error to tell the user: "Sorry, {start_name} and {dest_name}
         start_seq = dir_info.get("seq")
         dest_dir_info = dest_routes.get(shared_route, {}).get("dirs", {}).get(dir_id, {})
         dest_seq = dest_dir_info.get("seq")
-        
-        if start_seq is not None and dest_seq is not None and start_seq < dest_seq:
+
+        # seq=0 is the "this platform isn't served in this direction" sentinel
+        # for paired tram stops — see resolve_trip_patterns. Skip those or
+        # we'll lock in a direction the user can't actually board.
+        if (
+            start_seq is not None and dest_seq is not None
+            and start_seq > 0 and dest_seq > 0
+            and start_seq < dest_seq
+        ):
             direction_id = int(dir_id)
             direction_name = dir_info.get("name", "")
             break

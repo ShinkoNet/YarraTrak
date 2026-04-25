@@ -889,10 +889,14 @@
         // direction had startSeq < destSeq, which could be the wrong way
         // if the user guessed wrong.
         //
-        // Rule: for each sibling, walk its `routes[r].dirs[d]` entries and
-        // collect the directions where this sibling has `seq === 0` — that
-        // means "a tram departs toward this direction from here". These
-        // are the boarding directions for this physical side.
+        // Rule: in stops_tram.json, `seq` is the position along that
+        // direction's stop sequence — but `seq === 0` is a sentinel meaning
+        // "this physical platform is NOT served by trams travelling in this
+        // direction" (the OPPOSITE-side platform handles them). So a
+        // platform's true boarding directions are those with seq > 0.
+        // Verified empirically against PTV departures: stop 2822 (RMH east
+        // side) has dir 10 (Coburg) seq=7 / dir 11 seq=0, and PTV returns
+        // ONLY dir 10 departures from that stop_id.
         function getBoardingDirections(stop) {
             var out = [];
             if (!stop || !stop.routes) return out;
@@ -900,7 +904,7 @@
                 var route = stop.routes[routeId];
                 var dirs = route.dirs || {};
                 for (var dirId in dirs) {
-                    if (dirs[dirId] && dirs[dirId].seq === 0) {
+                    if (dirs[dirId] && dirs[dirId].seq > 0) {
                         out.push({
                             routeId: routeId,
                             routeName: route.name || '',
@@ -963,7 +967,12 @@
             return destinations;
         }
 
-        // Resolve direction_id based on stop sequences
+        // Resolve direction_id based on stop sequences. seq === 0 is a
+        // "not served in this direction" sentinel (see getBoardingDirections),
+        // so only consider directions where the start platform has a real
+        // (positive) seq — otherwise we'd happily resolve a direction the
+        // user can't actually board, and the favourite would never produce
+        // departures.
         function resolveDirection(startStopId, destStopId, routeType) {
             var stations = stationsByType[routeType] || [];
             var startStation = stations.find(s => s.stop_id == startStopId);
@@ -984,7 +993,7 @@
                     var startSeq = dirs[dirId].seq;
                     var destSeq = destRoute.dirs && destRoute.dirs[dirId] ? destRoute.dirs[dirId].seq : undefined;
 
-                    if (startSeq !== undefined && destSeq !== undefined && startSeq < destSeq) {
+                    if (startSeq > 0 && destSeq > 0 && startSeq < destSeq) {
                         return parseInt(dirId);
                     }
                 }
@@ -1189,7 +1198,11 @@
                         var startRoute = startStation && startStation.routes[s._sharedRoute];
                         var startSeq = startRoute && startRoute.dirs && startRoute.dirs[preDir] ? startRoute.dirs[preDir].seq : -1;
                         var destSeq = r.dirs[preDir].seq;
-                        return destSeq > startSeq;
+                        // seq=0 is the "not served in this direction" sentinel —
+                        // exclude both the wrong-side start (defensive; preDir
+                        // should already come from a seq>0 sibling) and any dest
+                        // platform that doesn't actually board preDir trams.
+                        return startSeq > 0 && destSeq > 0 && destSeq > startSeq;
                     });
                 }
 
