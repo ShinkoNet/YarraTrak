@@ -645,9 +645,12 @@ Options:
     start_station = _resolve_station_alias(start_station)
     destination = _resolve_station_alias(destination)
 
-    # Convert route type string to int
-    rt_map = {"TRAIN": RouteType.TRAIN, "TRAM": RouteType.TRAM, "VLINE": RouteType.VLINE, "BUS": RouteType.BUS}
-    rt = rt_map.get(route_type.upper(), RouteType.TRAIN)
+    # route type might already be numeric
+    if isinstance(route_type, int):
+        rt = RouteType(route_type) if route_type in RouteType._value2member_map_ else RouteType.TRAIN
+    else:
+        rt_map = {"TRAIN": RouteType.TRAIN, "TRAM": RouteType.TRAM, "VLINE": RouteType.VLINE, "BUS": RouteType.BUS}
+        rt = rt_map.get(str(route_type).upper(), RouteType.TRAIN)
     
     # Load station database
     stations = _load_station_db(rt)
