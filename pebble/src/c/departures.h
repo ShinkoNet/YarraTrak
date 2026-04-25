@@ -11,7 +11,8 @@
 #define RUN_REF_LEN      24
 #define PLATFORM_LEN     8
 #define ROUTE_ID_LEN     12
-#define DISRUPTION_LEN   32
+// long disruption labels need room
+#define DISRUPTION_LEN   48
 #define VEHICLE_DESC_LEN 40
 
 typedef struct {
