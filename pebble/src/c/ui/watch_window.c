@@ -28,6 +28,9 @@ static char s_platform_badge[8];    // e.g. "P2", "P13", "PA" — "" if no platf
 static char s_time_buf[10];         // "17:27" or "5:27 PM" — "" if unknown
 static char s_route_buf[48];
 static char s_bottom_buf[48];
+// "1.23 km away" - populated only for trains while a fresh position update is in
+static char s_distance_buf[20];
+static bool s_info_show_distance = false;  // current rotation slot
 
 // skip repainting unchanged text
 #define HASH_INITIAL 1u
@@ -123,6 +126,17 @@ static void info_layer_update_proc(Layer *layer, GContext *ctx) {
 
   GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
 
+  if (s_info_show_distance && s_distance_buf[0]) {
+    // badge, time and distance share one row
+    const int16_t BOX_H = 20;
+    int16_t y = (bounds.size.h - BOX_H) / 2;
+    graphics_draw_text(ctx, s_distance_buf, font,
+                       GRect(0, y - 3, bounds.size.w, BOX_H),
+                       GTextOverflowModeTrailingEllipsis,
+                       GTextAlignmentCenter, NULL);
+    return;
+  }
+
   GSize plat_sz = GSize(0, 0);
   if (s_platform_badge[0]) {
     plat_sz = graphics_text_layout_get_content_size(
@@ -198,10 +212,9 @@ static void cancel_running_anim(void) {
   s_shake_anim = NULL;
 }
 
-// static bg only needs one paint
+// one flag kills all motion
 static bool animations_suppressed(void) {
-  return g_app_state.flags.disable_timer_shake ||
-         g_app_state.flags.disable_ripple_vfx;
+  return g_app_state.flags.disable_animations;
 }
 
 static void trigger_bounce(void) {
@@ -363,32 +376,42 @@ static void render(void) {
     snprintf(s_platform_badge, sizeof(s_platform_badge), "P%s", dep->platform);
   }
 
+  // distance only shows for fresh train positions
+  bool have_position = (g_app_state.watched_distance_km_x100 != INT32_MIN &&
+                        g_app_state.watched_distance_km_x100 > 0 &&
+                        dep && strcmp(g_app_state.watched_run_ref, dep->run_ref) == 0);
+  s_distance_buf[0] = '\0';
+  if (have_position && e->route_type == 0 /* metro train */ &&
+      !g_app_state.flags.disable_distance_info) {
+    int32_t whole = g_app_state.watched_distance_km_x100 / 100;
+    int32_t frac = g_app_state.watched_distance_km_x100 % 100;
+    if (frac < 0) frac = -frac;
+    snprintf(s_distance_buf, sizeof(s_distance_buf),
+             "%ld.%02ld km away", (long)whole, (long)frac);
+  }
+
+  // distance rotates on the same slow tick
+  bool want_distance_now = (s_distance_buf[0] && (time(NULL) / 3) % 2 == 1);
+
   // dirty the info row when its inputs move
   uint32_t plat_h = hash_str(s_platform_badge);
   uint32_t time_h = hash_str(s_time_buf);
   if (s_info_layer &&
-      (plat_h != s_platform_badge_hash || time_h != s_time_buf_hash)) {
+      (plat_h != s_platform_badge_hash || time_h != s_time_buf_hash ||
+       want_distance_now != s_info_show_distance)) {
     layer_mark_dirty(s_info_layer);
     s_platform_badge_hash = plat_h;
     s_time_buf_hash = time_h;
+    s_info_show_distance = want_distance_now;
   }
 
-  // Bottom: disruption, live distance (metro only, non-zero), or vehicle desc.
+  // bottom row favours disruptions
   s_bottom_buf[0] = '\0';
   const char *bottom_disruption = NULL;
-  bool have_position = (g_app_state.watched_distance_km_x100 != INT32_MIN &&
-                        g_app_state.watched_distance_km_x100 > 0 &&
-                        dep && strcmp(g_app_state.watched_run_ref, dep->run_ref) == 0);
-
   if (e->disruption_count > 0) {
     uint32_t which = (uint32_t)(time(NULL) / 3) % e->disruption_count;
     bottom_disruption = e->disruptions[which];
     strncpy(s_bottom_buf, bottom_disruption, sizeof(s_bottom_buf) - 1);
-  } else if (have_position && e->route_type == 0 /* metro train */) {
-    int32_t whole = g_app_state.watched_distance_km_x100 / 100;
-    int32_t frac = g_app_state.watched_distance_km_x100 % 100;
-    if (frac < 0) frac = -frac;
-    snprintf(s_bottom_buf, sizeof(s_bottom_buf), "%ld.%02ld km away", (long)whole, (long)frac);
   } else if (g_app_state.watched_vehicle_desc[0] &&
              dep && strcmp(g_app_state.watched_run_ref, dep->run_ref) == 0) {
     strncpy(s_bottom_buf, g_app_state.watched_vehicle_desc, sizeof(s_bottom_buf) - 1);
@@ -590,6 +613,8 @@ static void window_unload(Window *window) {
   s_last_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
   s_now_pattern_fired = false;
+  s_distance_buf[0] = '\0';
+  s_info_show_distance = false;
   haptics_cancel();
   protocol_send_watch_stop();
 }
