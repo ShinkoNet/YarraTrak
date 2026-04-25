@@ -53,6 +53,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Battle-test artifacts (regenerated per run)
+scripts/battle_test_report.md
+
 # API Keys and Secrets
 secrets.json
 config.json

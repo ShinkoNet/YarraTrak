@@ -4,7 +4,7 @@ websockets
 mcp[cli]
 httpx
 python-dotenv
-anthropic
+openai
 pydantic
 python-multipart
 pytest
