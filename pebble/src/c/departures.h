@@ -11,7 +11,12 @@
 #define RUN_REF_LEN      24
 #define PLATFORM_LEN     8
 #define ROUTE_ID_LEN     12
-#define DISRUPTION_LEN   32
+// 48 not 32: "Starts/Ends {station} Tomorrow" hits 36-38 chars for the long
+// metro names (North Melbourne, Melbourne Central, Flagstaff Gardens) and
+// the old cap silently chopped the trailing letter — "South Yarra Tomorrow"
+// landed as "South Yarra Tomorro". 48 also matches s_bottom_buf so the
+// watch never has to re-truncate what the protocol already accepted.
+#define DISRUPTION_LEN   48
 #define VEHICLE_DESC_LEN 40
 
 typedef struct {
