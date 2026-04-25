@@ -510,19 +510,20 @@ static void window_load(Window *window) {
     layer_add_child(root, s_fx_layer);
   }
 
-  s_status_layer = text_layer_create(GRect(0, 4, bounds.size.w, 18));
+  s_status_layer = text_layer_create(GRect(0, 2, bounds.size.w, 16));
   text_layer_set_font(s_status_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
   text_layer_set_text_color(s_status_layer, fg);
   text_layer_set_background_color(s_status_layer, GColorClear);
   text_layer_set_text_alignment(s_status_layer, GTextAlignmentCenter);
   layer_add_child(root, text_layer_get_layer(s_status_layer));
 
-  s_route_layer = text_layer_create(GRect(4, 22, bounds.size.w - 8, 20));
+  // route text gets two lines
+  s_route_layer = text_layer_create(GRect(4, 18, bounds.size.w - 8, 32));
   text_layer_set_font(s_route_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
   text_layer_set_text_color(s_route_layer, fg);
   text_layer_set_background_color(s_route_layer, GColorClear);
   text_layer_set_text_alignment(s_route_layer, GTextAlignmentCenter);
-  text_layer_set_overflow_mode(s_route_layer, GTextOverflowModeTrailingEllipsis);
+  text_layer_set_overflow_mode(s_route_layer, GTextOverflowModeWordWrap);
   layer_add_child(root, text_layer_get_layer(s_route_layer));
 
   s_countdown_home_frame = GRect(0, bounds.size.h / 2 - 32, bounds.size.w, 48);
@@ -537,12 +538,13 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_info_layer, info_layer_update_proc);
   layer_add_child(root, s_info_layer);
 
-  s_bottom_layer = text_layer_create(GRect(4, bounds.size.h - 40, bounds.size.w - 8, 18));
+  // progress bar changes every second
+  s_bottom_layer = text_layer_create(GRect(4, bounds.size.h - 42, bounds.size.w - 8, 32));
   text_layer_set_font(s_bottom_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
   text_layer_set_text_color(s_bottom_layer, fg);
   text_layer_set_background_color(s_bottom_layer, GColorClear);
   text_layer_set_text_alignment(s_bottom_layer, GTextAlignmentCenter);
-  text_layer_set_overflow_mode(s_bottom_layer, GTextOverflowModeTrailingEllipsis);
+  text_layer_set_overflow_mode(s_bottom_layer, GTextOverflowModeWordWrap);
   layer_add_child(root, text_layer_get_layer(s_bottom_layer));
 
   s_progress_layer = layer_create(GRect(0, bounds.size.h - 6, bounds.size.w, 4));
