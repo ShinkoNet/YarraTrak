@@ -70,9 +70,13 @@ static uint32_t fx_rand(uint32_t *s) {
 
 #if defined(PBL_COLOR)
 static GColor star_color(uint8_t z) {
-  if (z < 60)  return GColorWhite;
-  if (z < 160) return GColorLightGray;
-  return GColorDarkGray;
+  // Cerulean palette to match the cube wires and ripple rings — the old
+  // grayscale shading made the starfield look monochrome on a colour
+  // platform. Kept the depth gradient (closest = brightest) so the
+  // illusion of motion still reads.
+  if (z < 60)  return GColorWhite;            // popping up close
+  if (z < 160) return GColorVividCerulean;    // matches theme_accent / cube
+  return GColorBlueMoon;                      // recedes into the deep
 }
 
 static GColor cube_color(void) {

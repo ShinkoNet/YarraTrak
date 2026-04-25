@@ -411,16 +411,16 @@
             </span>
             <input type="checkbox" id="disable_animations">
         </label>
-        <div id="fx_panel" class="conditional-panel">
-            <div class="form-group" style="margin-bottom: 0;">
-                <label for="bg_fx" style="margin-bottom: 6px;">Background FX style</label>
-                <select id="bg_fx">
-                    <option value="0">Rings — concentric ripple</option>
-                    <option value="1">Starfield — fly through space</option>
-                    <option value="4">Cube — rotating wireframe</option>
-                </select>
-                <div class="hint">Pick the demoscene vibe you want behind the countdown.</div>
-            </div>
+        <div class="divider"></div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="bg_fx" style="margin-bottom: 6px;">Background FX style</label>
+            <select id="bg_fx">
+                <option value="0">Rings — concentric ripple</option>
+                <option value="1">Starfield — fly through space</option>
+                <option value="4">Cube — rotating wireframe</option>
+            </select>
+            <div class="hint">Pick the demoscene vibe behind the countdown. Has no effect while animations are disabled.</div>
         </div>
         <div class="divider"></div>
 
@@ -490,7 +490,6 @@
         var bgFxEl = document.getElementById('bg_fx');
         var aiKeyPanel = document.getElementById('ai_key_panel');
         var endpointPanel = document.getElementById('endpoint_panel');
-        var fxPanel = document.getElementById('fx_panel');
 
         // Aplite has no microphone so the dictation-driven Ask flow is gated
         // out entirely on that platform — hide the whole AI block instead of
@@ -538,13 +537,10 @@
             // Aplite hides the entire AI block above; the panel reveal here is
             // a no-op there because the parent is display:none anyway.
             aiKeyPanel.classList.toggle('hidden', disableAiAssistantEl.checked);
-            // FX dropdown only matters when animations are running.
-            fxPanel.classList.toggle('hidden', disableAnimationsEl.checked);
         }
 
         disableAiAssistantEl.addEventListener('change', updateSectionVisibility);
         enableThirdPartyEndpointEl.addEventListener('change', updateSectionVisibility);
-        disableAnimationsEl.addEventListener('change', updateSectionVisibility);
         updateSectionVisibility();
 
         // Dynamic Entry Management
