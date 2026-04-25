@@ -478,7 +478,12 @@ def resolve_trip_patterns(
             start_seq = dir_info.get("seq")
             dest_seq = dest_dirs.get(dir_id, {}).get("seq")
 
-            if start_seq is not None and dest_seq is not None and start_seq < dest_seq:
+            # paired tram stops use seq 0 for the wrong side
+            if (
+                start_seq is not None and dest_seq is not None
+                and start_seq > 0 and dest_seq > 0
+                and start_seq < dest_seq
+            ):
                 patterns.append({
                     "route_id": int(route_id),
                     "route_name": route_info.get("name", ""),
@@ -720,8 +725,13 @@ ACTION: Call return_error to tell the user: "Sorry, {start_name} and {dest_name}
         start_seq = dir_info.get("seq")
         dest_dir_info = dest_routes.get(shared_route, {}).get("dirs", {}).get(dir_id, {})
         dest_seq = dest_dir_info.get("seq")
-        
-        if start_seq is not None and dest_seq is not None and start_seq < dest_seq:
+
+        # paired tram stops use seq 0 for the wrong side
+        if (
+            start_seq is not None and dest_seq is not None
+            and start_seq > 0 and dest_seq > 0
+            and start_seq < dest_seq
+        ):
             direction_id = int(dir_id)
             direction_name = dir_info.get("name", "")
             break

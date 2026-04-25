@@ -869,7 +869,7 @@
                 var route = stop.routes[routeId];
                 var dirs = route.dirs || {};
                 for (var dirId in dirs) {
-                    if (dirs[dirId] && dirs[dirId].seq === 0) {
+                    if (dirs[dirId] && dirs[dirId].seq > 0) {
                         out.push({
                             routeId: routeId,
                             routeName: route.name || '',
@@ -925,7 +925,7 @@
             return destinations;
         }
 
-        // Resolve direction_id based on stop sequences
+        // seq 0 means that side is not served
         function resolveDirection(startStopId, destStopId, routeType) {
             var stations = stationsByType[routeType] || [];
             var startStation = stations.find(s => s.stop_id == startStopId);
@@ -946,7 +946,7 @@
                     var startSeq = dirs[dirId].seq;
                     var destSeq = destRoute.dirs && destRoute.dirs[dirId] ? destRoute.dirs[dirId].seq : undefined;
 
-                    if (startSeq !== undefined && destSeq !== undefined && startSeq < destSeq) {
+                    if (startSeq > 0 && destSeq > 0 && startSeq < destSeq) {
                         return parseInt(dirId);
                     }
                 }
@@ -1137,7 +1137,8 @@
                         var startRoute = startStation && startStation.routes[s._sharedRoute];
                         var startSeq = startRoute && startRoute.dirs && startRoute.dirs[preDir] ? startRoute.dirs[preDir].seq : -1;
                         var destSeq = r.dirs[preDir].seq;
-                        return destSeq > startSeq;
+                        // skip tram platforms not served this way
+                        return startSeq > 0 && destSeq > 0 && destSeq > startSeq;
                     });
                 }
 
