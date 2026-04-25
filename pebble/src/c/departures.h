@@ -18,11 +18,8 @@ typedef struct {
   bool has_data;
   int32_t minutes;            // Minutes-since-now fallback. -1 = unknown.
   time_t departure_unix;      // UTC epoch; 0 = unknown.
-  uint8_t route_type;
-  int32_t direction_id;
   char run_ref[RUN_REF_LEN];
   char platform[PLATFORM_LEN];
-  char route_id[ROUTE_ID_LEN];
 } Departure;
 
 typedef struct {
@@ -35,6 +32,7 @@ typedef struct {
   int32_t stop_id;
   int32_t direction_id;
   uint8_t route_type;
+  char route_id[ROUTE_ID_LEN];   // route invariant per favourite — lifted out of Departure
 
   Departure departures[MAX_DEPS_PER_ENTRY];
   uint8_t disruption_count;

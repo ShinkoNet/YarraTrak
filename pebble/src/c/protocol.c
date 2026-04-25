@@ -157,7 +157,12 @@ static void handle_entry_sync(char *data) {
 //   "button_id|dep1|dep2|disruption_labels"
 // dep = "minutes;departure_unix;route_type;direction_id;run_ref;platform;route_id"
 // disruption_labels = "label1\x1flabel2..."  (using ';' as separator since \x1f is awkward)
-static void parse_departure(char *blob, Departure *out) {
+//
+// route_type / direction_id / route_id are invariant per favourite — they're
+// stored on Entry. The wire format still ships them per-departure for back
+// compat with PKJS; route_id is harvested into the parent Entry, the others
+// are discarded since ENTRY_SYNC has already populated them.
+static void parse_departure(char *blob, Departure *out, char *route_id_out, size_t route_id_size) {
   memset(out, 0, sizeof(*out));
   if (!blob || !blob[0]) {
     out->has_data = false;
@@ -173,11 +178,13 @@ static void parse_departure(char *blob, Departure *out) {
 
   out->minutes         = fc > 0 && f[0][0] ? atoi(f[0]) : -1;
   out->departure_unix  = fc > 1 && f[1][0] ? (time_t)atol(f[1]) : 0;
-  out->route_type      = fc > 2 ? (uint8_t)atoi(f[2]) : 0;
-  out->direction_id    = fc > 3 ? atoi(f[3]) : 0;
+  // f[2] (route_type) and f[3] (direction_id) ignored — Entry already has them.
   copy_bounded(out->run_ref,  fc > 4 ? f[4] : "", sizeof(out->run_ref));
   copy_bounded(out->platform, fc > 5 ? f[5] : "", sizeof(out->platform));
-  copy_bounded(out->route_id, fc > 6 ? f[6] : "", sizeof(out->route_id));
+
+  if (route_id_out && route_id_size && fc > 6 && f[6][0]) {
+    copy_bounded(route_id_out, f[6], route_id_size);
+  }
 
   out->has_data = (out->minutes >= 0) || (out->departure_unix != 0);
 }
@@ -207,7 +214,8 @@ static void handle_fav_update(char *data) {
   if (dep_count > MAX_DEPS_PER_ENTRY) dep_count = MAX_DEPS_PER_ENTRY;
   for (int i = 0; i < dep_count; i++) {
     if (parts[1 + i][0]) {
-      parse_departure(parts[1 + i], &e->departures[i]);
+      parse_departure(parts[1 + i], &e->departures[i],
+                      e->route_id, sizeof(e->route_id));
     }
   }
 
@@ -266,44 +274,30 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       handle_flags_sync(data);
       break;
     case IN_ENTRY_SYNC:
+    case IN_ENTRY_SYNC_BULK:
+    case IN_ENTRY_SYNC_REPLACE:
+      // All three follow the same shape: cancel any pending clear-refresh,
+      // optionally wipe the existing set (REPLACE only), parse one or more
+      // \x1f-separated entry chunks, then persist + refresh + close any
+      // open watch face. Folded together so we don't carry three near-
+      // identical copies of the boilerplate.
       cancel_pending_clear_refresh();
-      handle_entry_sync(data);
-      settings_store_save_entries();
-      menu_window_refresh();
-      if (watch_window_is_open()) watch_window_close();
-      break;
-    case IN_ENTRY_SYNC_BULK: {
-      // "entry1\x1fentry2\x1f..." where each sub-chunk is the same format
-      // IN_ENTRY_SYNC accepts: "index|name;full_name;stop_id;dest_name;
-      // full_dest_name;dest_id;route_type;direction_id".
-      cancel_pending_clear_refresh();
-      char *chunks[MAX_ENTRIES];
-      int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
-      for (int i = 0; i < cc; i++) {
-        if (chunks[i][0]) handle_entry_sync(chunks[i]);
+      if (type == IN_ENTRY_SYNC_REPLACE) {
+        app_state_clear_entries();
+      }
+      if (type == IN_ENTRY_SYNC) {
+        handle_entry_sync(data);
+      } else {
+        char *chunks[MAX_ENTRIES];
+        int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
+        for (int i = 0; i < cc; i++) {
+          if (chunks[i][0]) handle_entry_sync(chunks[i]);
+        }
       }
       settings_store_save_entries();
       menu_window_refresh();
       if (watch_window_is_open()) watch_window_close();
       break;
-    }
-    case IN_ENTRY_SYNC_REPLACE: {
-      // Single-message atomic replacement: clear then apply in one handler,
-      // no preceding IN_CLEAR_ENTRIES. Only used when PKJS knows the whole
-      // entry set fits inside one AppMessage (the common case). Multi-chunk
-      // syncs still use IN_CLEAR_ENTRIES + IN_ENTRY_SYNC_BULK.
-      cancel_pending_clear_refresh();
-      app_state_clear_entries();
-      char *chunks[MAX_ENTRIES];
-      int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
-      for (int i = 0; i < cc; i++) {
-        if (chunks[i][0]) handle_entry_sync(chunks[i]);
-      }
-      settings_store_save_entries();
-      menu_window_refresh();
-      if (watch_window_is_open()) watch_window_close();
-      break;
-    }
     case IN_CLEAR_ENTRIES:
       app_state_clear_entries();
       settings_store_save_entries();
@@ -391,23 +385,9 @@ void protocol_init(void) {
   app_message_register_inbox_dropped(inbox_dropped_handler);
   app_message_register_outbox_failed(outbox_failed_handler);
 
-  // Bulk entry syncs (IN_ENTRY_SYNC_REPLACE / IN_ENTRY_SYNC_BULK) target
-  // 960-byte payloads; once the Dict+Tuple overhead lands on top, the
-  // inbox genuinely needs ~1100 bytes. The previous 1024 request cut it
-  // too close on aplite — with the overhead factored in, incoming bulk
-  // messages were getting dropped silently, leaving the watch stuck on
-  // "Waiting..." for live departures. 1536 is comfortable headroom on
-  // every target platform; fall back to a smaller pair if the kernel
-  // refuses the allocation so we at least keep small messages working.
-  AppMessageResult r = app_message_open(1536, 256);
-  if (r != APP_MSG_OK) {
-    APP_LOG(APP_LOG_LEVEL_ERROR,
-            "app_message_open(1536) failed (%d); retrying smaller", r);
-    r = app_message_open(1024, 256);
-    if (r != APP_MSG_OK) {
-      APP_LOG(APP_LOG_LEVEL_ERROR,
-              "app_message_open(1024) also failed (%d); falling back to 512", r);
-      app_message_open(512, 256);
-    }
-  }
+  // Cap explicitly to keep aplite heap usage bounded. Protocol messages are
+  // small (entry syncs ~250B, fav updates ~300B, watch_start ~96B). Bulk
+  // entry syncs target 960-byte payloads; with two-tuple Dict overhead
+  // (~17 B) that lands at ~977 B, leaving 47 B of headroom inside 1024.
+  app_message_open(1024, 256);
 }

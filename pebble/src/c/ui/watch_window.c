@@ -24,22 +24,40 @@ static AppTimer  *s_tick_timer = NULL;
 
 static char s_status_buf[24];
 static char s_countdown_buf[16];
-static char s_countdown_prev[16];
 static char s_platform_badge[8];    // e.g. "P2", "P13", "PA" — "" if no platform
 static char s_time_buf[10];         // "17:27" or "5:27 PM" — "" if unknown
 static char s_route_buf[48];
 static char s_bottom_buf[48];
 
-// Shadow buffers of the last value fed into each text layer. Used to skip
-// set_text calls that would mark the layer dirty without actually changing
-// what it displays. Pebble's OS leaves the display static when no drawing
-// calls land, so this saves a per-tick redraw of every text layer.
-static char s_status_prev[24];
-static char s_route_prev[48];
-static char s_bottom_prev[48];
-static char s_platform_badge_prev[8];
-static char s_time_buf_prev[10];
+// 32-bit hashes of the last value fed into each text layer. Collisions are
+// astronomically unlikely across the bounded set of strings this UI ever
+// shows, and one missed paint just delays a refresh by a tick.
+// djb2 — sentinel 1 means "never set" so the first paint always lands.
+#define HASH_INITIAL 1u
+static uint32_t s_status_hash;
+static uint32_t s_route_hash;
+static uint32_t s_bottom_hash;
+static uint32_t s_platform_badge_hash;
+static uint32_t s_time_buf_hash;
+static uint32_t s_countdown_hash;
 static GColor s_bottom_color_prev;
+
+static uint32_t hash_str(const char *s) {
+  uint32_t h = 5381u;
+  while (*s) { h = ((h << 5) + h) ^ (uint8_t)*s++; }
+  return h ? h : 2u;  // never collide with HASH_INITIAL
+}
+
+// Push `buf` to `layer` only if its hash differs from `*stored`. Same idea
+// as the inline pattern but factored out so the four callsites in render()
+// don't each emit their own copy of the strncpy/set_text dance.
+static void set_text_if_changed(TextLayer *layer, const char *buf, uint32_t *stored) {
+  uint32_t h = hash_str(buf);
+  if (h != *stored) {
+    text_layer_set_text(layer, buf);
+    *stored = h;
+  }
+}
 
 static int32_t s_last_vibrated_minutes = -1;
 static bool    s_now_pattern_fired = false;  // NOW played for the active run
@@ -47,6 +65,12 @@ static char s_last_run_ref[RUN_REF_LEN] = "";
 static GRect s_countdown_home_frame;
 static Animation *s_shake_anim = NULL;
 static int32_t s_last_seconds = INT32_MAX;  // previous render's seconds_until
+
+// Inputs of the last s_time_buf format. localtime+strftime get called every
+// second otherwise; cache so we skip both when neither dep nor 24h flag has
+// changed (the common case, since dep->departure_unix is fixed per service).
+static time_t s_time_buf_dep_unix = 0;
+static bool   s_time_buf_24hr = false;
 
 static void schedule_tick(void);
 
@@ -82,9 +106,9 @@ static void send_watch_start_if_needed(Departure *dep) {
   protocol_send_watch_start(g_app_state.watching_button,
                             dep->run_ref,
                             e->stop_id,
-                            dep->route_type,
-                            dep->route_id,
-                            dep->direction_id);
+                            e->route_type,
+                            e->route_id,
+                            e->direction_id);
 }
 
 // LECO renders only digits, colon and spaces. Anything else (e.g. "NOW!",
@@ -301,19 +325,11 @@ static void render(void) {
   // this pass, so suppress set_text when the buffer matches the last
   // render — every set_text marks the TextLayer dirty even if the string
   // is unchanged.
-  if (strcmp(s_status_prev, s_status_buf) != 0) {
-    text_layer_set_text(s_status_layer, s_status_buf);
-    strncpy(s_status_prev, s_status_buf, sizeof(s_status_prev) - 1);
-    s_status_prev[sizeof(s_status_prev) - 1] = '\0';
-  }
+  set_text_if_changed(s_status_layer, s_status_buf, &s_status_hash);
 
   // Route text
   fmt_watch_route(e, s_route_buf, sizeof(s_route_buf));
-  if (strcmp(s_route_prev, s_route_buf) != 0) {
-    text_layer_set_text(s_route_layer, s_route_buf);
-    strncpy(s_route_prev, s_route_buf, sizeof(s_route_prev) - 1);
-    s_route_prev[sizeof(s_route_prev) - 1] = '\0';
-  }
+  set_text_if_changed(s_route_layer, s_route_buf, &s_route_hash);
 
   Departure *dep = get_watched_departure();
 
@@ -321,7 +337,8 @@ static void render(void) {
   int32_t sec = dep ? departure_seconds_until(dep) : INT32_MAX;
   fmt_countdown(sec, dep, s_countdown_buf, sizeof(s_countdown_buf));
 
-  bool changed = strcmp(s_countdown_prev, s_countdown_buf) != 0;
+  uint32_t cd_hash = hash_str(s_countdown_buf);
+  bool changed = cd_hash != s_countdown_hash;
   if (changed) {
     // Pick the countdown font based on content width:
     // - "NOW!" / "--" / "1:23 hr" etc.  -> proportional Bitham-42
@@ -340,8 +357,7 @@ static void render(void) {
     }
     text_layer_set_font(s_countdown_layer, fonts_get_system_font(font_key));
     text_layer_set_text(s_countdown_layer, s_countdown_buf);
-    strncpy(s_countdown_prev, s_countdown_buf, sizeof(s_countdown_prev) - 1);
-    s_countdown_prev[sizeof(s_countdown_prev) - 1] = '\0';
+    s_countdown_hash = cd_hash;
 
     // V1 semantics: countdown went DOWN → bounce (tick). Countdown went
     // UP → shake (ETA slipped). First render after watch start has no
@@ -364,15 +380,24 @@ static void render(void) {
   // Platform badge (drawn as a bordered "P<num>" box by s_info_layer) +
   // absolute HH:MM time. Countdown tells you how long; time tells you
   // *which* service. 12h mode tacks a PM/AM suffix per the user's flag.
-  s_time_buf[0] = '\0';
-  if (dep && dep->has_data && dep->departure_unix != 0) {
-    time_t t = dep->departure_unix;
-    struct tm *lt = localtime(&t);
-    if (lt) {
-      const char *fmt = g_app_state.flags.use_24hr_time ? "%H:%M" : "%l:%M %p";
-      strftime(s_time_buf, sizeof(s_time_buf), fmt, lt);
-      if (s_time_buf[0] == ' ') memmove(s_time_buf, s_time_buf + 1, strlen(s_time_buf));
+  // Departure_unix is fixed once a service is locked in, so localtime +
+  // strftime only need to run when the dep or the 24h flag actually flips.
+  bool live_dep = (dep && dep->has_data && dep->departure_unix != 0);
+  time_t cur_dep_unix = live_dep ? dep->departure_unix : 0;
+  bool cur_24hr = g_app_state.flags.use_24hr_time;
+  if (cur_dep_unix != s_time_buf_dep_unix || cur_24hr != s_time_buf_24hr) {
+    s_time_buf[0] = '\0';
+    if (live_dep) {
+      time_t t = cur_dep_unix;
+      struct tm *lt = localtime(&t);
+      if (lt) {
+        const char *fmt = cur_24hr ? "%H:%M" : "%l:%M %p";
+        strftime(s_time_buf, sizeof(s_time_buf), fmt, lt);
+        if (s_time_buf[0] == ' ') memmove(s_time_buf, s_time_buf + 1, strlen(s_time_buf));
+      }
     }
+    s_time_buf_dep_unix = cur_dep_unix;
+    s_time_buf_24hr = cur_24hr;
   }
 
   s_platform_badge[0] = '\0';
@@ -382,14 +407,13 @@ static void render(void) {
 
   // info_layer renders the platform badge + time through a custom
   // update_proc, so only re-mark it dirty when one of its inputs changes.
+  uint32_t plat_h = hash_str(s_platform_badge);
+  uint32_t time_h = hash_str(s_time_buf);
   if (s_info_layer &&
-      (strcmp(s_platform_badge, s_platform_badge_prev) != 0 ||
-       strcmp(s_time_buf,       s_time_buf_prev)       != 0)) {
+      (plat_h != s_platform_badge_hash || time_h != s_time_buf_hash)) {
     layer_mark_dirty(s_info_layer);
-    strncpy(s_platform_badge_prev, s_platform_badge, sizeof(s_platform_badge_prev) - 1);
-    s_platform_badge_prev[sizeof(s_platform_badge_prev) - 1] = '\0';
-    strncpy(s_time_buf_prev, s_time_buf, sizeof(s_time_buf_prev) - 1);
-    s_time_buf_prev[sizeof(s_time_buf_prev) - 1] = '\0';
+    s_platform_badge_hash = plat_h;
+    s_time_buf_hash = time_h;
   }
 
   // Bottom: disruption, live distance (metro only, non-zero), or vehicle desc.
@@ -403,7 +427,7 @@ static void render(void) {
     uint32_t which = (uint32_t)(time(NULL) / 3) % e->disruption_count;
     bottom_disruption = e->disruptions[which];
     strncpy(s_bottom_buf, bottom_disruption, sizeof(s_bottom_buf) - 1);
-  } else if (have_position && dep->route_type == 0 /* metro train */) {
+  } else if (have_position && e->route_type == 0 /* metro train */) {
     int32_t whole = g_app_state.watched_distance_km_x100 / 100;
     int32_t frac = g_app_state.watched_distance_km_x100 % 100;
     if (frac < 0) frac = -frac;
@@ -418,11 +442,7 @@ static void render(void) {
     text_layer_set_text_color(s_bottom_layer, bottom_color);
     s_bottom_color_prev = bottom_color;
   }
-  if (strcmp(s_bottom_prev, s_bottom_buf) != 0) {
-    text_layer_set_text(s_bottom_layer, s_bottom_buf);
-    strncpy(s_bottom_prev, s_bottom_buf, sizeof(s_bottom_prev) - 1);
-    s_bottom_prev[sizeof(s_bottom_prev) - 1] = '\0';
-  }
+  set_text_if_changed(s_bottom_layer, s_bottom_buf, &s_bottom_hash);
 
   // The progress bar shrinks per second (sec % 60), so it genuinely needs
   // a redraw every tick. Leave it unconditionally marked.
@@ -584,12 +604,12 @@ static void window_load(Window *window) {
 
   window_set_click_config_provider(window, click_config_provider);
 
-  s_countdown_prev[0] = '\0';
-  s_status_prev[0] = '\0';
-  s_route_prev[0] = '\0';
-  s_bottom_prev[0] = '\0';
-  s_platform_badge_prev[0] = '\0';
-  s_time_buf_prev[0] = '\0';
+  s_status_hash = HASH_INITIAL;
+  s_route_hash = HASH_INITIAL;
+  s_bottom_hash = HASH_INITIAL;
+  s_platform_badge_hash = HASH_INITIAL;
+  s_time_buf_hash = HASH_INITIAL;
+  s_countdown_hash = HASH_INITIAL;
   s_bottom_color_prev = GColorClear;
 
   // Kick first render + watch_start.
