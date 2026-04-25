@@ -25,6 +25,7 @@ var IN_QUERY_CLARIFY   = 10;
 var IN_QUERY_ERROR     = 11;
 var IN_QUERY_SAVED     = 12;
 var IN_ENTRY_SYNC_REPLACE = 13;
+var IN_QUERY_PROGRESS  = 14;  // data: progress label (e.g. "Thinking...")
 
 // Outbound (C -> JS) types.
 var OUT_READY       = 1;
@@ -586,6 +587,11 @@ function connect() {
                 handlePositionUpdate(msg);
                 return;
             }
+            // heartbeat only retitles the card
+            if (msg.type === 'query_status' && msg.id != null) {
+                handleQueryStatus(msg);
+                return;
+            }
             if (msg.id != null && pendingQueries[msg.id]) {
                 handleQueryMessage(msg);
                 return;
@@ -694,15 +700,9 @@ function startQuery(text) {
 
     var id = String(++nextQueryId);
     var queryText = truncate(String(text || ''), 400);
-    pendingQueries[id] = {
-        text: queryText,
-        timeout: setTimeout(function () {
-            if (pendingQueries[id]) {
-                delete pendingQueries[id];
-                sendToWatch(IN_QUERY_ERROR, 'Timed out after 30s');
-            }
-        }, 30000)
-    };
+    pendingQueries[id] = { text: queryText, timeout: null };
+    // heartbeat only retitles the card
+    armQueryTimeout(id, 30000, 'No response from server.');
 
     wsSend({
         type: 'query',
@@ -712,6 +712,32 @@ function startQuery(text) {
         llm_api_key: llmKey,
         query_history: queryHistory,
     });
+}
+
+function armQueryTimeout(id, ms, errMsg) {
+    var pending = pendingQueries[id];
+    if (!pending) return;
+    if (pending.timeout) clearTimeout(pending.timeout);
+    pending.timeout = setTimeout(function () {
+        if (pendingQueries[id]) {
+            delete pendingQueries[id];
+            sendToWatch(IN_QUERY_ERROR, errMsg);
+        }
+    }, ms);
+}
+
+function handleQueryStatus(msg) {
+    var pending = pendingQueries[msg.id];
+    if (!pending) return;
+    if (msg.phase === 'reasoning') {
+        // LLM running — give it a generous 120s.
+        armQueryTimeout(msg.id, 120000, 'Server timed out after 120s.');
+        sendToWatch(IN_QUERY_PROGRESS, 'Thinking...');
+    } else {
+        // received just buys more waiting time
+        armQueryTimeout(msg.id, 60000, 'Server timed out.');
+        sendToWatch(IN_QUERY_PROGRESS, 'Sent...');
+    }
 }
 
 function handleQueryMessage(msg) {
@@ -797,8 +823,12 @@ Pebble.addEventListener('ready', function () {
 
 Pebble.addEventListener('appmessage', function (e) {
     var p = e.payload || {};
-    var type = p[KEY_OUTBOUND_TYPE];
-    var data = p[KEY_OUTBOUND_DATA] || '';
+    // real phone and emulator key payloads differ
+    var type = p['OUTBOUND_TYPE'];
+    if (type === undefined) type = p[KEY_OUTBOUND_TYPE];
+    var data = p['OUTBOUND_DATA'];
+    if (data === undefined) data = p[KEY_OUTBOUND_DATA];
+    if (data == null) data = '';
     switch (type) {
         case OUT_READY:
             // Watch just booted / reopened; resend settings and current conn state.

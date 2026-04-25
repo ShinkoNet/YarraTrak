@@ -10,5 +10,7 @@ void query_window_start(void);
 void query_window_show_result(const char *tts_text);
 void query_window_show_clarification(char *mutable_payload);  // in-place parsed
 void query_window_show_error(const char *message);
+// heartbeat only retitles the card
+void query_window_show_progress(const char *label);
 
 bool query_window_is_open(void);

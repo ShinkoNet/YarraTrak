@@ -23,6 +23,7 @@ enum {
   IN_QUERY_ERROR     = 11,  // data: error message
   IN_QUERY_SAVED     = 12,  // data: button_id — agent persisted a favourite
   IN_ENTRY_SYNC_REPLACE = 13,  // atomic clear + apply (single-message sync)
+  IN_QUERY_PROGRESS  = 14,  // data: progress label (e.g. "Thinking...")
 };
 
 // Outbound message types (C -> JS).
