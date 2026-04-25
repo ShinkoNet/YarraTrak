@@ -128,6 +128,36 @@
             font-size: 16px;
         }
 
+        button.clear-btn {
+            width: 44px;
+            flex-shrink: 0;
+            padding: 0;
+            margin: 0;
+            background: #2a2a2a;
+            color: #aaa;
+            border: 1px solid #444;
+            border-radius: 8px;
+            font-size: 22px;
+            line-height: 1;
+            font-weight: 400;
+            cursor: pointer;
+        }
+
+        button.clear-btn:active {
+            background: #3a3a3a;
+            color: #fff;
+        }
+
+        /* Mirror the dest input's disabled state — keeps the × from looking
+           tappable while the destination box is greyed out (before a start
+           is picked). pointer-events: none short-circuits the click handler
+           so we don't need a JS-side disabled-syncing dance. */
+        .search-box input:disabled + button.clear-btn {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
         .search-results {
             margin-top: 5px;
             background: #333;
@@ -658,6 +688,7 @@
                         <label>Start Station</label>
                         <div class="search-box">
                             <input type="text" id="entry${i}_start_search" placeholder="Search start..." autocomplete="off">
+                            <button type="button" class="clear-btn" id="entry${i}_start_clear" title="Clear start station" aria-label="Clear start station">&times;</button>
                             <div class="search-results" id="entry${i}_start_results"></div>
                             <input type="hidden" id="entry${i}_start_id">
                         </div>
@@ -667,6 +698,7 @@
                         <label>Destination</label>
                         <div class="search-box">
                             <input type="text" id="entry${i}_dest_search" placeholder="Select start first..." autocomplete="off" disabled>
+                            <button type="button" class="clear-btn" id="entry${i}_dest_clear" title="Clear destination" aria-label="Clear destination">&times;</button>
                             <div class="search-results" id="entry${i}_dest_results"></div>
                             <input type="hidden" id="entry${i}_dest_id">
                             <input type="hidden" id="entry${i}_direction_id">
@@ -723,6 +755,50 @@
                 document.getElementById('entry' + i + '_dest_id'),
                 i
             );
+            setupClearButtons(i);
+        }
+
+        // Wire the inline × buttons on each search input. Mirrors the field-
+        // resetting work the existing keydown handlers do — clearing start
+        // cascades to dest (a stale dest is meaningless without a start),
+        // while clearing dest leaves start and any pre-pinned direction_id
+        // alone so the user can pick a different destination on the same
+        // sibling-resolved direction.
+        function setupClearButtons(i) {
+            var startBtn = document.getElementById('entry' + i + '_start_clear');
+            startBtn.addEventListener('click', function () {
+                var startInput = document.getElementById('entry' + i + '_start_search');
+                var destInput = document.getElementById('entry' + i + '_dest_search');
+                startInput.value = '';
+                document.getElementById('entry' + i + '_start_id').value = '';
+                hideResults('entry' + i + '_start_results');
+                destInput.value = '';
+                document.getElementById('entry' + i + '_dest_id').value = '';
+                document.getElementById('entry' + i + '_direction_id').value = '';
+                destInput.disabled = true;
+                destInput.placeholder = 'Select start first...';
+                hideResults('entry' + i + '_dest_results');
+                updateStatus(i);
+                startInput.focus();
+            });
+
+            var destBtn = document.getElementById('entry' + i + '_dest_clear');
+            destBtn.addEventListener('click', function () {
+                var destInput = document.getElementById('entry' + i + '_dest_search');
+                if (destInput.disabled) return;
+                destInput.value = '';
+                document.getElementById('entry' + i + '_dest_id').value = '';
+                hideResults('entry' + i + '_dest_results');
+                updateStatus(i);
+                destInput.focus();
+            });
+        }
+
+        function hideResults(id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.innerHTML = '';
+            el.style.display = 'none';
         }
 
         // Update entry count display
