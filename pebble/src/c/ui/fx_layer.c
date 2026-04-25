@@ -6,8 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Frame interval; ~17 fps feels smooth for these effects without burning CPU.
-#define FX_STEP_MS 60
+// 75ms is smooth enough and cheaper
+#define FX_STEP_MS 75
 
 // ---- Ripple (effect 0) -------------------------------------------------
 #define RIPPLE_RING_COUNT 4
@@ -48,7 +48,7 @@ typedef struct {
   uint16_t frame;
   uint16_t max_radius;          // ripple
   uint16_t ripple_phase;        // ripple
-  Star stars[STAR_COUNT];       // starfield
+  Star *stars;                  // starfield — heap allocated, NULL otherwise
   int32_t cube_yaw;             // cube angle in pebble trig-ratio (0..TRIG_MAX_ANGLE)
   int32_t cube_pitch;
 } FxData;
@@ -131,6 +131,7 @@ static void spawn_star(Star *s, uint32_t *seed) {
 }
 
 static void draw_starfield(Layer *layer, GContext *ctx, FxData *d) {
+  if (!d->stars) return;
   GRect bounds = layer_get_bounds(layer);
   int cx = bounds.size.w / 2;
   int cy = bounds.size.h / 2;
@@ -257,10 +258,12 @@ static void fx_tick(void *context) {
 
 static void seed_state(FxData *d, GRect bounds) {
   uint32_t seed = (uint32_t)time(NULL) ^ 0xc001u;
-  for (int i = 0; i < STAR_COUNT; i++) {
-    spawn_star(&d->stars[i], &seed);
-    // Pre-stagger the depth so stars don't all spawn at the far plane.
-    d->stars[i].z = STAR_Z_MIN + (uint8_t)(fx_rand(&seed) % (STAR_Z_MAX - STAR_Z_MIN));
+  if (d->stars) {
+    for (int i = 0; i < STAR_COUNT; i++) {
+      spawn_star(&d->stars[i], &seed);
+      // Pre-stagger the depth so stars don't all spawn at the far plane.
+      d->stars[i].z = STAR_Z_MIN + (uint8_t)(fx_rand(&seed) % (STAR_Z_MAX - STAR_Z_MIN));
+    }
   }
   uint16_t half = (bounds.size.w > bounds.size.h ? bounds.size.w : bounds.size.h) / 2;
   d->max_radius = (uint16_t)(half * 6 / 5);
@@ -283,6 +286,14 @@ Layer *fx_layer_create(GRect bounds) {
     d->mode = BG_FX_RIPPLE;
   }
   d->timer = NULL;
+  // only allocate stars for starfield
+  if (d->mode == BG_FX_STARFIELD) {
+    d->stars = malloc(sizeof(Star) * STAR_COUNT);
+    if (!d->stars) {
+      // Out of heap — fall back to ripple rather than crashing.
+      d->mode = BG_FX_RIPPLE;
+    }
+  }
   seed_state(d, bounds);
   layer_set_update_proc(layer, fx_update_proc);
   return layer;
@@ -292,6 +303,7 @@ void fx_layer_destroy(Layer *layer) {
   if (!layer) return;
   FxData *d = (FxData *)layer_get_data(layer);
   if (d->timer) { app_timer_cancel(d->timer); d->timer = NULL; }
+  if (d->stars) { free(d->stars); d->stars = NULL; }
   layer_destroy(layer);
 }
 

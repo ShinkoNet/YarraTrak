@@ -136,7 +136,7 @@ static void handle_entry_sync(char *data) {
 }
 
 // fav_update is compact because appmessage is tiny
-static void parse_departure(char *blob, Departure *out) {
+static void parse_departure(char *blob, Departure *out, char *route_id_out, size_t route_id_size) {
   memset(out, 0, sizeof(*out));
   if (!blob || !blob[0]) {
     out->has_data = false;
@@ -152,11 +152,13 @@ static void parse_departure(char *blob, Departure *out) {
 
   out->minutes         = fc > 0 && f[0][0] ? atoi(f[0]) : -1;
   out->departure_unix  = fc > 1 && f[1][0] ? (time_t)atol(f[1]) : 0;
-  out->route_type      = fc > 2 ? (uint8_t)atoi(f[2]) : 0;
-  out->direction_id    = fc > 3 ? atoi(f[3]) : 0;
+  // f[2] (route_type) and f[3] (direction_id) ignored — Entry already has them.
   copy_bounded(out->run_ref,  fc > 4 ? f[4] : "", sizeof(out->run_ref));
   copy_bounded(out->platform, fc > 5 ? f[5] : "", sizeof(out->platform));
-  copy_bounded(out->route_id, fc > 6 ? f[6] : "", sizeof(out->route_id));
+
+  if (route_id_out && route_id_size && fc > 6 && f[6][0]) {
+    copy_bounded(route_id_out, f[6], route_id_size);
+  }
 
   out->has_data = (out->minutes >= 0) || (out->departure_unix != 0);
 }
@@ -183,7 +185,8 @@ static void handle_fav_update(char *data) {
   if (dep_count > MAX_DEPS_PER_ENTRY) dep_count = MAX_DEPS_PER_ENTRY;
   for (int i = 0; i < dep_count; i++) {
     if (parts[1 + i][0]) {
-      parse_departure(parts[1 + i], &e->departures[i]);
+      parse_departure(parts[1 + i], &e->departures[i],
+                      e->route_id, sizeof(e->route_id));
     }
   }
 
@@ -242,39 +245,26 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       handle_flags_sync(data);
       break;
     case IN_ENTRY_SYNC:
+    case IN_ENTRY_SYNC_BULK:
+    case IN_ENTRY_SYNC_REPLACE:
+      // sync messages share the same path
       cancel_pending_clear_refresh();
-      handle_entry_sync(data);
-      settings_store_save_entries();
-      menu_window_refresh();
-      if (watch_window_is_open()) watch_window_close();
-      break;
-    case IN_ENTRY_SYNC_BULK: {
-      // "entry1\x1fentry2\x1f..." where each sub-chunk is the same format in_entry_sync accepts:
-      cancel_pending_clear_refresh();
-      char *chunks[MAX_ENTRIES];
-      int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
-      for (int i = 0; i < cc; i++) {
-        if (chunks[i][0]) handle_entry_sync(chunks[i]);
+      if (type == IN_ENTRY_SYNC_REPLACE) {
+        app_state_clear_entries();
+      }
+      if (type == IN_ENTRY_SYNC) {
+        handle_entry_sync(data);
+      } else {
+        char *chunks[MAX_ENTRIES];
+        int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
+        for (int i = 0; i < cc; i++) {
+          if (chunks[i][0]) handle_entry_sync(chunks[i]);
+        }
       }
       settings_store_save_entries();
       menu_window_refresh();
       if (watch_window_is_open()) watch_window_close();
       break;
-    }
-    case IN_ENTRY_SYNC_REPLACE: {
-      // chunked sync still needs a clear first
-      cancel_pending_clear_refresh();
-      app_state_clear_entries();
-      char *chunks[MAX_ENTRIES];
-      int cc = split_in_place(data, 0x1f, chunks, MAX_ENTRIES);
-      for (int i = 0; i < cc; i++) {
-        if (chunks[i][0]) handle_entry_sync(chunks[i]);
-      }
-      settings_store_save_entries();
-      menu_window_refresh();
-      if (watch_window_is_open()) watch_window_close();
-      break;
-    }
     case IN_CLEAR_ENTRIES:
       app_state_clear_entries();
       settings_store_save_entries();
@@ -359,16 +349,6 @@ void protocol_init(void) {
   app_message_register_inbox_dropped(inbox_dropped_handler);
   app_message_register_outbox_failed(outbox_failed_handler);
 
-  // bulk entry syncs (in_entry_sync_replace / in_entry_sync_bulk) target 960-byte payloads; once the dict+tuple overhead lands
-  AppMessageResult r = app_message_open(1536, 256);
-  if (r != APP_MSG_OK) {
-    APP_LOG(APP_LOG_LEVEL_ERROR,
-            "app_message_open(1536) failed (%d); retrying smaller", r);
-    r = app_message_open(1024, 256);
-    if (r != APP_MSG_OK) {
-      APP_LOG(APP_LOG_LEVEL_ERROR,
-              "app_message_open(1024) also failed (%d); falling back to 512", r);
-      app_message_open(512, 256);
-    }
-  }
+  // keep appmessage buffers boringly small
+  app_message_open(1024, 256);
 }
