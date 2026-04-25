@@ -440,8 +440,6 @@
             </span>
             <input type="checkbox" id="disable_distance_info">
         </label>
-
-        <button id="reset_defaults" style="background: #4CAF50; margin-top: 16px; margin-bottom: 0;">Reset to Default</button>
     </div>
 
     <h2>Favourite Entries</h2>
@@ -455,6 +453,7 @@
     <div id="entries_container"></div>
 
     <button id="save">Save Settings</button>
+    <button id="reset_defaults" style="background: #f44336; margin-top: 12px;">Reset to Default</button>
 
     <script>
         // Hardcoded production server - can be overridden in settings
@@ -1488,8 +1487,14 @@
             }
         }
 
-        // Reset to the default demo entries
+        // Reset to the default demo entries. Destructive — wipes any
+        // configured favourites and resets every Settings toggle — so gate
+        // it behind a native confirm() so an accidental tap on a phone
+        // doesn't nuke the user's setup.
         document.getElementById('reset_defaults').addEventListener('click', async function () {
+            if (!confirm('Reset to default? This wipes all favourite entries and reverts every setting (AI, theme, animations, etc.) to their out-of-the-box values.')) {
+                return;
+            }
             // Ensure train data is loaded
             if (!loadedTypes[0]) {
                 await loadStationData(0);
