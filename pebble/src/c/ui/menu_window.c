@@ -165,6 +165,9 @@ static void select_click(MenuLayer *menu_layer, MenuIndex *cell_index, void *con
   }
 
   if (row < g_app_state.entry_count) {
+    Entry *e = &g_app_state.entries[row];
+    // don't open a watch face with no departure yet
+    if (!departures_get(e, 0)) return;
     uint8_t button_id = (uint8_t)(row + 1);
     watch_window_push(button_id);
   }

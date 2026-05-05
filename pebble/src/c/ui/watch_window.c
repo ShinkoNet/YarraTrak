@@ -291,6 +291,20 @@ static void render(void) {
     return;
   }
 
+  // follow the same run through cache shifts
+  if (s_last_run_ref[0] && g_app_state.watching_offset > 0) {
+    Departure *cur = departures_get(e, g_app_state.watching_offset);
+    if (cur && cur->has_data && strcmp(cur->run_ref, s_last_run_ref) != 0) {
+      for (uint8_t off = 0; off < g_app_state.watching_offset; off++) {
+        Departure *d = departures_get(e, off);
+        if (d && d->has_data && strcmp(d->run_ref, s_last_run_ref) == 0) {
+          g_app_state.watching_offset = off;
+          break;
+        }
+      }
+    }
+  }
+
   // fall back until a departure exists
   while (g_app_state.watching_offset > 0 &&
          !has_service_at_offset(g_app_state.watching_offset)) {
@@ -426,21 +440,6 @@ static void render(void) {
 
   // progress bar changes every second
   if (s_progress_layer) layer_mark_dirty(s_progress_layer);
-
-  // auto-advance if current departure has fully passed
-  if ((!dep || sec < -60) && g_app_state.watching_offset == 0) {
-    Entry *e2 = app_state_get_entry(g_app_state.watching_button);
-    if (e2) {
-      Departure *next = departures_get(e2, 1);
-      if (next && next->has_data) {
-        for (uint8_t i = 0; i + 1 < MAX_DEPS_PER_ENTRY; i++) {
-          memcpy(&e2->departures[i], &e2->departures[i + 1], sizeof(Departure));
-        }
-        memset(&e2->departures[MAX_DEPS_PER_ENTRY - 1], 0, sizeof(Departure));
-        s_last_run_ref[0] = '\0';
-      }
-    }
-  }
 }
 
 static void maybe_vibrate(Departure *dep) {
