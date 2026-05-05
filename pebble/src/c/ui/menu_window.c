@@ -180,6 +180,12 @@ static void select_click(MenuLayer *menu_layer, MenuIndex *cell_index, void *con
   }
 
   if (row < g_app_state.entry_count) {
+    Entry *e = &g_app_state.entries[row];
+    // Block opening the watch face on a still-Waiting entry: the watch
+    // would render a "--" placeholder, and any FLAGS_SYNC / ENTRY_SYNC
+    // arriving during the initial-load window pops it back here anyway.
+    // Once the first FAV_UPDATE lands, the row becomes tappable.
+    if (!departures_get(e, 0)) return;
     uint8_t button_id = (uint8_t)(row + 1);
     watch_window_push(button_id);
   }

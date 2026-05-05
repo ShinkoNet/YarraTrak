@@ -319,6 +319,25 @@ static void render(void) {
     return;
   }
 
+  // Track the watched service across cache shifts. When slot 0 ages out
+  // (departures_get's -60 s grace expires) or a fresh FAV_UPDATE rolls the
+  // cache, the user-anchored run moves to a lower offset; follow it so the
+  // visible countdown stays on the same service. Without this, watching at
+  // offset 1 silently re-binds to whatever's at the new offset 1, which
+  // looks like a sudden delay.
+  if (s_last_run_ref[0] && g_app_state.watching_offset > 0) {
+    Departure *cur = departures_get(e, g_app_state.watching_offset);
+    if (cur && cur->has_data && strcmp(cur->run_ref, s_last_run_ref) != 0) {
+      for (uint8_t off = 0; off < g_app_state.watching_offset; off++) {
+        Departure *d = departures_get(e, off);
+        if (d && d->has_data && strcmp(d->run_ref, s_last_run_ref) == 0) {
+          g_app_state.watching_offset = off;
+          break;
+        }
+      }
+    }
+  }
+
   // Auto-correct: if the current offset no longer has data (service ran
   // through, cache shrank after a sync), fall back one step at a time
   // until we land on one that does — never past 0.
@@ -484,23 +503,6 @@ static void render(void) {
   // The progress bar shrinks per second (sec % 60), so it genuinely needs
   // a redraw every tick. Leave it unconditionally marked.
   if (s_progress_layer) layer_mark_dirty(s_progress_layer);
-
-  // Auto-advance if current departure has fully passed. Slide the cache
-  // down by one so the former service-after becomes the new current and
-  // dep[2] (if any) becomes the new service-after.
-  if ((!dep || sec < -60) && g_app_state.watching_offset == 0) {
-    Entry *e2 = app_state_get_entry(g_app_state.watching_button);
-    if (e2) {
-      Departure *next = departures_get(e2, 1);
-      if (next && next->has_data) {
-        for (uint8_t i = 0; i + 1 < MAX_DEPS_PER_ENTRY; i++) {
-          memcpy(&e2->departures[i], &e2->departures[i + 1], sizeof(Departure));
-        }
-        memset(&e2->departures[MAX_DEPS_PER_ENTRY - 1], 0, sizeof(Departure));
-        s_last_run_ref[0] = '\0';
-      }
-    }
-  }
 }
 
 static void maybe_vibrate(Departure *dep) {
