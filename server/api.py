@@ -213,6 +213,11 @@ _SERVICE_CHANGE_STATION_PATTERNS = (
 )
 _DELAY_MINUTES_PATTERN = re.compile(r"\b(?:up to\s+)?(\d{1,3})\s*minutes?\b", re.IGNORECASE)
 _PLANNED_TIME_PATTERN = re.compile(r"\b(?P<hour>\d{1,2}):(?P<minute>\d{2})\s*(?P<ampm>a\.?m\.?|p\.?m\.?)?\b", re.IGNORECASE)
+_RESUMED_PATTERNS = (
+    re.compile(r"\b(?:services?|trains?|buses|trams?)\s+(?:have|has|are|is|now)?\s*resumed\b", re.IGNORECASE),
+    re.compile(r"\bresumed\s+at\s+\d", re.IGNORECASE),
+    re.compile(r"\bnow\s+running\s+normally\b", re.IGNORECASE),
+)
 _DISRUPTION_PRIORITY = {
     "Bus Replacements": 0,
     "Bus Replacements Here": 0,
@@ -290,7 +295,21 @@ def _empty_metrics_snapshot(timestamp: datetime | None = None) -> dict[str, int 
     }
 
 
+def _disruption_is_resumed(disruption: dict) -> bool:
+    text = " ".join(
+        part.strip()
+        for part in (disruption.get("title") or "", disruption.get("description") or "")
+        if part
+    )
+    if not text:
+        return False
+    return any(pattern.search(text) for pattern in _RESUMED_PATTERNS)
+
+
 def _classify_disruption_label(disruption: dict) -> str | None:
+    if _disruption_is_resumed(disruption):
+        return None
+
     disruption_type = (disruption.get("disruption_type") or "").strip()
     searchable_text = " ".join(
         part.strip().lower()
