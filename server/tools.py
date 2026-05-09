@@ -154,8 +154,11 @@ async def get_departures(stop_id: int, route_type: int = RouteType.TRAIN) -> str
         shown_route_ids = set(d.get('route_id') for d in departures[:15])
         relevant_disruptions: list[str] = []
         if disruptions:
+            from .api import _disruption_is_resumed
             for d_id, d in disruptions.items():
                 if d.get('disruption_status') != 'Current':
+                    continue
+                if _disruption_is_resumed(d):
                     continue
                 affected_routes = set(r.get('route_id') for r in d.get('routes', []))
                 if not affected_routes.intersection(shown_route_ids):
