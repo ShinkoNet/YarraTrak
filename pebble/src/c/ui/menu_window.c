@@ -6,6 +6,7 @@
 #include "../protocol.h"
 #include "../formatting.h"
 #include "../departures.h"
+#include "../haptics.h"
 
 #include <pebble.h>
 #include <string.h>
@@ -26,6 +27,8 @@ static MenuLayer *s_menu_layer = NULL;
 static TextLayer *s_time_layer = NULL;
 static Layer *s_time_bar = NULL;
 static char s_time_buf[8];
+static uint8_t s_pending_open_button = 0;
+static bool s_ready_vibe_sent = false;
 
 // connection state lives in row subtitles
 
@@ -166,9 +169,12 @@ static void select_click(MenuLayer *menu_layer, MenuIndex *cell_index, void *con
 
   if (row < g_app_state.entry_count) {
     Entry *e = &g_app_state.entries[row];
-    // don't open a watch face with no departure yet
-    if (!departures_get(e, 0)) return;
     uint8_t button_id = (uint8_t)(row + 1);
+    if (!departures_get(e, 0)) {
+      s_pending_open_button = button_id;
+      return;
+    }
+    s_pending_open_button = 0;
     watch_window_push(button_id);
   }
 }
@@ -252,6 +258,24 @@ void menu_window_refresh(void) {
   }
   menu_layer_reload_data(s_menu_layer);
   if (s_time_bar) layer_mark_dirty(s_time_bar);
+}
+
+void menu_window_handle_entry_data(uint8_t button_id) {
+  Entry *e = app_state_get_entry(button_id);
+  if (!e || !departures_get(e, 0)) return;
+
+  if (s_pending_open_button) {
+    if (s_pending_open_button == button_id) {
+      s_pending_open_button = 0;
+      watch_window_push(button_id);
+    }
+    return;
+  }
+
+  if (!s_ready_vibe_sent && !watch_window_is_open()) {
+    s_ready_vibe_sent = true;
+    haptics_play_for_minutes(1);
+  }
 }
 
 bool menu_window_is_on_top(void) {
