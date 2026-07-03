@@ -203,6 +203,7 @@ static void handle_fav_update(char *data) {
 
   menu_window_refresh();
   watch_window_refresh();
+  menu_window_handle_entry_data((uint8_t)button_id);
 }
 
 // POSITION_UPDATE format: "distance_km_x100|vehicle_desc|run_ref"
