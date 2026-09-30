@@ -8,6 +8,20 @@
 static Window *s_window;
 static MenuLayer *s_menu;
 static bool s_nearby;
+static void back(ClickRecognizerRef recognizer, void *context) { window_stack_pop(true); }
+static void select_row(MenuLayer *menu, MenuIndex *index, void *context);
+static void up(ClickRecognizerRef recognizer, void *context) { menu_layer_set_selected_next(s_menu, true, MenuRowAlignNone, true); }
+static void down(ClickRecognizerRef recognizer, void *context) { menu_layer_set_selected_next(s_menu, false, MenuRowAlignNone, true); }
+static void select_click(ClickRecognizerRef recognizer, void *context) {
+  MenuIndex index = menu_layer_get_selected_index(s_menu);
+  select_row(s_menu, &index, NULL);
+}
+static void clicks(void *context) {
+  window_single_repeating_click_subscribe(BUTTON_ID_UP, 150, up);
+  window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 150, down);
+  window_single_click_subscribe(BUTTON_ID_SELECT, select_click);
+  window_single_click_subscribe(BUTTON_ID_BACK, back);
+}
 static void restore(void);
 
 static void open_nearby(void *context) {
@@ -57,7 +71,7 @@ static void load(Window *window) {
   });
   menu_layer_set_normal_colors(s_menu, theme_bg(), theme_fg());
   menu_layer_set_highlight_colors(s_menu, theme_accent(), PBL_IF_COLOR_ELSE(GColorWhite, theme_bg()));
-  menu_layer_set_click_config_onto_window(s_menu, window);
+  window_set_click_config_provider(window, clicks);
   layer_add_child(root, menu_layer_get_layer(s_menu));
 }
 
@@ -71,6 +85,7 @@ static void unload(Window *window) {
 }
 
 static void appear(Window *window) {
+  if (s_nearby) nearby_window_resume();
   if (!s_menu && !s_nearby) load(window);
 }
 

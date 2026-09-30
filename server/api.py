@@ -2746,6 +2746,38 @@ async def favourite_departure(req: FavouriteRequest, request: Request):
         return {"vibration": [500, 100, 500], "message": "Error"}
 
 
+class NearbyTrackerRequest(BaseModel):
+    stop_id: int
+    route_type: int
+    route_id: int
+    direction_id: int
+    client_id: str | None = None
+
+
+@app.post("/api/v1/nearby/tracker")
+async def nearby_tracker(req: NearbyTrackerRequest, request: Request):
+    _require_client_id(req.client_id)
+    if req.route_type not in (0, 1, 3) or min(req.stop_id, req.route_id, req.direction_id) < 0:
+        raise HTTPException(status_code=422, detail="Invalid service")
+    if not _check_rate_limit(_http_favourite_limiters, _client_ip_from_request(request), HTTP_FAVOURITE_RATE_LIMIT):
+        raise HTTPException(status_code=429, detail="Please wait before refreshing")
+    try:
+        data = await ptv_client.get_departures(req.route_type, req.stop_id,
+            route_id=str(req.route_id), direction_id=req.direction_id, max_results=5,
+            expand=['Run', 'Direction', 'Disruption'])
+        departures = [d for d in data.get('departures', [])
+            if d.get('route_id') == req.route_id and d.get('direction_id') == req.direction_id]
+        departures.sort(key=lambda d: d.get('estimated_departure_utc') or d.get('scheduled_departure_utc') or '')
+        summaries = _collect_departure_summaries(departures, datetime.now(timezone.utc), req.route_type, 3)
+        labels = _collect_favourite_disruption_labels(departures, data.get('disruptions', {}),
+            req.stop_id, None, req.route_type, {(req.route_id, req.direction_id)})
+        return {'departures': summaries, 'disruption_labels': labels,
+                'message': '' if summaries else 'No future services'}
+    except Exception as exc:
+        logger.warning("Nearby tracker failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Departures unavailable") from None
+
+
 @app.post("/api/v1/nearby")
 async def nearby_departures(req: NearbyRequest, request: Request):
     _require_client_id(req.client_id)

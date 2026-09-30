@@ -51,6 +51,7 @@ async def find_departures(client, latitude, longitude):
             rows.append({
                 'stop_id': stop['stop_id'], 'stop_name': stop.get('stop_name', 'Stop').strip(),
                 'route_type': stop['route_type'], 'distance_m': stop['stop_distance'],
+                'route_id': departure.get('route_id'), 'direction_id': departure.get('direction_id'),
                 'destination': destination, 'route_number': route.get('route_number') or '',
                 'departure_time': when.isoformat(), 'run_ref': ref,
                 'platform': str(departure.get('platform_number') or ''),
@@ -63,6 +64,15 @@ async def find_departures(client, latitude, longitude):
         raise RuntimeError('Nearby departures unavailable')
     rows = [row for result in results if not isinstance(result, Exception) for row in result]
     rows.sort(key=lambda row: (row['distance_m'], row['departure_time'], row['stop_id'], row['run_ref']))
+    services = {}
     for row in rows:
+        key = (row['route_type'], row['route_id'], row['direction_id'])
+        if None in key:
+            continue
+        # Rows are ordered by distance then time: keep the next service at
+        # the nearest boarding stop, not more runs or stops of the same line.
+        if key in services:
+            continue
+        services[key] = row
         row['distance_m'] = round(row['distance_m'])
-    return {'departures': rows[:16], 'partial': bool(failures), 'radius_m': 500}
+    return {'departures': list(services.values())[:16], 'partial': bool(failures), 'radius_m': 500}

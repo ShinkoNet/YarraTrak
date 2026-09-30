@@ -5,6 +5,7 @@
 #include <string.h>
 
 AppState g_app_state;
+Entry *g_nearby_entry;
 
 void app_state_init(void) {
   memset(&g_app_state, 0, sizeof(g_app_state));
@@ -20,6 +21,7 @@ void app_state_clear_entries(void) {
 }
 
 Entry *app_state_get_entry(uint8_t button_id) {
+  if (button_id == 255) return g_nearby_entry;
   if (button_id < 1 || button_id > MAX_ENTRIES) {
     return NULL;
   }

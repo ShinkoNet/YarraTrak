@@ -35,6 +35,8 @@ var OUT_OPEN_CONFIG = 4;
 var OUT_REFRESH     = 5;
 var OUT_QUERY       = 6;
 var OUT_NEARBY = 7;
+var OUT_NEARBY_TRACK = 8;
+var IN_NEARBY_TRACK = 17;
 var IN_NEARBY_ROW = 15;
 var IN_NEARBY_STATUS = 16;
 
@@ -834,6 +836,51 @@ function saveEntryConfig(config) {
 // Nearby uses a fresh phone position only when explicitly requested from the watch.
 var nearbyGeneration = 0;
 var nearbyRequest = null;
+var nearbyRows = [];
+var nearbyRequestId = '';
+var nearbyTrackerGeneration = 0;
+var nearbyTrackerTimer = null;
+var nearbyTrackerRequest = null;
+
+function stopNearbyTracker() {
+    nearbyTrackerGeneration++;
+    if (nearbyTrackerTimer) clearTimeout(nearbyTrackerTimer);
+    if (nearbyTrackerRequest) nearbyTrackerRequest.abort();
+    nearbyTrackerTimer = nearbyTrackerRequest = null;
+}
+
+function startNearbyTracker(selection) {
+    stopNearbyTracker();
+    var parts = String(selection).split('|');
+    var row = nearbyRows[parseInt(parts[1], 10)];
+    if (parts[0] !== nearbyRequestId || !row) return;
+    var generation = nearbyTrackerGeneration;
+    sendToWatch(IN_NEARBY_TRACK, [parts[0], parts[1], row.stop_id, row.route_type, row.route_id, row.direction_id].join('|'));
+    function poll() {
+        if (generation !== nearbyTrackerGeneration) return;
+        var xhr = new XMLHttpRequest();
+        nearbyTrackerRequest = xhr;
+        xhr.open('POST', getServerUrl() + '/api/v1/nearby/tracker');
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.timeout = 12000;
+        function finish(result) {
+            if (generation !== nearbyTrackerGeneration) return;
+            nearbyTrackerRequest = null;
+            result.button_id = 255;
+            handleFavUpdate({updates: [result]});
+            nearbyTrackerTimer = setTimeout(poll, 15000);
+        }
+        xhr.onload = function () {
+            var result;
+            try { if (xhr.status === 200) result = JSON.parse(xhr.responseText); } catch (e) {}
+            finish(result || {departures: [], message: 'Unavailable'});
+        };
+        xhr.onerror = xhr.ontimeout = function () { finish({departures: [], message: 'Unavailable'}); };
+        xhr.send(JSON.stringify({stop_id: row.stop_id, route_type: row.route_type,
+            route_id: row.route_id, direction_id: row.direction_id, client_id: getOrCreateClientId()}));
+    }
+    poll();
+}
 
 function nearbyText(value, limit) {
     return String(value || '').replace(/[|\x00-\x1f]/g, ' ').slice(0, limit);
@@ -841,6 +888,9 @@ function nearbyText(value, limit) {
 
 function findNearbyDepartures(requestId) {
     var generation = ++nearbyGeneration;
+    nearbyRows = [];
+    nearbyRequestId = String(requestId);
+    stopNearbyTracker();
     if (nearbyRequest) { nearbyRequest.abort(); nearbyRequest = null; }
     function status(kind, text) {
         if (generation === nearbyGeneration) sendToWatch(IN_NEARBY_STATUS, requestId + '|' + kind + '|' + text);
@@ -874,6 +924,7 @@ function findNearbyDepartures(requestId) {
                 var destination = (row.route_number ? row.route_number + ' ' : '') + row.destination;
                 sendToWatch(IN_NEARBY_ROW, [requestId, row.route_type, row.distance_m, epoch,
                     nearbyText(row.stop_name, 32), nearbyText(destination, 40), nearbyText(row.platform, 7), count].join('|'));
+                nearbyRows.push(row);
                 count++;
             }
             if (response.partial) status('partial', 'Some stops unavailable');
@@ -934,6 +985,7 @@ Pebble.addEventListener('appmessage', function (e) {
             break;
         }
         case OUT_WATCH_STOP:
+            stopNearbyTracker();
             watchingRunRef = null;
             wsSend({ type: 'watch_stop' });
             break;
@@ -947,6 +999,9 @@ Pebble.addEventListener('appmessage', function (e) {
             } else {
                 connect();
             }
+            break;
+        case OUT_NEARBY_TRACK:
+            startNearbyTracker(data);
             break;
         case OUT_NEARBY:
             findNearbyDepartures(String(data));
