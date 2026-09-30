@@ -32,15 +32,20 @@ static char s_last_run_ref[RUN_REF_LEN], s_position_run_ref[RUN_REF_LEN];
 static int32_t s_last_vibrated_minutes = -1, s_last_seconds = INT32_MAX;
 static bool s_now_pattern_fired;
 static int buzzes, last_buzz, starts;
+static int32_t sent_direction;
+static char sent_route[ROUTE_ID_LEN];
 static time_t now = 10000;
 time_t fake_time(time_t *ptr) { if (ptr) *ptr = now; return now; }
 #define time fake_time
 Entry *app_state_get_entry(uint8_t id) { return &g_app_state.entries[0]; }
 void protocol_send_watch_start(uint8_t id, const char *ref, int32_t stop,
-    uint8_t type, const char *route, int32_t direction) { starts++; }
+    uint8_t type, const char *route, int32_t direction) {
+    starts++; sent_direction = direction; snprintf(sent_route, sizeof(sent_route), "%s", route);
+}
 void haptics_play_for_minutes(int32_t minutes) { buzzes++; last_buzz = minutes; }
 '''
         harness += (ROOT / 'pebble/src/c/departures.c').read_text() + '\n' + functions
+        harness += '\n' + (ROOT / 'pebble/src/c/formatting.c').read_text()
         harness += r'''
 void tick(void) {
     Departure *dep = reconcile_service();
@@ -56,25 +61,33 @@ void seed(void) {
         Departure *d = &e->departures[i];
         d->has_data = true; d->departure_unix = 10000 + i * 600;
         d->run_ref[0] = 'A' + i;
+        d->route_id = 100 + i; d->direction_id = i;
     }
 }
 int main(void) {
     seed(); Entry *e = app_state_get_entry(1);
     g_app_state.watching_offset = 1; tick();
     assert(!strcmp(s_last_run_ref, "B"));
+    assert(!strcmp(sent_route, "101") && sent_direction == 1);
     now += 61; tick();
-    assert(g_app_state.watching_offset == 0 && !strcmp(s_last_run_ref, "B"));
-    assert(starts == 1); // Same vehicle moved into the next-service slot.
+    assert(g_app_state.watching_offset == 1 && !strcmp(s_last_run_ref, "B"));
+    // An expired ETA alone does not confirm A has left.
+    char text[24]; fmt_countdown(-61, &e->departures[0], text, sizeof(text));
+    assert(!strcmp(text, "WAIT"));
 
     // Fresh buffer [B,C,D] must keep B selected, with C now service-after.
     e->departures[0] = e->departures[1]; e->departures[1] = e->departures[2];
     strcpy(e->departures[2].run_ref, "D"); e->departures[2].departure_unix = 11800;
     tick(); assert(!strcmp(s_last_run_ref, "B"));
+    assert(g_app_state.watching_offset == 0 && starts == 1);
     assert(!strcmp(departures_get(e, 1)->run_ref, "C"));
 
     // When the tracked vehicle itself leaves, select the next one and reset alerts.
     seed(); tick(); assert(s_now_pattern_fired);
-    s_last_seconds = -60; now += 61; tick();
+    assert(!strcmp(sent_route, "100") && sent_direction == 0);
+    s_last_seconds = -60; now += 61;
+    e->departures[0].has_data = false; // A is absent from a fresh live snapshot.
+    tick();
     assert(!strcmp(s_last_run_ref, "B") && s_last_seconds == INT32_MAX);
     assert(!s_now_pattern_fired && buzzes == 2);
 

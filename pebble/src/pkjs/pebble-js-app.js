@@ -342,6 +342,25 @@ function syncFlagsToWatch() {
     sendToWatch(IN_FLAGS_SYNC, String(bits) + '|' + String(bg));
 }
 
+function utf8Length(value) {
+    return encodeURIComponent(value).replace(/%[0-9A-F]{2}/gi, 'x').length;
+}
+
+function entryWireName(value) {
+    var source = String(value || '').replace(/[|;\x00-\x1f]/g, ' ');
+    var result = '';
+    for (var i = 0; i < source.length; i++) {
+        var ch = source.charAt(i), code = source.charCodeAt(i);
+        if (code >= 0xd800 && code <= 0xdbff && i + 1 < source.length &&
+            source.charCodeAt(i + 1) >= 0xdc00 && source.charCodeAt(i + 1) <= 0xdfff) {
+            ch += source.charAt(++i);
+        } else if (code >= 0xd800 && code <= 0xdfff) ch = ' ';
+        if (utf8Length(result + ch) > 32) break;
+        result += ch;
+    }
+    return result;
+}
+
 function syncEntriesToWatch() {
     var count = getConfiguredEntryCount();
     var chunks = [];
@@ -350,9 +369,9 @@ function syncEntriesToWatch() {
         if (!stopId) continue;
         // phone keeps the edit-only fields
         var fields = [
-            getOption('entry' + i + '_name') || '',
+            entryWireName(getOption('entry' + i + '_name')),
             stopId || '0',
-            getOption('entry' + i + '_dest_name') || '',
+            entryWireName(getOption('entry' + i + '_dest_name')),
             getOption('entry' + i + '_route_type') || '0',
             getOption('entry' + i + '_direction_id') || '0'
         ];
@@ -366,11 +385,11 @@ function syncEntriesToWatch() {
     }
 
     // batch entries to avoid slow appmessage roundtrips
-    var INBOX_BUDGET = 960;
+    var INBOX_BUDGET = MAX_APPMSG_PAYLOAD;
     var SEP = '\x1f';  // unit separator
     var joined = chunks.join(SEP);
 
-    if (joined.length <= INBOX_BUDGET) {
+    if (utf8Length(joined) <= INBOX_BUDGET) {
         // single-packet sync skips the clear
         sendToWatch(IN_ENTRY_SYNC_REPLACE, joined);
         return;
@@ -382,7 +401,7 @@ function syncEntriesToWatch() {
     for (var j = 0; j < chunks.length; j++) {
         var piece = chunks[j];
         var candidate = batch.length ? (batch + SEP + piece) : piece;
-        if (candidate.length > INBOX_BUDGET && batch.length > 0) {
+        if (utf8Length(candidate) > INBOX_BUDGET && batch.length > 0) {
             sendToWatch(IN_ENTRY_SYNC_BULK, batch);
             batch = piece;
         } else {
@@ -518,7 +537,7 @@ function encodeDeparture(d) {
         d.direction_id !== undefined && d.direction_id !== null ? String(d.direction_id) : '',
         d.run_ref || '',
         d.platform || '',
-        d.route_id || ''
+        d.route_id !== undefined && d.route_id !== null ? String(d.route_id) : ''
     ];
     return fields.join(';');
 }

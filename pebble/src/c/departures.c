@@ -27,11 +27,8 @@ Departure *departures_get(Entry *entry, uint8_t offset) {
     if (!dep->has_data) {
       continue;
     }
-    // Grace window: a departure that's passed by <= 60s is still "current".
-    int32_t sec = departure_seconds_until(dep);
-    if (sec < -60) {
-      continue;
-    }
+    // Only a fresh service list can remove a vehicle. A clock passing an ETA
+    // is not evidence that a delayed vehicle has physically departed.
     if (seen == offset) {
       return dep;
     }

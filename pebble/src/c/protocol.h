@@ -58,5 +58,5 @@ void protocol_send_open_config(void);
 void protocol_send_refresh(void);
 void protocol_send_query(const char *text);
 
-void protocol_send_nearby(const char *request_id);
+bool protocol_send_nearby(const char *request_id);
 void protocol_send_nearby_track(const char *selection);

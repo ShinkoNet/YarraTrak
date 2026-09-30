@@ -30,7 +30,7 @@ static NearbyRow *s_rows;
 static void (*s_back)(void);
 static uint8_t s_count;
 static uint16_t s_request;
-static bool s_loading, s_partial;
+static bool s_loading, s_partial, s_request_sent;
 static time_t s_started;
 static char s_status[64];
 
@@ -51,17 +51,22 @@ static void set_status(const char *status) {
   if (s_menu) menu_layer_reload_data(s_menu);
 }
 
+static void send_request(void) {
+  char id[8];
+  snprintf(id, sizeof(id), "%u", (unsigned)s_request);
+  s_request_sent = protocol_send_nearby(id);
+}
+
 static void request(void) {
   if (++s_request == 0) ++s_request;
   s_count = 0;
   s_partial = false;
+  s_request_sent = false;
   s_loading = s_rows != NULL;
   s_started = time(NULL);
   set_status(s_rows ? "Getting location..." : "Not enough memory");
   if (!s_rows) return;
-  char id[8];
-  snprintf(id, sizeof(id), "%u", (unsigned)s_request);
-  protocol_send_nearby(id);
+  send_request();
 }
 
 static GColor row_color(uint8_t mode) {
@@ -98,7 +103,7 @@ static void draw_row(GContext *ctx, const Layer *cell, MenuIndex *index, void *c
   text(ctx, row->destination, FONT_KEY_GOTHIC_18_BOLD, 4, 0, b.size.w - 8, 22);
   long seconds = (long)(row->departure - time(NULL));
   char detail[80], countdown[18];
-  if (seconds < -60) snprintf(countdown, sizeof(countdown), "Departed");
+  if (seconds < -60) snprintf(countdown, sizeof(countdown), "Update?");
   else if (seconds < 60) snprintf(countdown, sizeof(countdown), "Now");
   else snprintf(countdown, sizeof(countdown), "%ldm", seconds / 60);
   snprintf(detail, sizeof(detail), "%s %um %s", countdown, (unsigned)row->distance, row->stop);
@@ -117,13 +122,7 @@ static void draw(Layer *layer, GContext *ctx) {
 static void open_tracker(void *context) {
   if (!s_window || !s_count || g_app_state.watching_button) return;
   s_tracker_index = menu_layer_get_selected_index(s_menu).row;
-  NearbyRow *row = &s_rows[s_tracker_index];
-  if (!g_nearby_entry) g_nearby_entry = malloc(sizeof(Entry));
-  if (!g_nearby_entry) return;
-  memset(g_nearby_entry, 0, sizeof(Entry));
-  g_nearby_entry->configured = true;
-  snprintf(g_nearby_entry->name, sizeof(g_nearby_entry->name), "%s", row->stop);
-  snprintf(g_nearby_entry->dest_name, sizeof(g_nearby_entry->dest_name), "%.32s", row->destination);
+  NearbyRow row = s_rows[s_tracker_index];
 #if defined(PBL_PLATFORM_APLITE)
   // The classic watch cannot hold both the list and countdown view in 24 KB.
   if (s_timer) app_timer_cancel(s_timer);
@@ -133,6 +132,12 @@ static void open_tracker(void *context) {
   free(s_rows); s_rows = NULL;
   s_loading = false;
 #endif
+  if (!g_nearby_entry) g_nearby_entry = malloc(sizeof(Entry));
+  if (!g_nearby_entry) { nearby_window_resume(); return; }
+  memset(g_nearby_entry, 0, sizeof(Entry));
+  g_nearby_entry->configured = true;
+  snprintf(g_nearby_entry->name, sizeof(g_nearby_entry->name), "%s", row.stop);
+  snprintf(g_nearby_entry->dest_name, sizeof(g_nearby_entry->dest_name), "%.32s", row.destination);
   watch_window_push(255);
   char selection[24];
   snprintf(selection, sizeof(selection), "%u|%u", s_request, s_tracker_index);
@@ -165,6 +170,8 @@ static void clicks(void *context) {
 static void tick(void *context) {
   s_timer = NULL;
   if (!s_window) return;
+  // Returning from the tracker can still have watch_stop in the outbox.
+  if (s_loading && !s_request_sent) send_request();
   if (s_loading && time(NULL) - s_started >= 45) {
     s_loading = false;
     set_status("Request timed out");
@@ -209,12 +216,21 @@ void nearby_window_close(void) {
   s_loading = false;
 }
 
-void nearby_window_resume(void) {
 #if defined(PBL_PLATFORM_APLITE)
+static void resume_after_tracker(void *context) {
+  s_timer = NULL;
   if (s_window && !s_menu) {
     free(g_nearby_entry); g_nearby_entry = NULL;
     nearby_window_show(s_window, s_back);
   }
+}
+#endif
+
+void nearby_window_resume(void) {
+#if defined(PBL_PLATFORM_APLITE)
+  // Let the outgoing tracker finish destroying its layers before allocating
+  // another menu and result buffer on the classic watch.
+  if (s_window && !s_menu && !s_timer) s_timer = app_timer_register(1, resume_after_tracker, NULL);
 #endif
 }
 
@@ -255,6 +271,5 @@ void nearby_window_receive_tracker(char *payload) {
       split(payload, parts, 6) != 6 || atoi(parts[0]) != s_request || atoi(parts[1]) != s_tracker_index) return;
   g_nearby_entry->stop_id = atol(parts[2]);
   g_nearby_entry->route_type = atoi(parts[3]);
-  snprintf(g_nearby_entry->route_id, sizeof(g_nearby_entry->route_id), "%s", parts[4]);
   g_nearby_entry->direction_id = atol(parts[5]);
 }

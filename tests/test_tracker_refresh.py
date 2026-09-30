@@ -9,6 +9,20 @@ from server import api
 
 
 class TrackerRefreshTests(unittest.IsolatedAsyncioTestCase):
+    async def test_past_estimate_stays_until_fresh_feed_removes_run(self):
+        now = datetime.now(timezone.utc)
+        rows = [{'run_ref': ref, 'route_id': 1, 'direction_id': 0,
+                 'estimated_departure_utc': (now + timedelta(minutes=minutes)).isoformat()}
+                for ref, minutes in [('A', -2), ('B', 10), ('C', 20)]]
+        with patch.dict(api._departure_cache, {}, clear=True), patch.object(
+                api.ptv_client, 'get_departures', AsyncMock(side_effect=[
+                    {'departures': rows}, {'departures': rows[1:]}])):
+            first = await api.fetch_departure_for_button(1, 1, 0)
+            self.assertEqual([d['run_ref'] for d in first['departures']], ['A', 'B', 'C'])
+            self.assertLess(datetime.fromisoformat(first['departures'][0]['departure_time']), now)
+            second = await api.fetch_departure_for_button(1, 1, 0)
+            self.assertEqual([d['run_ref'] for d in second['departures']], ['B', 'C'])
+
     async def test_delayed_trams_are_sorted_by_estimate(self):
         now = datetime.now(timezone.utc)
         departures = [{'run_ref': ref, 'route_id': 1, 'direction_id': 0,
