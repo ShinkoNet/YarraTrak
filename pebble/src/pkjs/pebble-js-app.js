@@ -409,6 +409,7 @@ var pongWatchdog = null;
 var reconnectTimer = null;
 var reconnectDelay = RECONNECT_MIN_MS;
 var watchingRunRef = null;  // reconciles against server position_update stream
+var watchingRequest = null;
 
 // send the saved buttons in server shape
 function getButtonConfigs() {
@@ -558,6 +559,7 @@ function handleFavUpdate(msg) {
 }
 
 function handlePositionUpdate(msg) {
+    if (msg.run_ref == null || String(msg.run_ref) !== watchingRunRef) return;
     var d_km = (msg.distance_km !== null && msg.distance_km !== undefined)
         ? Math.round(msg.distance_km * 100) : '';
     var veh = msg.vehicle_desc || '';
@@ -594,6 +596,7 @@ function connect() {
         reconnectDelay = RECONNECT_MIN_MS;
         sendConnState(CONN_CONNECTED);
         startHeartbeat(socket, gen);
+        if (watchingRequest) wsSend(watchingRequest);
     };
 
     socket.onmessage = function (event) {
@@ -637,6 +640,7 @@ function connect() {
         ws = null;
         clearTimers();
         sendConnState(CONN_OFFLINE);
+        sendToWatch(IN_POSITION_UPDATE, '||');
         scheduleReconnect();
     };
 }
@@ -979,14 +983,16 @@ Pebble.addEventListener('appmessage', function (e) {
             var route_id = f[4] || '';
             var direction_id = parseInt(f[5] || '0', 10);
             watchingRunRef = run_ref;
-            wsSend({ type: 'watch_start', run_ref: run_ref, stop_id: stop_id,
+            watchingRequest = { type: 'watch_start', run_ref: run_ref, stop_id: stop_id,
                      route_type: route_type, route_id: route_id,
-                     direction_id: direction_id });
+                     direction_id: direction_id };
+            wsSend(watchingRequest);
             break;
         }
         case OUT_WATCH_STOP:
             stopNearbyTracker();
             watchingRunRef = null;
+            watchingRequest = null;
             wsSend({ type: 'watch_stop' });
             break;
         case OUT_OPEN_CONFIG:

@@ -39,6 +39,7 @@ typedef struct {
 } Entry;
 
 Departure *departures_get(Entry *entry, uint8_t offset);
+uint8_t departures_rebase_offset(Entry *entry, const char *run_ref, uint8_t offset);
 
 // Compute seconds until departure. Returns INT32_MAX if unknown.
 int32_t departure_seconds_until(const Departure *dep);

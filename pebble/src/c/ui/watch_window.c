@@ -60,6 +60,7 @@ static void set_text_if_changed(TextLayer *layer, const char *buf, uint32_t *sto
 static int32_t s_last_vibrated_minutes = -1;
 static bool    s_now_pattern_fired = false;  // NOW played for the active run
 static char s_last_run_ref[RUN_REF_LEN] = "";
+static char s_position_run_ref[RUN_REF_LEN] = "";
 static GRect s_countdown_home_frame;
 static Animation *s_shake_anim = NULL;
 static int32_t s_last_seconds = INT32_MAX;  // previous render's seconds_until
@@ -87,16 +88,38 @@ static bool has_alternate_service(void) {
   return has_service_at_offset(1);
 }
 
+static Departure *reconcile_service(void) {
+  Entry *entry = app_state_get_entry(g_app_state.watching_button);
+  g_app_state.watching_offset = departures_rebase_offset(entry, s_last_run_ref, g_app_state.watching_offset);
+  Departure *dep = get_watched_departure();
+  if (!dep) {
+    // Keep the identity through a temporary empty/error response.
+    s_last_seconds = INT32_MAX;
+    return NULL;
+  }
+  if (strcmp(s_last_run_ref, dep->run_ref) != 0) {
+    snprintf(s_last_run_ref, sizeof(s_last_run_ref), "%s", dep->run_ref);
+    s_position_run_ref[0] = '\0';
+    s_last_vibrated_minutes = -1;
+    s_now_pattern_fired = false;
+    s_last_seconds = INT32_MAX;
+    g_app_state.watched_distance_km_x100 = INT32_MIN;
+    g_app_state.watched_vehicle_desc[0] = '\0';
+    g_app_state.watched_run_ref[0] = '\0';
+  }
+  return dep;
+}
+
 static void send_watch_start_if_needed(Departure *dep) {
   Entry *e = app_state_get_entry(g_app_state.watching_button);
   if (!e || !dep || !dep->has_data || !dep->run_ref[0]) {
     return;
   }
-  if (strcmp(s_last_run_ref, dep->run_ref) == 0) {
+  if (strcmp(s_position_run_ref, dep->run_ref) == 0) {
     return;
   }
-  strncpy(s_last_run_ref, dep->run_ref, sizeof(s_last_run_ref) - 1);
-  s_last_run_ref[sizeof(s_last_run_ref) - 1] = '\0';
+  strncpy(s_position_run_ref, dep->run_ref, sizeof(s_position_run_ref) - 1);
+  s_position_run_ref[sizeof(s_position_run_ref) - 1] = '\0';
   g_app_state.watched_distance_km_x100 = INT32_MIN;
   g_app_state.watched_vehicle_desc[0] = '\0';
   protocol_send_watch_start(g_app_state.watching_button,
@@ -291,25 +314,7 @@ static void render(void) {
     return;
   }
 
-  // follow the same run through cache shifts
-  if (s_last_run_ref[0] && g_app_state.watching_offset > 0) {
-    Departure *cur = departures_get(e, g_app_state.watching_offset);
-    if (cur && cur->has_data && strcmp(cur->run_ref, s_last_run_ref) != 0) {
-      for (uint8_t off = 0; off < g_app_state.watching_offset; off++) {
-        Departure *d = departures_get(e, off);
-        if (d && d->has_data && strcmp(d->run_ref, s_last_run_ref) == 0) {
-          g_app_state.watching_offset = off;
-          break;
-        }
-      }
-    }
-  }
-
-  // fall back until a departure exists
-  while (g_app_state.watching_offset > 0 &&
-         !has_service_at_offset(g_app_state.watching_offset)) {
-    g_app_state.watching_offset--;
-  }
+  reconcile_service();
 
   if (g_app_state.conn_state != CONN_CONNECTED) {
     strncpy(s_status_buf, "Reconnecting...", sizeof(s_status_buf) - 1);
@@ -450,11 +455,16 @@ static void maybe_vibrate(Departure *dep) {
   // haptics use rounded minutes
   int32_t extra = (sec >= 0 && (sec % 60) >= 30) ? 1 : 0;
 
-  bool new_run = (strcmp(s_last_run_ref, dep->run_ref) != 0);
+  // A service can be delayed after already reaching NOW. Re-arm its arrival
+  // alert and minute countdown without treating the delay as a new vehicle.
+  if (sec >= 30) s_now_pattern_fired = false;
+  if (s_last_vibrated_minutes >= 0 && mins > s_last_vibrated_minutes) {
+    s_last_vibrated_minutes = mins;
+  }
+
   bool decreased = (s_last_vibrated_minutes > 0 && mins < s_last_vibrated_minutes);
 
-  if (new_run || decreased || s_last_vibrated_minutes < 0) {
-    if (new_run) s_now_pattern_fired = false;
+  if (decreased || s_last_vibrated_minutes < 0) {
     s_last_vibrated_minutes = mins;
     if (mins >= 0) {
       haptics_play_for_minutes(mins + extra);
@@ -473,7 +483,7 @@ static void maybe_vibrate(Departure *dep) {
 static void tick_cb(void *unused) {
   s_tick_timer = NULL;
 
-  Departure *dep = get_watched_departure();
+  Departure *dep = reconcile_service();
   if (dep) {
     send_watch_start_if_needed(dep);
     maybe_vibrate(dep);
@@ -493,6 +503,7 @@ static void change_offset(uint8_t new_offset) {
   if (g_app_state.watching_offset == new_offset) return;
   g_app_state.watching_offset = new_offset;
   s_last_run_ref[0] = '\0';
+  s_position_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
   s_now_pattern_fired = false;
   s_last_seconds = INT32_MAX;
@@ -584,7 +595,7 @@ static void window_load(Window *window) {
   s_bottom_color_prev = GColorClear;
 
   // Kick first render + watch_start.
-  Departure *dep = get_watched_departure();
+  Departure *dep = reconcile_service();
   if (dep) {
     send_watch_start_if_needed(dep);
     maybe_vibrate(dep);
@@ -610,6 +621,7 @@ static void window_unload(Window *window) {
   g_app_state.watching_button = 0;
   g_app_state.watching_offset = 0;
   s_last_run_ref[0] = '\0';
+  s_position_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
   s_now_pattern_fired = false;
   s_distance_buf[0] = '\0';
@@ -628,6 +640,7 @@ void watch_window_push(uint8_t button_id) {
   g_app_state.watched_vehicle_desc[0] = '\0';
   g_app_state.watched_run_ref[0] = '\0';
   s_last_run_ref[0] = '\0';
+  s_position_run_ref[0] = '\0';
   s_last_vibrated_minutes = -1;
   s_now_pattern_fired = false;
   s_last_seconds = INT32_MAX;
