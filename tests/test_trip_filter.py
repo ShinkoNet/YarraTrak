@@ -138,7 +138,9 @@ class FilterTests(unittest.IsolatedAsyncioTestCase):
         self.client.get_pattern.assert_not_called()
 
     async def test_tram_still_uses_route_and_direction(self):
-        departures = [{'route_id': 1, 'direction_id': 0}, {'route_id': 2, 'direction_id': 0}]
+        departures = [{'route_id': route, 'direction_id': 0,
+                       'scheduled_departure_utc': FIXTURE['departures'][0]['scheduled_departure_utc']}
+                      for route in (1, 2)]
         with patch.object(api, '_resolve_allowed_trip_pairs', return_value={(1, 0)}):
             result = await api._filter_favourite_departures(departures, 1, 2, 1, 0)
         self.assertEqual(result, departures[:1])

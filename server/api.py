@@ -2189,6 +2189,10 @@ async def _filter_favourite_departures(departures, stop_id, dest_id, route_type,
         departures.sort(key=lambda d: d.get("estimated_departure_utc") or d["scheduled_departure_utc"])
         return await _train_trip_filter.filter(departures, dest_id, route_type, limit)
 
+    # Delayed trams can overtake the original timetable order.
+    now_utc = datetime.now(timezone.utc)
+    departures = [d for d in departures if _build_departure_summary(d, now_utc, route_type)]
+    departures.sort(key=lambda d: d.get("estimated_departure_utc") or d["scheduled_departure_utc"])
     allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
     if allowed_trip_pairs is not None:
         return [d for d in departures
@@ -2319,6 +2323,7 @@ async def _watch_position_loop(
 
             await websocket.send_json({
                 "type": "position_update",
+                "run_ref": str(run_ref),
                 "distance_km": distance_km,
                 "vehicle_desc": vehicle_desc,
             })
@@ -2367,7 +2372,13 @@ async def fetch_departure_for_button(
     
     # Check cache
     cached = _departure_cache.get(cache_key)
-    if cached and (now - cached["fetched_at"]) < FAVOURITE_CACHE_TTL:
+    # Refill the three-service buffer as soon as a cached service passes,
+    # rather than waiting out the cache TTL with a missing slot.
+    expired_service = cached and any(
+        datetime.fromisoformat(d["departure_time"]).timestamp() <= now
+        for d in cached.get("departures", []) if d.get("departure_time")
+    )
+    if cached and not expired_service and (now - cached["fetched_at"]) < FAVOURITE_CACHE_TTL:
         _record_metric("departure_cache_hits")
         return cached
     _record_metric("departure_cache_misses")

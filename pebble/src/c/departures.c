@@ -1,6 +1,7 @@
 #include "departures.h"
 
 #include <limits.h>
+#include <string.h>
 
 int32_t departure_seconds_until(const Departure *dep) {
   if (!dep || !dep->has_data) {
@@ -37,4 +38,17 @@ Departure *departures_get(Entry *entry, uint8_t offset) {
     seen++;
   }
   return NULL;
+}
+
+uint8_t departures_rebase_offset(Entry *entry, const char *run_ref, uint8_t offset) {
+  if (run_ref && run_ref[0]) {
+    for (uint8_t i = 0; i < MAX_DEPS_PER_ENTRY; ++i) {
+      Departure *dep = departures_get(entry, i);
+      if (dep && strcmp(dep->run_ref, run_ref) == 0) return i;
+    }
+    // The selected vehicle has left the live list. Start with the next service.
+    return 0;
+  }
+  while (offset && !departures_get(entry, offset)) --offset;
+  return offset;
 }
