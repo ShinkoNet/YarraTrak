@@ -25,6 +25,7 @@ enum {
   IN_ENTRY_SYNC_REPLACE = 13,  // atomic clear + apply (single-message sync)
   IN_NEARBY_ROW = 15,
   IN_NEARBY_STATUS = 16,
+  IN_NEARBY_TRACK = 17,
   IN_QUERY_PROGRESS  = 14,  // data: progress label (e.g. "Thinking...")
 };
 
@@ -36,6 +37,7 @@ enum {
   OUT_OPEN_CONFIG  = 4,
   OUT_REFRESH      = 5,
   OUT_NEARBY       = 7,
+  OUT_NEARBY_TRACK = 8,
   OUT_QUERY        = 6,  // data: user text
 };
 
@@ -57,3 +59,4 @@ void protocol_send_refresh(void);
 void protocol_send_query(const char *text);
 
 void protocol_send_nearby(const char *request_id);
+void protocol_send_nearby_track(const char *selection);

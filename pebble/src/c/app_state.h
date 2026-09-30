@@ -41,6 +41,7 @@ typedef struct {
 } AppState;
 
 extern AppState g_app_state;
+extern Entry *g_nearby_entry;
 
 void app_state_init(void);
 void app_state_clear_entries(void);

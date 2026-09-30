@@ -41,7 +41,7 @@ class NearbyTests(unittest.IsolatedAsyncioTestCase):
         soon = (now + timedelta(minutes=1)).isoformat()
         past = (now - timedelta(minutes=1)).isoformat()
         async def departures(mode, stop_id, **kwargs):
-            d = {'run_ref': '1', 'scheduled_departure_utc': past, 'estimated_departure_utc': later if stop_id == 2 else soon}
+            d = {'route_id': 1, 'direction_id': 0, 'run_ref': '1', 'scheduled_departure_utc': past, 'estimated_departure_utc': later if stop_id == 2 else soon}
             return {'departures': [d, d, {'run_ref': 'expired', 'scheduled_departure_utc': past}],
                     'runs': {'1': {'destination_name': 'Destination'}}}
         client.get_departures.side_effect = departures
@@ -49,6 +49,31 @@ class NearbyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([d['stop_id'] for d in result['departures']], [2, 1])
         self.assertEqual(result['departures'][0]['departure_time'], later)
         self.assertEqual(result['departures'][0]['destination'], 'Destination')
+
+    async def test_tracker_request_filters_route_and_zero_direction(self):
+        client = PTVClient()
+        client._request_json = AsyncMock(return_value={})
+        await client.get_departures(0, 123, route_id='0', direction_id=0)
+        url = urlsplit(client._request_json.call_args.args[0])
+        self.assertEqual(url.path, '/v3/departures/route_type/0/stop/123/route/0')
+        self.assertEqual(parse_qs(url.query)['direction_id'], ['0'])
+
+    async def test_one_next_service_per_line_direction_at_nearest_stop(self):
+        client = AsyncMock()
+        client.get_nearby_stops.return_value = {'stops': [
+            {'stop_id': i, 'route_type': 0, 'stop_distance': i * 100} for i in (1, 2)]}
+        now = datetime.now(timezone.utc)
+        async def departures(mode, stop_id, **kwargs):
+            return {'departures': [
+                {'route_id': route, 'direction_id': direction, 'run_ref': str(minutes),
+                 'scheduled_departure_utc': (now + timedelta(minutes=minutes - stop_id)).isoformat()}
+                for route, direction, minutes in [(1, 0, 10), (1, 0, 20), (1, 1, 15), (2, 0, 25)]]}
+        client.get_departures.side_effect = departures
+        rows = (await find_departures(client, 0, 0))['departures']
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([r['stop_id'] for r in rows], [1, 1, 1])
+        self.assertEqual(rows[0]['run_ref'], '10')
+        self.assertEqual({(r['route_id'], r['direction_id']) for r in rows}, {(1, 0), (1, 1), (2, 0)})
 
     async def test_partial_failure_and_total_failure(self):
         client = AsyncMock()
@@ -71,13 +96,27 @@ class NearbyTests(unittest.IsolatedAsyncioTestCase):
             peak = max(peak, active)
             await asyncio.sleep(0)
             active -= 1
-            return {'departures': [{'run_ref': str(i), 'scheduled_departure_utc': future} for i in range(20)]}
+            return {'departures': [{'route_id': i, 'direction_id': 0, 'run_ref': str(i), 'scheduled_departure_utc': future} for i in range(20)]}
         client.get_departures.side_effect = departures
         self.assertEqual(len((await find_departures(client, 0, 0))['departures']), 16)
         self.assertLessEqual(peak, 4)
 
 
 class NearbyEndpointTests(unittest.TestCase):
+    def test_tracker_filters_route_and_direction_and_keeps_three(self):
+        from fastapi.testclient import TestClient
+        future = datetime.now(timezone.utc) + timedelta(minutes=5)
+        departures = [{'route_id': route, 'direction_id': direction, 'run_ref': str(i),
+            'scheduled_departure_utc': (future + timedelta(minutes=i)).isoformat()}
+            for i, (route, direction) in enumerate([(1, 0), (2, 0), (1, 1), (1, 0), (1, 0), (1, 0)])]
+        with patch.object(api.ptv_client, 'get_departures', AsyncMock(return_value={'departures': departures})) as fetch:
+            result = TestClient(api.app).post('/api/v1/nearby/tracker', json={
+                'stop_id': 1, 'route_type': 0, 'route_id': 1, 'direction_id': 0, 'client_id': 'test-tracker'})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual([d['run_ref'] for d in result.json()['departures']], ['0', '3', '4'])
+        self.assertEqual(fetch.call_args.kwargs['direction_id'], 0)
+        self.assertEqual(fetch.call_args.kwargs['route_id'], '1')
+
     def test_location_validation_and_response(self):
         from fastapi.testclient import TestClient
         client = TestClient(api.app)

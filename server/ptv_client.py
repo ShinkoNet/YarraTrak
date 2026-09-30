@@ -99,15 +99,17 @@ class PTVClient:
         separator = "&" if "?" in path_with_query else "?"
         return f"{self.BASE_URL}{path_with_query}{separator}signature={signature}"
 
-    async def get_departures(self, route_type: int, stop_id: int, route_id: str = None, max_results: int = 3, expand: list = None):
+    async def get_departures(self, route_type: int, stop_id: int, route_id: str = None, max_results: int = 3, expand: list = None, direction_id: int = None):
         """
         Get departures for a specific stop.
         route_type: 0=Train, 1=Tram, 2=Bus, 3=VLine, 4=Night Bus
         """
         endpoint = f"/v3/departures/route_type/{route_type}/stop/{stop_id}"
         params = {"max_results": max_results}
-        if route_id:
-            params["route_id"] = route_id
+        if route_id is not None:
+            endpoint += f"/route/{route_id}"
+        if direction_id is not None:
+            params["direction_id"] = direction_id
         if expand:
             params["expand"] = expand
             

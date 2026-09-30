@@ -237,6 +237,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     case IN_NEARBY_ROW:
       nearby_window_receive_row(data);
       break;
+    case IN_NEARBY_TRACK:
+      nearby_window_receive_tracker(data);
+      break;
     case IN_NEARBY_STATUS:
       nearby_window_receive_status(data);
       break;
@@ -377,4 +380,8 @@ void protocol_init(void) {
 
 void protocol_send_nearby(const char *request_id) {
   send_outbound(OUT_NEARBY, request_id);
+}
+
+void protocol_send_nearby_track(const char *selection) {
+  send_outbound(OUT_NEARBY_TRACK, selection);
 }
