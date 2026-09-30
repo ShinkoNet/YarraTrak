@@ -115,6 +115,18 @@ class PTVClient:
 
         return await self._request_json(url, "departures")
 
+    async def get_pattern(self, route_type: int, run_ref: str, date_utc: str):
+        """Get actual stops across advertised through services, excluding skipped stops."""
+        endpoint = f"/v3/pattern/run/{run_ref}/route_type/{route_type}"
+        params = {
+            "date_utc": date_utc,
+            # PTV only appends advertised legs when run details are expanded.
+            "expand": "Run",
+            "include_advertised_interchange": "true",
+            "include_skipped_stops": "false",
+        }
+        return await self._request_json(self._sign_request(endpoint, params), "patterns")
+
     async def get_directions(self, route_id: int):
         """
         View directions that a route travels in.
