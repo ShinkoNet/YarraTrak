@@ -122,12 +122,14 @@ static void send_watch_start_if_needed(Departure *dep) {
   s_position_run_ref[sizeof(s_position_run_ref) - 1] = '\0';
   g_app_state.watched_distance_km_x100 = INT32_MIN;
   g_app_state.watched_vehicle_desc[0] = '\0';
+  char route_id[ROUTE_ID_LEN] = "";
+  if (dep->route_id >= 0) snprintf(route_id, sizeof(route_id), "%ld", (long)dep->route_id);
   protocol_send_watch_start(g_app_state.watching_button,
                             dep->run_ref,
                             e->stop_id,
                             e->route_type,
-                            e->route_id,
-                            e->direction_id);
+                            route_id,
+                            dep->direction_id >= 0 ? dep->direction_id : e->direction_id);
 }
 
 // leco only draws digits
@@ -237,7 +239,12 @@ static void cancel_running_anim(void) {
 
 // one flag kills all motion
 static bool animations_suppressed(void) {
+#if defined(PBL_PLATFORM_APLITE)
+  // Reserve the classic watch's small heap for menus and live service data.
+  return true;
+#else
   return g_app_state.flags.disable_animations;
+#endif
 }
 
 static void trigger_bounce(void) {
@@ -314,10 +321,12 @@ static void render(void) {
     return;
   }
 
-  reconcile_service();
+  Departure *dep = reconcile_service();
 
   if (g_app_state.conn_state != CONN_CONNECTED) {
     strncpy(s_status_buf, "Reconnecting...", sizeof(s_status_buf) - 1);
+  } else if (dep && departure_seconds_until(dep) < -60) {
+    strncpy(s_status_buf, "Awaiting update", sizeof(s_status_buf) - 1);
   } else {
     const char *label;
     switch (g_app_state.watching_offset) {
@@ -334,8 +343,6 @@ static void render(void) {
   // Route text
   fmt_watch_route(e, s_route_buf, sizeof(s_route_buf));
   set_text_if_changed(s_route_layer, s_route_buf, &s_route_hash);
-
-  Departure *dep = get_watched_departure();
 
   // Countdown — swap to a square numeric font when the string is all digits.
   int32_t sec = dep ? departure_seconds_until(dep) : INT32_MAX;

@@ -11,7 +11,11 @@ void fmt_countdown(int32_t seconds_until, const Departure *dep, char *out, size_
     return;
   }
 
-  // Below 30 seconds or passed -> NOW!
+  if (seconds_until < -60) {
+    snprintf(out, out_size, "WAIT");
+    return;
+  }
+  // Keep a short grace period around the estimate.
   if (seconds_until < 30) {
     strncpy(out, "NOW!", out_size);
     out[out_size - 1] = '\0';
@@ -48,6 +52,10 @@ void fmt_menu_subtitle(const Departure *dep, char *out, size_t out_size) {
   }
 
   int32_t sec = departure_seconds_until(dep);
+  if (sec < -60) {
+    snprintf(out, out_size, "Awaiting update");
+    return;
+  }
   if (sec < 60) {
     strncpy(out, "Now", out_size);
     out[out_size - 1] = '\0';

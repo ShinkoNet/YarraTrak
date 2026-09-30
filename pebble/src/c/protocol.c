@@ -137,8 +137,9 @@ static void handle_entry_sync(char *data) {
 }
 
 // fav_update is compact because appmessage is tiny
-static void parse_departure(char *blob, Departure *out, char *route_id_out, size_t route_id_size) {
+static void parse_departure(char *blob, Departure *out) {
   memset(out, 0, sizeof(*out));
+  out->route_id = out->direction_id = -1;
   if (!blob || !blob[0]) {
     out->has_data = false;
     return;
@@ -153,13 +154,12 @@ static void parse_departure(char *blob, Departure *out, char *route_id_out, size
 
   out->minutes         = fc > 0 && f[0][0] ? atoi(f[0]) : -1;
   out->departure_unix  = fc > 1 && f[1][0] ? (time_t)atol(f[1]) : 0;
-  // f[2] (route_type) and f[3] (direction_id) ignored — Entry already has them.
+  // Mode belongs to the boarding stop; route and direction belong to each run.
+  out->direction_id = fc > 3 && f[3][0] ? atol(f[3]) : -1;
   copy_bounded(out->run_ref,  fc > 4 ? f[4] : "", sizeof(out->run_ref));
   copy_bounded(out->platform, fc > 5 ? f[5] : "", sizeof(out->platform));
 
-  if (route_id_out && route_id_size && fc > 6 && f[6][0]) {
-    copy_bounded(route_id_out, f[6], route_id_size);
-  }
+  out->route_id = fc > 6 && f[6][0] ? atol(f[6]) : -1;
 
   out->has_data = (out->minutes >= 0) || (out->departure_unix != 0);
 }
@@ -186,8 +186,7 @@ static void handle_fav_update(char *data) {
   if (dep_count > MAX_DEPS_PER_ENTRY) dep_count = MAX_DEPS_PER_ENTRY;
   for (int i = 0; i < dep_count; i++) {
     if (parts[1 + i][0]) {
-      parse_departure(parts[1 + i], &e->departures[i],
-                      e->route_id, sizeof(e->route_id));
+      parse_departure(parts[1 + i], &e->departures[i]);
     }
   }
 
@@ -314,13 +313,13 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
 
 // ---- Outbound helpers ----------------------------------------------------
 
-static void send_outbound(uint8_t type, const char *data) {
+static bool send_outbound(uint8_t type, const char *data) {
   DictionaryIterator *iter;
   AppMessageResult begin_res = app_message_outbox_begin(&iter);
   if (begin_res != APP_MSG_OK) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "outbox_begin failed: type=%u res=%d",
             (unsigned)type, (int)begin_res);
-    return;
+    return false;
   }
   dict_write_uint8(iter, KEY_OUTBOUND_TYPE, type);
   dict_write_cstring(iter, KEY_OUTBOUND_DATA, data ? data : "");
@@ -329,6 +328,7 @@ static void send_outbound(uint8_t type, const char *data) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "outbox_send failed: type=%u res=%d",
             (unsigned)type, (int)send_res);
   }
+  return send_res == APP_MSG_OK;
 }
 
 void protocol_send_ready(void) {
@@ -378,8 +378,8 @@ void protocol_init(void) {
 #endif
 }
 
-void protocol_send_nearby(const char *request_id) {
-  send_outbound(OUT_NEARBY, request_id);
+bool protocol_send_nearby(const char *request_id) {
+  return send_outbound(OUT_NEARBY, request_id);
 }
 
 void protocol_send_nearby_track(const char *selection) {

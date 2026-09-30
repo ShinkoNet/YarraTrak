@@ -29,6 +29,7 @@ from . import tools
 from .ptv_client import PTVClient
 from .trip_filter import TrainTripFilter
 from .nearby import find_departures
+from .ws_models import validate_buttons, validate_message
 from . import route_geometry
 from .config import (
     ALLOWED_ORIGINS,
@@ -125,6 +126,12 @@ _watch_tasks: dict[WebSocket, asyncio.Task] = {}
 
 # Basic in-memory protections for public deployments
 RATE_LIMIT_WINDOW_SECONDS = 60.0
+MAX_RATE_LIMIT_KEYS = 4096
+MAX_RUNTIME_CACHE_KEYS = 2048
+WS_MESSAGE_RATE_LIMIT = 120
+WS_CONNECT_RATE_LIMIT = 30
+_ws_message_limiters: dict[str, deque[float]] = defaultdict(deque)
+_ws_connect_limiters: dict[str, deque[float]] = defaultdict(deque)
 _http_query_limiters: dict[str, deque[float]] = defaultdict(deque)
 _http_favourite_limiters: dict[str, deque[float]] = defaultdict(deque)
 _ws_query_limiters: dict[str, deque[float]] = defaultdict(deque)
@@ -767,13 +774,14 @@ def _build_departure_summary(
     departure: dict,
     now_utc: datetime,
     route_type: int,
+    include_uncertain: bool = False,
 ) -> dict | None:
     dep_str = departure.get("estimated_departure_utc") or departure.get("scheduled_departure_utc")
     if not dep_str:
         return None
 
     dep_time = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
-    if dep_time <= now_utc:
+    if dep_time <= now_utc and not include_uncertain:
         return None
 
     minutes = int((dep_time - now_utc).total_seconds() / 60)
@@ -797,10 +805,11 @@ def _collect_departure_summaries(
     now_utc: datetime,
     route_type: int,
     max_departures: int,
+    include_uncertain: bool = False,
 ) -> list[dict]:
     collected = []
     for departure in departures:
-        summary = _build_departure_summary(departure, now_utc, route_type)
+        summary = _build_departure_summary(departure, now_utc, route_type, include_uncertain)
         if not summary:
             continue
         collected.append(summary)
@@ -1119,7 +1128,7 @@ def _require_client_id(client_id: str | None) -> str:
 
 def _client_scope_key(client_ip: str, client_id: str | None) -> str:
     if client_id:
-        return f"client:{client_id}"
+        return f"ip:{client_ip}:client:{client_id}"
     return f"ip:{client_ip}"
 
 
@@ -1157,7 +1166,7 @@ def _touch_client_activity(scope_key: str, client_ip: str, client_id: str | None
             "connection_timestamps": deque(),
             "query_timestamps": deque(),
         }
-        _client_activity[scope_key] = activity
+        _bounded_cache_put(_client_activity, scope_key, activity)
     else:
         activity["last_seen"] = _utc_isoformat()
         if client_id:
@@ -1921,10 +1930,24 @@ def _cleanup_rate_bucket(bucket: deque[float], now: float) -> None:
         bucket.popleft()
 
 
+def _bounded_cache_put(store: dict, key, value) -> None:
+    if key not in store and len(store) >= MAX_RUNTIME_CACHE_KEYS:
+        store.pop(next(iter(store)))
+    store[key] = value
+
+
 def _check_rate_limit(store: dict[str, deque[float]], key: str, limit: int) -> bool:
     if limit <= 0:
         return True
     now = time.time()
+    if key not in store and len(store) >= MAX_RATE_LIMIT_KEYS:
+        # Keep live quotas: evicting one would let clients reset it through churn.
+        for old_key, old_bucket in list(store.items()):
+            _cleanup_rate_bucket(old_bucket, now)
+            if not old_bucket:
+                del store[old_key]
+        if len(store) >= MAX_RATE_LIMIT_KEYS:
+            return False
     bucket = store[key]
     _cleanup_rate_bucket(bucket, now)
     if len(bucket) >= limit:
@@ -2012,7 +2035,6 @@ def _release_websocket_connection(
     if resolved_ip is None or resolved_scope is None:
         return
 
-    _ws_query_limiters.pop(resolved_scope, None)
     sockets = _ws_connections_by_scope.get(resolved_scope)
     if not sockets or websocket not in sockets:
         return
@@ -2083,9 +2105,12 @@ def _register_websocket_connection(
     client_id: str | None,
     scope_key: str,
 ) -> bool:
+    # Device replacement and the source-IP quota are separate concerns.
+    for prior, ip in list(_ws_client_ips.items()):
+        if ip == client_ip and not _is_websocket_active(prior):
+            _cleanup_websocket_state(prior)
     _prune_stale_websocket_connections(scope_key)
-    sockets = _ws_connections_by_scope[scope_key]
-    current = len(sockets)
+    current = sum(ip == client_ip for ip in _ws_client_ips.values())
     if current >= MAX_WS_CONNECTIONS_PER_IP:
         activity = _touch_client_activity(scope_key, client_ip, client_id)
         logger.warning(
@@ -2095,6 +2120,7 @@ def _register_websocket_connection(
             MAX_WS_CONNECTIONS_PER_IP,
         )
         return False
+    sockets = _ws_connections_by_scope[scope_key]
     sockets.add(websocket)
     _ws_client_ips[websocket] = client_ip
     _ws_connection_scopes[websocket] = scope_key
@@ -2162,9 +2188,7 @@ def _validate_query_text(query_text: str) -> str:
 
 
 def _clamp_button_configs(buttons: list[dict]) -> list[dict]:
-    if not isinstance(buttons, list):
-        return []
-    return buttons[:MAX_FAVOURITE_BUTTONS]
+    return validate_buttons(buttons)
 
 
 def _resolve_allowed_trip_pairs(stop_id: int, dest_id: int | None, route_type: int) -> set[tuple[int, int]] | None:
@@ -2176,7 +2200,7 @@ def _resolve_allowed_trip_pairs(stop_id: int, dest_id: int | None, route_type: i
     return set((p["route_id"], p["direction_id"]) for p in patterns)
 
 
-async def _filter_favourite_departures(departures, stop_id, dest_id, route_type, direction_id, limit=3):
+async def _filter_favourite_departures(departures, stop_id, dest_id, route_type, direction_id, limit=3, include_uncertain=False):
     if dest_id is not None and route_type in (RouteType.TRAIN, RouteType.VLINE):
         # Metro Tunnel trains change route and direction IDs at Town Hall.
         # Static route-wide stop sequences cannot identify their continuation.
@@ -2185,13 +2209,13 @@ async def _filter_favourite_departures(departures, stop_id, dest_id, route_type,
             if pairs:
                 departures = [d for d in departures if (d.get("route_id"), d.get("direction_id")) in pairs]
         now_utc = datetime.now(timezone.utc)
-        departures = [d for d in departures if _build_departure_summary(d, now_utc, route_type)]
+        departures = [d for d in departures if _build_departure_summary(d, now_utc, route_type, include_uncertain)]
         departures.sort(key=lambda d: d.get("estimated_departure_utc") or d["scheduled_departure_utc"])
         return await _train_trip_filter.filter(departures, dest_id, route_type, limit)
 
     # Delayed trams can overtake the original timetable order.
     now_utc = datetime.now(timezone.utc)
-    departures = [d for d in departures if _build_departure_summary(d, now_utc, route_type)]
+    departures = [d for d in departures if _build_departure_summary(d, now_utc, route_type, include_uncertain)]
     departures.sort(key=lambda d: d.get("estimated_departure_utc") or d["scheduled_departure_utc"])
     allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
     if allowed_trip_pairs is not None:
@@ -2281,7 +2305,7 @@ async def _get_run_position(run_ref: int, route_type: int) -> dict | None:
             "vehicle_desc": vehicle_desc,
             "fetched_at": now,
         }
-        _run_position_cache[cache_key] = result
+        _bounded_cache_put(_run_position_cache, cache_key, result)
         return result
     except Exception as e:
         logger.warning("Run position fetch error: %s", e)
@@ -2397,16 +2421,16 @@ async def fetch_departure_for_button(
         
         if not departures:
             result = {"departures": [], "disruption_label": None, "disruption_labels": [], "message": "No departures", "fetched_at": now}
-            _departure_cache[cache_key] = result
+            _bounded_cache_put(_departure_cache, cache_key, result)
             return result
         
         now_utc = datetime.now(timezone.utc)
         filtered_departures = await _filter_favourite_departures(
-            departures, stop_id, dest_id, route_type, direction_id, max_departures,
+            departures, stop_id, dest_id, route_type, direction_id, max_departures, include_uncertain=True,
         )
         allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
 
-        collected = _collect_departure_summaries(filtered_departures, now_utc, route_type, max_departures)
+        collected = _collect_departure_summaries(filtered_departures, now_utc, route_type, max_departures, include_uncertain=True)
         
         disruption_labels = _collect_favourite_disruption_labels(
             filtered_departures,
@@ -2423,7 +2447,7 @@ async def fetch_departure_for_button(
             "disruption_labels": disruption_labels,
             "fetched_at": now,
         }
-        _departure_cache[cache_key] = result
+        _bounded_cache_put(_departure_cache, cache_key, result)
         return result
         
     except Exception as e:
@@ -2431,7 +2455,7 @@ async def fetch_departure_for_button(
         return {"departures": [], "disruption_label": None, "disruption_labels": [], "message": "Unavailable", "fetched_at": now}
 
 
-async def broadcast_favourite_updates():
+async def _broadcast_favourite_updates_loop():
     """
     Background task that broadcasts departure updates to all subscribed clients every 15 seconds.
     """
@@ -2454,6 +2478,11 @@ async def broadcast_favourite_updates():
 
         # Connected clients
         for ws, buttons in active_subscriptions:
+            try:
+                buttons = validate_buttons(buttons)
+            except ValueError:
+                _cleanup_websocket_state(ws, log_reason="Discarded invalid favourite subscription")
+                continue
             for btn in buttons:
                 cache_key = (
                     btn["stop_id"],
@@ -2530,6 +2559,18 @@ async def broadcast_favourite_updates():
             }),
             sum(1 for sockets in _ws_connections_by_scope.values() if any(_is_websocket_active(ws) for ws in sockets)),
         )
+
+
+async def broadcast_favourite_updates():
+    # A transient error must not permanently stop updates for every client.
+    while True:
+        try:
+            await _broadcast_favourite_updates_loop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Restarting favourite broadcaster (%s)", type(exc).__name__)
+            await asyncio.sleep(5)
 
 
 def start_broadcast_task():
@@ -2779,7 +2820,7 @@ async def nearby_tracker(req: NearbyTrackerRequest, request: Request):
         departures = [d for d in data.get('departures', [])
             if d.get('route_id') == req.route_id and d.get('direction_id') == req.direction_id]
         departures.sort(key=lambda d: d.get('estimated_departure_utc') or d.get('scheduled_departure_utc') or '')
-        summaries = _collect_departure_summaries(departures, datetime.now(timezone.utc), req.route_type, 3)
+        summaries = _collect_departure_summaries(departures, datetime.now(timezone.utc), req.route_type, 3, include_uncertain=True)
         labels = _collect_favourite_disruption_labels(departures, data.get('disruptions', {}),
             req.stop_id, None, req.route_type, {(req.route_id, req.direction_id)})
         return {'departures': summaries, 'disruption_labels': labels,
@@ -2907,6 +2948,9 @@ async def websocket_endpoint(
     }
     """
     client_ip = _client_ip_from_websocket(websocket)
+    if not _check_rate_limit(_ws_connect_limiters, client_ip, WS_CONNECT_RATE_LIMIT):
+        await websocket.close(code=1008)
+        return
     normalized_client_id = _normalize_client_id(client_id)
     if not normalized_client_id:
         await websocket.accept()
@@ -2936,8 +2980,13 @@ async def websocket_endpoint(
         "id": None,
     })
     
+    if buttons and not _check_rate_limit(_http_favourite_limiters, client_ip, HTTP_FAVOURITE_RATE_LIMIT):
+        await websocket.send_json({"type": "error", "id": None, "error": "Please wait before refreshing"})
+        buttons = None
     if buttons:
         try:
+            if len(buttons) > 2048 or buttons.count(",") >= MAX_FAVOURITE_BUTTONS:
+                raise ValueError("Too many buttons")
             parsed_buttons = []
             for btn_str in buttons.split(","):
                 parts = btn_str.split(":")
@@ -3018,19 +3067,34 @@ async def websocket_endpoint(
                     pass
                 break
             
+            if not _check_rate_limit(_ws_message_limiters, client_ip, WS_MESSAGE_RATE_LIMIT):
+                await websocket.close(code=1008)
+                break
+            invalid_message_id = None
             try:
-                message = json.loads(raw_message)
-            except json.JSONDecodeError:
+                if len(raw_message) > 16384:
+                    raise ValueError("Message too large")
+                decoded = json.loads(raw_message)
+                if isinstance(decoded, dict):
+                    candidate_id = decoded.get("id")
+                    if type(candidate_id) in (str, int) and len(str(candidate_id)) <= 128:
+                        invalid_message_id = candidate_id
+                message = validate_message(decoded)
+            except (ValueError, TypeError, RecursionError):
                 await websocket.send_json({
                     "type": "error",
-                    "id": None,
-                    "error": "Invalid JSON"
+                    "id": invalid_message_id,
+                    "error": "Invalid message"
                 })
                 continue
             
             msg_type = message.get("type")
             msg_id = message.get("id")
-            
+            if msg_type in {"favourite", "subscribe_favourites", "watch_start"} and not _check_rate_limit(
+                    _http_favourite_limiters, client_ip, HTTP_FAVOURITE_RATE_LIMIT):
+                await websocket.send_json({"type": "error", "id": msg_id, "error": "Please wait before refreshing"})
+                continue
+
             if msg_type == "query":
                 # Handle text query — requires LLM key
                 try:
@@ -3049,7 +3113,7 @@ async def websocket_endpoint(
                 
                 if not _check_rate_limit(
                     _ws_query_limiters,
-                    scope_key,
+                    client_ip,
                     WS_QUERY_RATE_LIMIT,
                 ):
                     await websocket.send_json({
@@ -3332,6 +3396,8 @@ async def websocket_endpoint(
                             "dest_id": btn.get("dest_id")
                         })
                 
+                if not valid_buttons:
+                    _favourite_subscriptions.pop(websocket, None)
                 if valid_buttons:
                     _favourite_subscriptions[websocket] = valid_buttons
                     start_broadcast_task()
