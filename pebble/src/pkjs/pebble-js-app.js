@@ -517,22 +517,17 @@ function encodeDeparture(d) {
     return fields.join(';');
 }
 
-// Drop duplicate run_refs and collapse services
+// Drop repeated boarding events without hiding distinct services in the same minute.
 function dedupeDepartures(deps) {
     if (!deps || deps.length === 0) return [];
     var seenRef = {};
-    var seenMinute = {};
     var out = [];
     for (var i = 0; i < deps.length; i++) {
         var d = deps[i];
         if (!d) continue;
-        var refKey = d.run_ref || ('idx_' + i);
+        var refKey = d.run_ref ? [d.route_type, d.run_ref, d.departure_time].join(':') : ('idx_' + i);
         if (seenRef[refKey]) continue;
-        // minute precision is enough for duplicate deps
-        var minute = (d.departure_time || '').slice(0, 16);
-        if (minute && seenMinute[minute]) continue;
         seenRef[refKey] = true;
-        if (minute) seenMinute[minute] = true;
         out.push(d);
     }
     return out;
@@ -549,6 +544,7 @@ function handleFavUpdate(msg) {
         var dep2 = encodeDeparture(deps[1]);
         var dep3 = encodeDeparture(deps[2]);
         var labels = u.disruption_labels || (u.disruption_label ? [u.disruption_label] : []);
+        if (!deps.length && u.message) labels = [u.message].concat(labels);
         // 0x1E (record separator) between labels — matches the C decoder.
         var labelStr = labels.join('\x1e');
         var payload = bid + '|' + dep1 + '|' + dep2 + '|' + dep3 + '|' + labelStr;

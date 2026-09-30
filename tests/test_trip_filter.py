@@ -85,7 +85,8 @@ class FilterTests(unittest.IsolatedAsyncioTestCase):
         original = self.client.get_pattern.side_effect
         self.client.get_pattern.side_effect = TimeoutError()
         with self.assertLogs('server.trip_filter', level='WARNING'):
-            self.assertEqual(await self.filter.filter([DEPARTURES['990116']], 1139, 0), [])
+            with self.assertRaises(RuntimeError):
+                await self.filter.filter([DEPARTURES['990116']], 1139, 0)
         self.client.get_pattern.side_effect = original
         self.assertEqual(len(await self.filter.filter([DEPARTURES['990116']], 1139, 0)), 1)
 
