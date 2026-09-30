@@ -64,6 +64,7 @@ static void select_row(MenuLayer *menu, MenuIndex *index, void *context) {
 }
 
 static void load(Window *window) {
+  window_set_background_color(window, theme_bg());
   Layer *root = window_get_root_layer(window);
   s_menu = menu_layer_create(layer_get_bounds(root));
   menu_layer_set_callbacks(s_menu, NULL, (MenuLayerCallbacks){
