@@ -23,6 +23,8 @@ enum {
   IN_QUERY_ERROR     = 11,  // data: error message
   IN_QUERY_SAVED     = 12,  // data: button_id — agent persisted a favourite
   IN_ENTRY_SYNC_REPLACE = 13,  // atomic clear + apply (single-message sync)
+  IN_NEARBY_ROW = 15,
+  IN_NEARBY_STATUS = 16,
   IN_QUERY_PROGRESS  = 14,  // data: progress label (e.g. "Thinking...")
 };
 
@@ -33,6 +35,7 @@ enum {
   OUT_WATCH_STOP   = 3,
   OUT_OPEN_CONFIG  = 4,
   OUT_REFRESH      = 5,
+  OUT_NEARBY       = 7,
   OUT_QUERY        = 6,  // data: user text
 };
 
@@ -52,3 +55,5 @@ void protocol_send_watch_stop(void);
 void protocol_send_open_config(void);
 void protocol_send_refresh(void);
 void protocol_send_query(const char *text);
+
+void protocol_send_nearby(const char *request_id);

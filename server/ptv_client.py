@@ -81,7 +81,7 @@ class PTVClient:
         params['devid'] = self.dev_id
         
         # ptv signs the query string too
-        query_string = urlencode(params)
+        query_string = urlencode(params, doseq=True)
         
         # sign the path exactly as sent
         if not endpoint.startswith("/"):
@@ -148,6 +148,11 @@ class PTVClient:
         url = self._sign_request(endpoint, params)
 
         return await self._request_json(url, "runs")
+
+    async def get_nearby_stops(self, latitude: float, longitude: float):
+        endpoint = f"/v3/stops/location/{latitude},{longitude}"
+        params = {"route_types": [0, 1, 3], "max_distance": 500, "max_results": 16}
+        return await self._request_json(self._sign_request(endpoint, params), "nearby")
 
     async def search(self, term: str):
         """
