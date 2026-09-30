@@ -177,6 +177,7 @@ static void tick(void *context) {
 void nearby_window_show(Window *window, void (*on_back)(void)) {
   s_window = window;
   s_back = on_back;
+  window_set_background_color(window, theme_bg());
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
   s_layer = layer_create(GRect(0, 0, bounds.size.w, 16));
