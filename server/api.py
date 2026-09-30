@@ -28,6 +28,7 @@ from . import agent_engine
 from . import tools
 from .ptv_client import PTVClient
 from .trip_filter import TrainTripFilter
+from .nearby import find_departures
 from . import route_geometry
 from .config import (
     ALLOWED_ORIGINS,
@@ -74,6 +75,12 @@ class FavouriteRequest(BaseModel):
     direction_name: str | None = None
     route_type: int = RouteType.TRAIN
     client_id: str | None = None
+
+class NearbyRequest(BaseModel):
+    latitude: float
+    longitude: float
+    client_id: str | None = None
+
 
 class StopHistory(BaseModel):
     stop_id: int
@@ -2737,6 +2744,20 @@ async def favourite_departure(req: FavouriteRequest, request: Request):
     except Exception as e:
         logger.warning("Favourite error: %s", e)
         return {"vibration": [500, 100, 500], "message": "Error"}
+
+
+@app.post("/api/v1/nearby")
+async def nearby_departures(req: NearbyRequest, request: Request):
+    _require_client_id(req.client_id)
+    if not (-90 <= req.latitude <= 90 and -180 <= req.longitude <= 180):
+        raise HTTPException(status_code=422, detail="Invalid location")
+    if not _check_rate_limit(_http_favourite_limiters, _client_ip_from_request(request), HTTP_FAVOURITE_RATE_LIMIT):
+        raise HTTPException(status_code=429, detail="Please wait before refreshing")
+    try:
+        return await find_departures(ptv_client, req.latitude, req.longitude)
+    except Exception as exc:
+        logger.warning("Nearby lookup failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Nearby departures unavailable") from None
 
 
 @app.post("/api/v1/query")

@@ -6,6 +6,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(PBL_PLATFORM_APLITE)
+// The classic Pebble has only 24KB for code and heap. Reserve its remaining
+// memory for transport data and menus instead of animated backgrounds.
+Layer *fx_layer_create(GRect bounds) { return NULL; }
+void fx_layer_destroy(Layer *layer) { }
+void fx_layer_start(Layer *layer) { }
+void fx_layer_stop(Layer *layer) { }
+#else
+
 // 75ms is smooth enough and cheaper
 #define FX_STEP_MS 75
 
@@ -318,3 +327,5 @@ void fx_layer_stop(Layer *layer) {
   FxData *d = (FxData *)layer_get_data(layer);
   if (d->timer) { app_timer_cancel(d->timer); d->timer = NULL; }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#include "ui/nearby_window.h"
 #include "protocol.h"
 #include "app_state.h"
 #include "settings_store.h"
@@ -233,6 +234,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   char *data = data_tuple ? data_tuple->value->cstring : "";
 
   switch (type) {
+    case IN_NEARBY_ROW:
+      nearby_window_receive_row(data);
+      break;
+    case IN_NEARBY_STATUS:
+      nearby_window_receive_status(data);
+      break;
     case IN_CONN_STATE:
       handle_conn_state(data);
       break;
@@ -361,5 +368,13 @@ void protocol_init(void) {
   app_message_register_outbox_failed(outbox_failed_handler);
 
   // keep appmessage buffers boringly small
+#if defined(PBL_PLATFORM_APLITE)
+  app_message_open(512, 128);
+#else
   app_message_open(1024, 256);
+#endif
+}
+
+void protocol_send_nearby(const char *request_id) {
+  send_outbound(OUT_NEARBY, request_id);
 }

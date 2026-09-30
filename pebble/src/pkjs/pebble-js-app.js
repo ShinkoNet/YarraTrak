@@ -34,6 +34,9 @@ var OUT_WATCH_STOP  = 3;
 var OUT_OPEN_CONFIG = 4;
 var OUT_REFRESH     = 5;
 var OUT_QUERY       = 6;
+var OUT_NEARBY = 7;
+var IN_NEARBY_ROW = 15;
+var IN_NEARBY_STATUS = 16;
 
 // keep text under the watch inbox limit
 var MAX_APPMSG_PAYLOAD  = 960;
@@ -828,10 +831,70 @@ function saveEntryConfig(config) {
 
 // ---- Outbound message handlers from watch ------------------------------
 
+// Nearby uses a fresh phone position only when explicitly requested from the watch.
+var nearbyGeneration = 0;
+var nearbyRequest = null;
+
+function nearbyText(value, limit) {
+    return String(value || '').replace(/[|\x00-\x1f]/g, ' ').slice(0, limit);
+}
+
+function findNearbyDepartures(requestId) {
+    var generation = ++nearbyGeneration;
+    if (nearbyRequest) { nearbyRequest.abort(); nearbyRequest = null; }
+    function status(kind, text) {
+        if (generation === nearbyGeneration) sendToWatch(IN_NEARBY_STATUS, requestId + '|' + kind + '|' + text);
+    }
+    if (typeof navigator === 'undefined' || !navigator.geolocation) { status('error', 'Phone location unavailable'); return; }
+    status('loading', 'Getting location...');
+    navigator.geolocation.getCurrentPosition(function (position) {
+        if (generation !== nearbyGeneration) return;
+        status('loading', 'Finding departures...');
+        var xhr = new XMLHttpRequest();
+        nearbyRequest = xhr;
+        xhr.open('POST', getServerUrl() + '/api/v1/nearby');
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.timeout = 25000;
+        xhr.onload = function () {
+            if (generation !== nearbyGeneration) return;
+            nearbyRequest = null;
+            if (xhr.status < 200 || xhr.status >= 300) {
+                status('error', xhr.status === 429 ? 'Please wait and retry' : 'Departures unavailable');
+                return;
+            }
+            var response;
+            try { response = JSON.parse(xhr.responseText); } catch (e) { status('error', 'Invalid server response'); return; }
+            var rows = response.departures || [];
+            var count = 0;
+            for (var i = 0; i < rows.length && count < 16; i++) {
+                var row = rows[i];
+                var epoch = Math.floor(Date.parse(row.departure_time) / 1000);
+                if (!isFinite(epoch) || row.distance_m < 0 || row.distance_m > 500) continue;
+                if (row.route_type !== 0 && row.route_type !== 1 && row.route_type !== 3) continue;
+                var destination = (row.route_number ? row.route_number + ' ' : '') + row.destination;
+                sendToWatch(IN_NEARBY_ROW, [requestId, row.route_type, row.distance_m, epoch,
+                    nearbyText(row.stop_name, 32), nearbyText(destination, 40), nearbyText(row.platform, 7), count].join('|'));
+                count++;
+            }
+            if (response.partial) status('partial', 'Some stops unavailable');
+            status('done', count);
+        };
+        xhr.onerror = function () { status('error', 'Server unreachable'); };
+        xhr.ontimeout = function () { status('error', 'Request timed out'); };
+        xhr.send(JSON.stringify({latitude: position.coords.latitude, longitude: position.coords.longitude,
+            client_id: getOrCreateClientId()}));
+    }, function (error) {
+        status('error', error && error.code === 1 ? 'Allow phone location access' : 'Could not get location');
+    }, {enableHighAccuracy: true, timeout: 12000, maximumAge: 30000});
+}
+
 function parsePipe(str) { return String(str == null ? '' : str).split('|'); }
 
 Pebble.addEventListener('ready', function () {
     console.log('PKJS ready');
+    try {
+        if (Pebble.getActiveWatchInfo().platform === 'aplite') MAX_APPMSG_PAYLOAD = 400;
+    } catch (err) { }
     migrateLegacyBtnKeys();
     firstLaunchDemoSeed();
     loadQueryHistory();
@@ -884,6 +947,9 @@ Pebble.addEventListener('appmessage', function (e) {
             } else {
                 connect();
             }
+            break;
+        case OUT_NEARBY:
+            findNearbyDepartures(String(data));
             break;
         case OUT_QUERY:
             startQuery(data);

@@ -1,6 +1,6 @@
 #include "menu_window.h"
 #include "watch_window.h"
-#include "query_window.h"
+#include "quick_actions.h"
 #include "theme.h"
 #include "../app_state.h"
 #include "../protocol.h"
@@ -12,14 +12,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#if defined(PBL_MICROPHONE)
-static bool has_ask_row(void) {
-  return !g_app_state.flags.disable_ai_assistant;
-}
-#else
-static bool has_ask_row(void) { return false; }
-#endif
-
 #define TIME_BAR_HEIGHT 16
 
 static Window *s_window = NULL;
@@ -29,6 +21,7 @@ static Layer *s_time_bar = NULL;
 static char s_time_buf[8];
 static uint8_t s_pending_open_button = 0;
 static bool s_ready_vibe_sent = false;
+static void release_view(void);
 
 // connection state lives in row subtitles
 
@@ -68,7 +61,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
 static uint16_t get_num_rows(MenuLayer *menu_layer, uint16_t section_index, void *context) {
   uint16_t n = g_app_state.entry_count > 0 ? g_app_state.entry_count : 1;
-  if (has_ask_row()) n += 1;
+  n += 1;
   return n;
 }
 
@@ -82,11 +75,11 @@ static void draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_ind
   subtitle[0] = '\0';
 
   uint16_t row = cell_index->row;
-  if (has_ask_row()) {
+  {
     if (row == 0) {
-      strncpy(title, "Ask", sizeof(title) - 1);
+      strncpy(title, "Quick Actions", sizeof(title) - 1);
       title[sizeof(title) - 1] = '\0';
-      strncpy(subtitle, "Voice assistant", sizeof(subtitle) - 1);
+      strncpy(subtitle, "Ask or nearby departures", sizeof(subtitle) - 1);
       subtitle[sizeof(subtitle) - 1] = '\0';
       goto draw;
     }
@@ -152,11 +145,18 @@ static int16_t get_cell_height(MenuLayer *menu_layer, MenuIndex *cell_index, voi
   return 40;
 }
 
+static void open_quick_actions(void *context) {
+  if (!s_window || !s_menu_layer) return;
+  s_pending_open_button = 0;
+  release_view();
+  quick_actions_push();
+}
+
 static void select_click(MenuLayer *menu_layer, MenuIndex *cell_index, void *context) {
   uint16_t row = cell_index->row;
-  if (has_ask_row()) {
+  {
     if (row == 0) {
-      query_window_start();
+      app_timer_register(1, open_quick_actions, NULL);
       return;
     }
     row -= 1;
@@ -224,11 +224,19 @@ static void window_load(Window *window) {
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 }
 
-static void window_unload(Window *window) {
+static void release_view(void) {
   tick_timer_service_unsubscribe();
   if (s_menu_layer) { menu_layer_destroy(s_menu_layer); s_menu_layer = NULL; }
   if (s_time_layer) { text_layer_destroy(s_time_layer); s_time_layer = NULL; }
   if (s_time_bar)   { layer_destroy(s_time_bar); s_time_bar = NULL; }
+}
+
+static void window_appear(Window *window) {
+  if (!s_menu_layer) window_load(window);
+}
+
+static void window_unload(Window *window) {
+  release_view();
   window_destroy(s_window);
   s_window = NULL;
 }
@@ -241,6 +249,7 @@ void menu_window_push(void) {
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers){
     .load = window_load,
+    .appear = window_appear,
     .unload = window_unload,
   });
   window_stack_push(s_window, true);
