@@ -27,6 +27,7 @@ from .enums import RouteType
 from . import agent_engine
 from . import tools
 from .ptv_client import PTVClient
+from .trip_filter import TrainTripFilter
 from . import route_geometry
 from .config import (
     ALLOWED_ORIGINS,
@@ -89,6 +90,7 @@ class AgentRequest(BaseModel):
 # --- Initialization ---
 
 ptv_client = PTVClient()
+_train_trip_filter = TrainTripFilter(ptv_client)
 
 # subscription registry: websocket -> list of button configs with start/destination info
 _favourite_subscriptions: dict[WebSocket, list[dict]] = {}
@@ -2156,21 +2158,21 @@ def _resolve_allowed_trip_pairs(stop_id: int, dest_id: int | None, route_type: i
     return set((p["route_id"], p["direction_id"]) for p in patterns)
 
 
-def _fallback_direction_match(
-    departure: dict,
-    allowed_trip_pairs: set[tuple[int | None, int | None]] | None,
-    route_type: int,
-) -> bool:
-    """Allow through-routed metro services when the live route_id differs from the saved destination route."""
-    if route_type != RouteType.TRAIN or not allowed_trip_pairs:
-        return False
+async def _filter_favourite_departures(departures, stop_id, dest_id, route_type, direction_id, limit=3):
+    if dest_id is not None and route_type == RouteType.TRAIN:
+        # Metro Tunnel trains change route and direction IDs at Town Hall.
+        # Static route-wide stop sequences cannot identify their continuation.
+        now_utc = datetime.now(timezone.utc)
+        departures = [d for d in departures if _build_departure_summary(d, now_utc, route_type)]
+        departures.sort(key=lambda d: d.get("estimated_departure_utc") or d["scheduled_departure_utc"])
+        return await _train_trip_filter.filter(departures, dest_id, route_type, limit)
 
-    direction_id = departure.get("direction_id")
-    if direction_id is None:
-        return False
-
-    allowed_direction_ids = {allowed_direction_id for _route_id, allowed_direction_id in allowed_trip_pairs}
-    return direction_id in allowed_direction_ids
+    allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
+    if allowed_trip_pairs is not None:
+        return [d for d in departures
+                if (d.get("route_id"), d.get("direction_id")) in allowed_trip_pairs]
+    return [d for d in departures
+            if direction_id is None or d.get("direction_id") == direction_id]
 
 
 def _extract_vehicle_position(run_data: dict) -> tuple[float, float] | None:
@@ -2366,33 +2368,11 @@ async def fetch_departure_for_button(
             return result
         
         now_utc = datetime.now(timezone.utc)
-        collected = []
-        filtered_departures = []
-        fallback_departures = []
+        filtered_departures = await _filter_favourite_departures(
+            departures, stop_id, dest_id, route_type, direction_id, max_departures,
+        )
         allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
 
-        if dest_id is not None and not allowed_trip_pairs:
-            result = {"departures": [], "disruption_label": None, "disruption_labels": [], "fetched_at": now}
-            _departure_cache[cache_key] = result
-            return result
-        
-        for d in departures:
-            if allowed_trip_pairs is not None:
-                dep_pair = (d.get("route_id"), d.get("direction_id"))
-                if dep_pair in allowed_trip_pairs:
-                    filtered_departures.append(d)
-                elif _fallback_direction_match(d, allowed_trip_pairs, route_type):
-                    fallback_departures.append(d)
-                else:
-                    continue
-            elif direction_id is not None and d.get("direction_id") != direction_id:
-                continue
-            else:
-                filtered_departures.append(d)
-
-        if allowed_trip_pairs is not None and not filtered_departures and fallback_departures:
-            filtered_departures = fallback_departures
-        
         collected = _collect_departure_summaries(filtered_departures, now_utc, route_type, max_departures)
         
         disruption_labels = _collect_favourite_disruption_labels(
@@ -2714,19 +2694,11 @@ async def favourite_departure(req: FavouriteRequest, request: Request):
             return {"vibration": [200, 200], "message": "No services"}
 
         now_utc = datetime.now(timezone.utc)
-        allowed_trip_pairs = _resolve_allowed_trip_pairs(req.stop_id, req.dest_id, req.route_type)
-
-        if req.dest_id is not None and not allowed_trip_pairs:
-            return {"vibration": [200, 200], "message": "No services"}
+        departures = await _filter_favourite_departures(
+            departures, req.stop_id, req.dest_id, req.route_type, req.direction_id,
+        )
 
         for d in departures:
-            if allowed_trip_pairs is not None:
-                dep_pair = (d.get("route_id"), d.get("direction_id"))
-                if dep_pair not in allowed_trip_pairs:
-                    continue
-            elif req.direction_id is not None and d.get("direction_id") != req.direction_id:
-                continue
-
             dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
             if not dep_str:
                 continue
@@ -3159,24 +3131,11 @@ async def websocket_endpoint(
                     
                     now_utc = datetime.now(timezone.utc)
                     found = False
-                    allowed_trip_pairs = _resolve_allowed_trip_pairs(stop_id, dest_id, route_type)
+                    departures = await _filter_favourite_departures(
+                        departures, stop_id, dest_id, route_type, direction_id,
+                    )
 
-                    if dest_id is not None and not allowed_trip_pairs:
-                        await websocket.send_json({
-                            "type": "favourite_result",
-                            "id": msg_id,
-                            "message": "No future services"
-                        })
-                        continue
-                    
                     for d in departures:
-                        if allowed_trip_pairs is not None:
-                            dep_pair = (d.get("route_id"), d.get("direction_id"))
-                            if dep_pair not in allowed_trip_pairs:
-                                continue
-                        elif direction_id is not None and d.get("direction_id") != direction_id:
-                            continue
-                        
                         dep_str = d.get("estimated_departure_utc") or d.get("scheduled_departure_utc")
                         if not dep_str:
                             continue
