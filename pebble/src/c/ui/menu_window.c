@@ -77,9 +77,9 @@ static void draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_ind
   uint16_t row = cell_index->row;
   {
     if (row == 0) {
-      strncpy(title, "Quick Actions", sizeof(title) - 1);
+      strncpy(title, g_app_state.flags.disable_ai_assistant ? "Find Nearest" : "Quick Actions", sizeof(title) - 1);
       title[sizeof(title) - 1] = '\0';
-      strncpy(subtitle, "Ask or nearby departures", sizeof(subtitle) - 1);
+      strncpy(subtitle, g_app_state.flags.disable_ai_assistant ? "Uses Location within 500m" : "Ask or nearby departures", sizeof(subtitle) - 1);
       subtitle[sizeof(subtitle) - 1] = '\0';
       goto draw;
     }

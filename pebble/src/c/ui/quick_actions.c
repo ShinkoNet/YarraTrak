@@ -8,6 +8,7 @@
 static Window *s_window;
 static MenuLayer *s_menu;
 static bool s_nearby;
+static bool s_direct_nearby;
 static void back(ClickRecognizerRef recognizer, void *context) { window_stack_pop(true); }
 static void select_row(MenuLayer *menu, MenuIndex *index, void *context);
 static void up(ClickRecognizerRef recognizer, void *context) { menu_layer_set_selected_next(s_menu, true, MenuRowAlignNone, true); }
@@ -65,6 +66,11 @@ static void select_row(MenuLayer *menu, MenuIndex *index, void *context) {
 
 static void load(Window *window) {
   window_set_background_color(window, theme_bg());
+  if (s_direct_nearby) {
+    s_nearby = true;
+    nearby_window_show(window, restore);
+    return;
+  }
   Layer *root = window_get_root_layer(window);
   s_menu = menu_layer_create(layer_get_bounds(root));
   menu_layer_set_callbacks(s_menu, NULL, (MenuLayerCallbacks){
@@ -90,10 +96,15 @@ static void appear(Window *window) {
   if (!s_menu && !s_nearby) load(window);
 }
 
-static void restore(void) { s_nearby = false; load(s_window); }
+static void restore(void) {
+  s_nearby = false;
+  if (s_direct_nearby) window_stack_pop(true);
+  else load(s_window);
+}
 
 void quick_actions_push(void) {
   if (s_window) return;
+  s_direct_nearby = g_app_state.flags.disable_ai_assistant;
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers){.load = load, .appear = appear, .unload = unload});
   window_stack_push(s_window, true);
