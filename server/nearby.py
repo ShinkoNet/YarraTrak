@@ -2,6 +2,32 @@
 import asyncio
 from datetime import datetime, timezone
 import math
+import json
+from pathlib import Path
+
+
+_TRAIN_STOPS = {stop['stop_id']: stop for stop in
+                json.loads(Path(__file__).with_name('stations_train.json').read_text())['stops']}
+_CITY_NAMES = {'city', 'the city', 'to city', 'city loop', 'flinders street',
+               'flinders st', 'town hall', 'southern cross', 'melbourne central',
+               'state library', 'parliament', 'flagstaff'}
+
+
+def city_bound(stop, departure, destination, direction):
+    def is_city(name):
+        name = ' '.join((name or '').casefold().split()).removesuffix(' station')
+        return name in _CITY_NAMES
+
+    if is_city(destination) or is_city(direction.get('direction_name')):
+        return True
+    # Direction IDs are route-specific, not a universal inbound/outbound flag.
+    # Retain the boarding stop's City direction for through-running tunnel trains
+    # whose advertised destination is on the other side of Melbourne.
+    if stop['route_type'] == 0:
+        route = _TRAIN_STOPS.get(stop['stop_id'], {}).get('routes', {}).get(str(departure.get('route_id')), {})
+        name = route.get('dirs', {}).get(str(departure.get('direction_id')), {}).get('name')
+        return is_city(name)
+    return False
 
 
 def nearby_stops(data):
@@ -55,6 +81,7 @@ async def find_departures(client, latitude, longitude):
                 'destination': destination, 'route_number': route.get('route_number') or '',
                 'departure_time': when.isoformat(), 'run_ref': ref,
                 'platform': str(departure.get('platform_number') or ''),
+                '_city_bound': city_bound(stop, departure, destination, direction),
             })
         return rows
 
@@ -79,4 +106,8 @@ async def find_departures(client, latitude, longitude):
             continue
         services[key] = row
         row['distance_m'] = round(row['distance_m'])
-    return {'departures': list(services.values())[:16], 'partial': bool(failures), 'radius_m': 500}
+    # Stable sort preserves proximity and departure order within each group.
+    ordered = sorted(services.values(), key=lambda row: not row['_city_bound'])
+    for row in ordered:
+        row.pop('_city_bound')
+    return {'departures': ordered[:16], 'partial': bool(failures), 'radius_m': 500}

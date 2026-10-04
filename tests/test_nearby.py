@@ -7,12 +7,37 @@ from urllib.parse import parse_qs, urlsplit
 
 os.environ.setdefault('PTV_DEV_ID', 'test')
 os.environ.setdefault('PTV_API_KEY', 'test')
-from server.nearby import nearby_stops, find_departures
+from server.nearby import nearby_stops, find_departures, city_bound
 from server.ptv_client import PTVClient
 from server import api
 
 
 class NearbyTests(unittest.IsolatedAsyncioTestCase):
+    def test_city_bound_includes_tunnel_continuations_without_global_direction_ids(self):
+        self.assertTrue(city_bound({'stop_id': 1233, 'route_type': 0},
+            {'route_id': 14, 'direction_id': 1}, 'East Pakenham', {}))
+        self.assertFalse(city_bound({'stop_id': 1233, 'route_type': 0},
+            {'route_id': 14, 'direction_id': 14}, 'Sunbury', {}))
+        self.assertFalse(city_bound({'stop_id': 1233, 'route_type': 1},
+            {'route_id': 14, 'direction_id': 1}, 'Suburb', {}))
+        for name in ('Flinders St', 'Town Hall Station', 'Southern Cross'):
+            self.assertTrue(city_bound({'stop_id': 1, 'route_type': 0}, {}, name, {}))
+
+    async def test_city_services_promoted_before_limit_with_proximity_preserved(self):
+        client = AsyncMock()
+        client.get_nearby_stops.return_value = {'stops': [
+            {'stop_id': 99999, 'route_type': 0, 'stop_distance': 50}]}
+        future = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        client.get_departures.return_value = {
+            'departures': [{'route_id': i, 'direction_id': i, 'run_ref': str(i),
+                            'scheduled_departure_utc': future} for i in range(18)],
+            'runs': {str(i): {'destination_name': 'Town Hall' if i == 17 else 'Suburb ' + str(i)}
+                     for i in range(18)}}
+        rows = (await find_departures(client, 0, 0))['departures']
+        self.assertEqual(len(rows), 16)
+        self.assertEqual(rows[0]['destination'], 'Town Hall')
+        self.assertTrue(all('_city_bound' not in row for row in rows))
+
     def test_modes_radius_duplicates_and_limit(self):
         stops = [{'stop_id': i, 'route_type': 0, 'stop_distance': i * 10} for i in range(30)]
         stops += [dict(stops[0]), {'stop_id': 40, 'route_type': 2, 'stop_distance': 1},
