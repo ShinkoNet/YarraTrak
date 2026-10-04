@@ -85,6 +85,27 @@ class NearbyTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await find_departures(client, 0, 0)
 
+    async def test_unique_destinations_across_lines_use_next_realtime_departure(self):
+        client = AsyncMock()
+        client.get_nearby_stops.return_value = {'stops': [
+            {'stop_id': 1, 'stop_name': 'Parliament', 'route_type': 0, 'stop_distance': 50},
+            {'stop_id': 2, 'stop_name': 'Further station', 'route_type': 0, 'stop_distance': 200}]}
+        now = datetime.now(timezone.utc)
+        async def departures(mode, stop_id, **kwargs):
+            return {'departures': [
+                {'route_id': i, 'direction_id': i, 'run_ref': str(i),
+                 'scheduled_departure_utc': (now + timedelta(minutes=i)).isoformat(),
+                 'estimated_departure_utc': (now + timedelta(minutes=minutes if stop_id == 1 else 1)).isoformat()}
+                for i, minutes in [(1, 10), (2, 3), (3, 5), (4, 7)]],
+                'runs': {'1': {'destination_name': 'Flinders Street'},
+                         '2': {'destination_name': '  FLINDERS   STREET '},
+                         '3': {'destination_name': 'Flinders Street'},
+                         '4': {'destination_name': 'Sunbury'}}}
+        client.get_departures.side_effect = departures
+        rows = (await find_departures(client, 0, 0))['departures']
+        self.assertEqual([(r['stop_id'], r['run_ref']) for r in rows], [(1, '2'), (1, '4')])
+        self.assertEqual((rows[0]['route_id'], rows[0]['direction_id']), (2, 2))
+
     async def test_large_results_capped_at_16_and_concurrency_at_four(self):
         client = AsyncMock()
         client.get_nearby_stops.return_value = {'stops': [{'stop_id': i, 'route_type': 1, 'stop_distance': i} for i in range(16)]}

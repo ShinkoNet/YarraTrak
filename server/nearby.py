@@ -69,8 +69,12 @@ async def find_departures(client, latitude, longitude):
         key = (row['route_type'], row['route_id'], row['direction_id'])
         if None in key:
             continue
-        # Rows are ordered by distance then time: keep the next service at
-        # the nearest boarding stop, not more runs or stops of the same line.
+        # Different lines can advertise the same destination (for example
+        # Flinders Street at Parliament). Keep only the nearest stop's next
+        # departure for that destination within each transport mode.
+        destination = ' '.join(row['destination'].casefold().split())
+        if destination != 'departure':
+            key = (row['route_type'], destination)
         if key in services:
             continue
         services[key] = row
