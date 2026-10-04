@@ -153,8 +153,8 @@ static void back(ClickRecognizerRef recognizer, void *context) {
   if (callback) callback();
 }
 static void select_row(MenuLayer *menu, MenuIndex *index, void *context);
-static void up(ClickRecognizerRef recognizer, void *context) { menu_layer_set_selected_next(s_menu, true, MenuRowAlignNone, true); }
-static void down(ClickRecognizerRef recognizer, void *context) { menu_layer_set_selected_next(s_menu, false, MenuRowAlignNone, true); }
+static void up(ClickRecognizerRef recognizer, void *context) { menu_layer_set_selected_next(s_menu, true, MenuRowAlignCenter, true); }
+static void down(ClickRecognizerRef recognizer, void *context) { menu_layer_set_selected_next(s_menu, false, MenuRowAlignCenter, true); }
 static void select_click(ClickRecognizerRef recognizer, void *context) {
   MenuIndex index = menu_layer_get_selected_index(s_menu);
   select_row(s_menu, &index, NULL);
