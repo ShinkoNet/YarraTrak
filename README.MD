@@ -26,7 +26,7 @@ The app includes a few demo entries so you can see live departures straight away
 
 ## Self Hosting
 
-YarraTrak uses a small FastAPI server for PTV data and the Pebble settings page. If you run your own server, set your PTV developer ID and API key, install the Python requirements, and run `uvicorn server.api:app`.
+YarraTrak uses a small FastAPI server for PTV data and the Pebble settings page. If you run your own server, set your PTV developer ID and API key, install the Python requirements, and run `uvicorn server.api:app --no-access-log`.
 
 Build the Pebble app from the `pebble` directory with the Pebble SDK:
 
@@ -37,7 +37,9 @@ pebble install --phone YOUR_PHONE_IP
 
 ## Dashboard
 
-The server includes a small internal dashboard for checking request volume, query volume, cache state, and recent service health. It is meant for the person running the server, not for public app users.
+The server includes a small internal dashboard for checking server load: connections, AI query volume, PTV upstream calls, cache state, broadcast loop time and rate-limit hits. It is meant for the person running the server, not for public app users.
+
+It only keeps aggregate counters in memory. Nothing per client is recorded, and no IP addresses or query contents are logged or shown. The phone's random `client_id` is used only to apply rate limits and replace stale connections. See the [privacy policy](https://netcavy.net/privacy/yarratrak).
 
 ## API
 

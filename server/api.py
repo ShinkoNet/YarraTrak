@@ -108,8 +108,6 @@ _departure_cache: dict[tuple, dict] = {}
 FAVOURITE_CACHE_TTL = max(15.0, FAVOURITE_CACHE_TTL_SECONDS)  # seconds
 FAVOURITE_BROADCAST_INTERVAL = 15.0  # seconds
 FAVOURITE_FETCH_LIMIT = max(1, FAVOURITE_FETCH_CONCURRENCY)
-CLIENT_ACTIVITY_WINDOW_SECONDS = 3600.0
-CLIENT_LEADERBOARD_LIMIT = 8
 WS_IDLE_TIMEOUT_SECONDS = 90.0
 
 # Background task reference
@@ -138,13 +136,20 @@ _ws_query_limiters: dict[str, deque[float]] = defaultdict(deque)
 _ws_connections_by_scope: dict[str, set[WebSocket]] = defaultdict(set)
 _ws_client_ips: dict[WebSocket, str] = {}
 _ws_connection_scopes: dict[WebSocket, str] = {}
-_ws_client_ids: dict[WebSocket, str | None] = {}
-_client_activity: dict[str, dict[str, object]] = {}
 _favourite_fetch_semaphore = asyncio.Semaphore(FAVOURITE_FETCH_LIMIT)
+# Aggregate counters only: no per-client state is kept for metrics.
+_WINDOW_COUNTERS = (
+    "departure_cache_hits",
+    "departure_cache_misses",
+    "broadcast_iterations",
+    "ws_connections_opened",
+    "agent_queries",
+    "rate_limited",
+    "rejected_connections",
+)
+_LOAD_COUNTERS = ("ws_connections_opened", "agent_queries", "rate_limited", "rejected_connections")
 _metrics_window = {
-    "departure_cache_hits": 0,
-    "departure_cache_misses": 0,
-    "broadcast_iterations": 0,
+    **{name: 0 for name in _WINDOW_COUNTERS},
     "broadcast_duration_sum": 0.0,
     "broadcast_duration_max": 0.0,
     "last_unique_keys": 0,
@@ -296,7 +301,7 @@ def _empty_metrics_snapshot(timestamp: datetime | None = None) -> dict[str, int 
         "subscribers": 0,
         "unique_keys": 0,
         "active_clients": 0,
-        "known_clients": 0,
+        **{name: 0 for name in _LOAD_COUNTERS},
         "broadcast_loops": 0,
         "avg_loop_ms": 0.0,
         "max_loop_ms": 0.0,
@@ -1105,10 +1110,6 @@ def _dashboard_tuning() -> dict[str, int | float]:
     }
 
 
-def _client_ip_fingerprint(client_ip: str) -> str:
-    return hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:10]
-
-
 def _normalize_client_id(client_id: str | None) -> str | None:
     if client_id is None:
         return None
@@ -1132,144 +1133,11 @@ def _client_scope_key(client_ip: str, client_id: str | None) -> str:
     return f"ip:{client_ip}"
 
 
-def _client_scope_label(client_ip: str, client_id: str | None) -> str:
-    if client_id:
-        return client_id[:12]
-    return f"ip-{_client_ip_fingerprint(client_ip)}"
-
-
-def _prune_client_activity_window(activity: dict[str, object], now: float | None = None) -> None:
-    current = now if now is not None else time.time()
-    cutoff = current - CLIENT_ACTIVITY_WINDOW_SECONDS
-    for key in ("connection_timestamps", "query_timestamps"):
-        bucket = activity.get(key)
-        if not isinstance(bucket, deque):
-            continue
-        while bucket and bucket[0] <= cutoff:
-            bucket.popleft()
-
-
-def _touch_client_activity(scope_key: str, client_ip: str, client_id: str | None) -> dict[str, object]:
-    activity = _client_activity.get(scope_key)
-    if activity is None:
-        activity = {
-            "label": _client_scope_label(client_ip, client_id),
-            "scope_kind": "client_id" if client_id else "ip_fallback",
-            "client_id": client_id,
-            "ip_fingerprint": _client_ip_fingerprint(client_ip),
-            "connections_opened": 0,
-            "ws_queries": 0,
-            "active_connections": 0,
-            "active_buttons": 0,
-            "active_subscriber": False,
-            "last_seen": _utc_isoformat(),
-            "connection_timestamps": deque(),
-            "query_timestamps": deque(),
-        }
-        _bounded_cache_put(_client_activity, scope_key, activity)
-    else:
-        activity["last_seen"] = _utc_isoformat()
-        if client_id:
-            activity["client_id"] = client_id
-            activity["label"] = _client_scope_label(client_ip, client_id)
-            activity["scope_kind"] = "client_id"
-        activity["ip_fingerprint"] = _client_ip_fingerprint(client_ip)
-    _prune_client_activity_window(activity)
-    return activity
-
-
-def _record_client_activity_event(
-    scope_key: str,
-    client_ip: str,
-    client_id: str | None,
-    event_key: str,
-) -> dict[str, object]:
-    activity = _touch_client_activity(scope_key, client_ip, client_id)
-    bucket = activity.get(event_key)
-    if not isinstance(bucket, deque):
-        bucket = deque()
-        activity[event_key] = bucket
-    now = time.time()
-    bucket.append(now)
-    _prune_client_activity_window(activity, now)
-    return activity
-
-
-def _client_activity_rows(limit: int = 12) -> list[dict[str, object]]:
-    active_buttons_by_scope: dict[str, int] = defaultdict(int)
-    active_subscribers: set[str] = set()
-    for websocket, buttons in _active_favourite_subscriptions():
-        scope_key = _ws_connection_scopes.get(websocket)
-        if scope_key is None:
-            continue
-        active_subscribers.add(scope_key)
-        active_buttons_by_scope[scope_key] += len(buttons)
-
-    active_client_count = 0
-    rows: list[dict[str, object]] = []
-    for scope_key, activity in _client_activity.items():
-        _prune_client_activity_window(activity)
-        active_connections = len(_ws_connections_by_scope.get(scope_key, set()))
-        if active_connections > 0:
-            active_client_count += 1
-        activity["active_connections"] = active_connections
-        activity["active_buttons"] = active_buttons_by_scope.get(scope_key, 0)
-        activity["active_subscriber"] = scope_key in active_subscribers
-        query_timestamps = activity.get("query_timestamps")
-        connection_timestamps = activity.get("connection_timestamps")
-        rows.append({
-            "label": activity["label"],
-            "scope_kind": activity["scope_kind"],
-            "ip_fingerprint": activity["ip_fingerprint"],
-            "connections_opened": int(activity["connections_opened"]),
-            "ws_queries": int(activity["ws_queries"]),
-            "queries_last_hour": len(query_timestamps) if isinstance(query_timestamps, deque) else 0,
-            "reconnects_last_hour": len(connection_timestamps) if isinstance(connection_timestamps, deque) else 0,
-            "active_connections": active_connections,
-            "active_buttons": int(activity["active_buttons"]),
-            "active_subscriber": bool(activity["active_subscriber"]),
-            "last_seen": activity["last_seen"],
-        })
-
-    rows.sort(
-        key=lambda row: (
-            1 if row["active_subscriber"] else 0,
-            int(row["active_connections"]),
-            int(row["ws_queries"]),
-            int(row["connections_opened"]),
-            str(row["last_seen"]),
-        ),
-        reverse=True,
-    )
-    return rows[:limit]
-
-
-def _client_leaderboard_rows(limit: int = CLIENT_LEADERBOARD_LIMIT) -> list[dict[str, object]]:
-    leaderboard = [
-        row for row in _client_activity_rows(limit=max(limit * 3, 12))
-        if row["queries_last_hour"] or row["reconnects_last_hour"] or row["active_connections"]
-    ]
-    leaderboard.sort(
-        key=lambda row: (
-            int(row["queries_last_hour"]),
-            int(row["reconnects_last_hour"]),
-            int(row["active_connections"]),
-            int(row["connections_opened"]),
-            str(row["last_seen"]),
-        ),
-        reverse=True,
-    )
-    return leaderboard[:limit]
-
-
 def _metrics_snapshot_payload() -> dict[str, object]:
     payload = dict(_latest_metrics_snapshot)
     payload["subscribers"] = int(_metrics_window.get("last_subscribers", payload["subscribers"]))
     payload["unique_keys"] = int(_metrics_window.get("last_unique_keys", payload["unique_keys"]))
     payload["active_clients"] = int(_metrics_window.get("last_active_clients", payload["active_clients"]))
-    payload["known_clients"] = len(_client_activity)
-    payload["client_activity"] = _client_activity_rows()
-    payload["client_leaderboard"] = _client_leaderboard_rows()
     payload["tuning"] = _dashboard_tuning()
     payload["history_points"] = len(_metrics_history)
     payload["history_capacity"] = max(1, METRICS_HISTORY_MAX_POINTS)
@@ -1304,7 +1172,7 @@ def _normalize_metrics_snapshot(
         "subscribers": int(api_metrics.get("last_subscribers", 0)),
         "unique_keys": int(api_metrics.get("last_unique_keys", 0)),
         "active_clients": int(api_metrics.get("last_active_clients", 0)),
-        "known_clients": len(_client_activity),
+        **{name: int(api_metrics.get(name, 0)) for name in _LOAD_COUNTERS},
         "broadcast_loops": broadcast_loops,
         "avg_loop_ms": round(avg_loop_ms, 2),
         "max_loop_ms": round(float(api_metrics.get("broadcast_duration_max", 0.0)) * 1000.0, 2),
@@ -1443,7 +1311,7 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       font-size: 0.8rem;
     }}
     .chart-panel {{
-      grid-column: span 4;
+      grid-column: span 6;
       min-width: 0;
     }}
     .info-panel {{
@@ -1511,79 +1379,6 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-weight: 500;
     }}
-    .client-list {{
-      display: grid;
-      gap: 12px;
-    }}
-    .client-row {{
-      display: grid;
-      gap: 8px;
-      padding: 10px;
-      border: 1px solid var(--border);
-      background: var(--panel-alt);
-    }}
-    .client-head {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-    }}
-    .client-label {{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-weight: 500;
-      color: var(--text);
-    }}
-    .client-kind {{
-      color: var(--muted);
-      font-size: 0.85rem;
-      text-transform: uppercase;
-      letter-spacing: 0;
-    }}
-    .client-meta {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      color: var(--muted);
-      font-size: 0.84rem;
-    }}
-    .leaderboard-list {{
-      display: grid;
-      gap: 10px;
-    }}
-    .leaderboard-row {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      padding: 10px;
-      border: 1px solid var(--border);
-      background: var(--panel-alt);
-    }}
-    .leaderboard-rank {{
-      color: var(--yellow);
-      min-width: 2ch;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-weight: 500;
-    }}
-    .leaderboard-main {{
-      flex: 1;
-      min-width: 0;
-    }}
-    .leaderboard-label {{
-      color: var(--text);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-weight: 500;
-    }}
-    .leaderboard-sub {{
-      color: var(--muted);
-      font-size: 0.86rem;
-    }}
-    .leaderboard-stats {{
-      text-align: right;
-      color: var(--muted);
-      font-size: 0.9rem;
-      white-space: nowrap;
-    }}
     @media (max-width: 960px) {{
       .chart-panel,
       .info-panel {{
@@ -1605,17 +1400,18 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
   <main class="shell">
     <header class="page-head">
       <h1>YarraTrak metrics</h1>
-      <div class="page-meta">refresh 15s; history resets on process restart</div>
+      <div class="page-meta">aggregate load only, no per-client data; refresh 15s; history resets on process restart</div>
     </header>
 
     <section class="stats">
       <article class="stat-card"><div class="stat-label">Subscribers</div><div class="stat-value" id="stat-subscribers">0</div></article>
-      <article class="stat-card"><div class="stat-label">Active Clients</div><div class="stat-value" id="stat-active-clients">0</div><div class="stat-subvalue" id="stat-known-clients">0 seen since restart</div></article>
+      <article class="stat-card"><div class="stat-label">Active Clients</div><div class="stat-value" id="stat-active-clients">0</div><div class="stat-subvalue" id="stat-connections-opened">0 connects / sample</div></article>
       <article class="stat-card"><div class="stat-label">Unique Keys</div><div class="stat-value" id="stat-unique-keys">0</div></article>
       <article class="stat-card"><div class="stat-label">Cache Hit Rate</div><div class="stat-value" id="stat-cache-hit-rate">0%</div><div class="stat-subvalue" id="stat-cache-breakdown">0 hits / 0 misses</div></article>
       <article class="stat-card"><div class="stat-label">Upstream RPS</div><div class="stat-value" id="stat-upstream-rps">0.00</div><div class="stat-subvalue" id="stat-upstream-total">0 requests / sample</div></article>
       <article class="stat-card"><div class="stat-label">Avg Loop</div><div class="stat-value" id="stat-avg-loop">0 ms</div><div class="stat-subvalue" id="stat-broadcast-loops">0 loops / sample</div></article>
       <article class="stat-card"><div class="stat-label">Max Loop</div><div class="stat-value" id="stat-max-loop">0 ms</div><div class="stat-subvalue" id="stat-ptv-split">departures 0, runs 0</div></article>
+      <article class="stat-card"><div class="stat-label">Rate Limited</div><div class="stat-value" id="stat-rate-limited">0</div><div class="stat-subvalue" id="stat-rejected">0 connections rejected</div></article>
     </section>
 
     <section class="grid">
@@ -1632,6 +1428,13 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
           <div class="panel-meta" id="upstream-rps-meta">Rolling history</div>
         </div>
         <div class="chart-wrap" id="chart-upstream-rps"></div>
+      </article>
+      <article class="panel chart-panel">
+        <div class="panel-head">
+          <h2>Rate-Limit Hits</h2>
+          <div class="panel-meta" id="rate-limit-meta">Rolling history</div>
+        </div>
+        <div class="chart-wrap" id="chart-rate-limits"></div>
       </article>
       <article class="panel chart-panel">
         <div class="panel-head">
@@ -1654,20 +1457,6 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
           <div class="panel-meta">Latest normalized counters</div>
         </div>
         <div class="kv-list" id="snapshot-breakdown"></div>
-      </article>
-      <article class="panel info-panel">
-        <div class="panel-head">
-          <h2>Client Activity</h2>
-          <div class="panel-meta">Anonymous subscriber IDs and per-client websocket query counts</div>
-        </div>
-        <div class="client-list" id="client-activity"></div>
-      </article>
-      <article class="panel info-panel">
-        <div class="panel-head">
-          <h2>Rolling Leaderboard</h2>
-          <div class="panel-meta">Top anonymous clients over the last hour</div>
-        </div>
-        <div class="leaderboard-list" id="client-leaderboard"></div>
       </article>
     </section>
   </main>
@@ -1714,7 +1503,7 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       const snap = state.snapshot || {{}};
       setText("stat-subscribers", formatNumber(snap.subscribers));
       setText("stat-active-clients", formatNumber(snap.active_clients));
-      setText("stat-known-clients", `${{formatNumber(snap.known_clients || 0)}} seen since restart`);
+      setText("stat-connections-opened", `${{formatNumber(snap.ws_connections_opened)}} connects / sample`);
       setText("stat-unique-keys", formatNumber(snap.unique_keys));
       setText("stat-cache-hit-rate", formatPercent(snap.cache_hit_rate));
       setText("stat-cache-breakdown", `${{formatNumber(snap.cache_hits)}} hits / ${{formatNumber(snap.cache_misses)}} misses`);
@@ -1724,6 +1513,8 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       setText("stat-broadcast-loops", `${{formatNumber(snap.broadcast_loops)}} loops / sample`);
       setText("stat-max-loop", formatMs(snap.max_loop_ms));
       setText("stat-ptv-split", `departures ${{formatNumber(snap.ptv_departures)}}, runs ${{formatNumber(snap.ptv_runs)}}`);
+      setText("stat-rate-limited", formatNumber(snap.rate_limited));
+      setText("stat-rejected", `${{formatNumber(snap.rejected_connections)}} connections rejected`);
     }}
 
     function renderTuning() {{
@@ -1744,7 +1535,10 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       const target = document.getElementById("snapshot-breakdown");
       const snap = state.snapshot || {{}};
       const rows = [
-        ["Known clients", formatNumber(snap.known_clients)],
+        ["Websocket connects", formatNumber(snap.ws_connections_opened)],
+        ["AI queries", formatNumber(snap.agent_queries)],
+        ["Rate limited", formatNumber(snap.rate_limited)],
+        ["Connections rejected", formatNumber(snap.rejected_connections)],
         ["PTV departures", formatNumber(snap.ptv_departures)],
         ["PTV runs", formatNumber(snap.ptv_runs)],
         ["PTV directions", formatNumber(snap.ptv_directions)],
@@ -1753,58 +1547,6 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
         ["Dashboard host", snap.internal_dashboard_host || "internal"],
       ];
       target.innerHTML = rows.map(([label, value]) => `<div class="kv-row"><span>${{label}}</span><strong>${{value}}</strong></div>`).join("");
-    }}
-
-    function renderClientActivity() {{
-      const target = document.getElementById("client-activity");
-      const clients = (state.snapshot && state.snapshot.client_activity) || [];
-      if (!clients.length) {{
-        target.innerHTML = '<div class="chart-placeholder">No anonymous clients seen yet</div>';
-        return;
-      }}
-      target.innerHTML = clients.map((client) => {{
-        const status = client.active_subscriber ? "subscriber" : (client.active_connections > 0 ? "connected" : "idle");
-        return `
-          <div class="client-row">
-            <div class="client-head">
-              <div class="client-label">${{client.label}}</div>
-              <div class="client-kind">${{client.scope_kind === "client_id" ? "client id" : "ip fallback"}}</div>
-            </div>
-            <div class="client-meta">
-              <span>Status: ${{status}}</span>
-              <span>Sockets: ${{formatNumber(client.active_connections)}}</span>
-              <span>Buttons: ${{formatNumber(client.active_buttons)}}</span>
-              <span>WS queries: ${{formatNumber(client.ws_queries)}}</span>
-              <span>Reconnects: ${{formatNumber(client.connections_opened)}}</span>
-              <span>Hour queries: ${{formatNumber(client.queries_last_hour)}}</span>
-              <span>Hour reconnects: ${{formatNumber(client.reconnects_last_hour)}}</span>
-              <span>IP hash: ${{client.ip_fingerprint}}</span>
-            </div>
-          </div>
-        `;
-      }}).join("");
-    }}
-
-    function renderClientLeaderboard() {{
-      const target = document.getElementById("client-leaderboard");
-      const rows = (state.snapshot && state.snapshot.client_leaderboard) || [];
-      if (!rows.length) {{
-        target.innerHTML = '<div class="chart-placeholder">No client activity recorded in the last hour</div>';
-        return;
-      }}
-      target.innerHTML = rows.map((client, index) => `
-        <div class="leaderboard-row">
-          <div class="leaderboard-rank">#${{index + 1}}</div>
-          <div class="leaderboard-main">
-            <div class="leaderboard-label">${{client.label}}</div>
-            <div class="leaderboard-sub">${{client.scope_kind === "client_id" ? "client id" : "ip fallback"}} • ${{client.ip_fingerprint}}</div>
-          </div>
-          <div class="leaderboard-stats">
-            <div>${{formatNumber(client.queries_last_hour)}} queries / hr</div>
-            <div>${{formatNumber(client.reconnects_last_hour)}} reconnects / hr</div>
-          </div>
-        </div>
-      `).join("");
     }}
 
     function linePath(points, width, height, minValue, maxValue, key) {{
@@ -1868,6 +1610,7 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       setText("cache-hit-meta", stamp);
       setText("upstream-rps-meta", stamp);
       setText("keys-subs-meta", stamp);
+      setText("rate-limit-meta", stamp);
       renderChart("chart-cache-hit-rate", {{
         forceZero: true,
         maxFloor: 100,
@@ -1880,6 +1623,14 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
         maxFloor: 1,
         series: [
           {{ key: "upstream_rps", label: "Upstream RPS", color: "var(--blue)" }},
+        ],
+      }});
+      renderChart("chart-rate-limits", {{
+        forceZero: true,
+        maxFloor: 1,
+        series: [
+          {{ key: "rate_limited", label: "Rate limited", color: "var(--red)" }},
+          {{ key: "rejected_connections", label: "Conn rejected", color: "var(--yellow)" }},
         ],
       }});
       renderChart("chart-keys-subs", {{
@@ -1911,8 +1662,6 @@ def _render_dashboard_html(snapshot: dict[str, object], history_payload: dict[st
       renderStats();
       renderTuning();
       renderBreakdown();
-      renderClientActivity();
-      renderClientLeaderboard();
       renderCharts();
     }}
 
@@ -1947,10 +1696,12 @@ def _check_rate_limit(store: dict[str, deque[float]], key: str, limit: int) -> b
             if not old_bucket:
                 del store[old_key]
         if len(store) >= MAX_RATE_LIMIT_KEYS:
+            _record_metric("rate_limited")
             return False
     bucket = store[key]
     _cleanup_rate_bucket(bucket, now)
     if len(bucket) >= limit:
+        _record_metric("rate_limited")
         return False
     bucket.append(now)
     return True
@@ -1981,9 +1732,8 @@ def _record_broadcast_metrics(
 
 def _snapshot_and_reset_metrics() -> dict[str, float]:
     snapshot = dict(_metrics_window)
-    _metrics_window["departure_cache_hits"] = 0
-    _metrics_window["departure_cache_misses"] = 0
-    _metrics_window["broadcast_iterations"] = 0
+    for name in _WINDOW_COUNTERS:
+        _metrics_window[name] = 0
     _metrics_window["broadcast_duration_sum"] = 0.0
     _metrics_window["broadcast_duration_max"] = 0.0
     return snapshot
@@ -2031,7 +1781,6 @@ def _release_websocket_connection(
 ) -> None:
     resolved_ip = _ws_client_ips.pop(websocket, None) or client_ip
     resolved_scope = _ws_connection_scopes.pop(websocket, None) or scope_key
-    _ws_client_ids.pop(websocket, None)
     if resolved_ip is None or resolved_scope is None:
         return
 
@@ -2040,18 +1789,8 @@ def _release_websocket_connection(
         return
 
     sockets.discard(websocket)
-    active_count = len(sockets)
-    if active_count == 0:
+    if not sockets:
         _ws_connections_by_scope.pop(resolved_scope, None)
-
-    activity = _touch_client_activity(resolved_scope, resolved_ip, None)
-    activity["active_connections"] = active_count
-    logger.info(
-        "Released websocket for %s (%d/%d active)",
-        activity["label"],
-        active_count,
-        MAX_WS_CONNECTIONS_PER_IP,
-    )
 
 
 def _cleanup_websocket_state(
@@ -2076,7 +1815,7 @@ def _prune_stale_websocket_connections(scope_key: str) -> None:
         _cleanup_websocket_state(
             websocket,
             scope_key=scope_key,
-            log_reason=f"Pruned stale websocket for {scope_key}",
+            log_reason="Pruned stale websocket",
         )
 
 
@@ -2090,12 +1829,12 @@ async def _evict_existing_websocket_connections(scope_key: str) -> None:
             if _is_websocket_active(websocket):
                 await websocket.close(code=1012)
         except Exception as exc:
-            logger.warning("Error closing superseded websocket for %s: %s", scope_key, exc)
+            logger.warning("Error closing superseded websocket: %s", exc)
         finally:
             _cleanup_websocket_state(
                 websocket,
                 scope_key=scope_key,
-                log_reason=f"Superseded websocket for {scope_key} with a newer connection",
+                log_reason="Superseded websocket with a newer connection from the same client",
             )
 
 
@@ -2112,28 +1851,14 @@ def _register_websocket_connection(
     _prune_stale_websocket_connections(scope_key)
     current = sum(ip == client_ip for ip in _ws_client_ips.values())
     if current >= MAX_WS_CONNECTIONS_PER_IP:
-        activity = _touch_client_activity(scope_key, client_ip, client_id)
-        logger.warning(
-            "Rejecting websocket for %s (%d/%d active)",
-            activity["label"],
-            current,
-            MAX_WS_CONNECTIONS_PER_IP,
-        )
+        _record_metric("rejected_connections")
+        logger.warning("Rejecting websocket (%d/%d active for source IP)", current, MAX_WS_CONNECTIONS_PER_IP)
         return False
     sockets = _ws_connections_by_scope[scope_key]
     sockets.add(websocket)
     _ws_client_ips[websocket] = client_ip
     _ws_connection_scopes[websocket] = scope_key
-    _ws_client_ids[websocket] = client_id
-    activity = _record_client_activity_event(scope_key, client_ip, client_id, "connection_timestamps")
-    activity["connections_opened"] = int(activity["connections_opened"]) + 1
-    activity["active_connections"] = len(sockets)
-    logger.info(
-        "Registered websocket for %s (%d/%d active)",
-        activity["label"],
-        len(sockets),
-        MAX_WS_CONNECTIONS_PER_IP,
-    )
+    _record_metric("ws_connections_opened")
     return True
 
 
@@ -2754,8 +2479,7 @@ async def favourite_departure(req: FavouriteRequest, request: Request):
     Returns next departure info.
     """
     client_ip = _client_ip_from_request(request)
-    normalized_client_id = _require_client_id(req.client_id)
-    _touch_client_activity(_client_scope_key(client_ip, normalized_client_id), client_ip, normalized_client_id)
+    _require_client_id(req.client_id)
     if not _check_rate_limit(_http_favourite_limiters, client_ip, HTTP_FAVOURITE_RATE_LIMIT):
         raise HTTPException(status_code=429, detail="Too many favourite requests. Please slow down.")
 
@@ -2852,8 +2576,7 @@ async def text_query(agent_request: AgentRequest, request: Request):
     client_ip = _client_ip_from_request(request)
     normalized_client_id = _require_client_id(agent_request.client_id)
     scope_key = _client_scope_key(client_ip, normalized_client_id)
-    activity = _record_client_activity_event(scope_key, client_ip, normalized_client_id, "query_timestamps")
-    activity["ws_queries"] = int(activity["ws_queries"]) + 1
+    _record_metric("agent_queries")
     if not _check_rate_limit(_http_query_limiters, client_ip, HTTP_QUERY_RATE_LIMIT):
         raise HTTPException(status_code=429, detail="Too many AI queries. Please slow down.")
 
@@ -3060,7 +2783,7 @@ async def websocket_endpoint(
                     timeout=WS_IDLE_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
-                logger.info("WebSocket idle timeout for %s", _client_scope_label(client_ip, normalized_client_id))
+                logger.info("WebSocket idle timeout")
                 try:
                     await websocket.close(code=1001)
                 except Exception:
@@ -3123,13 +2846,7 @@ async def websocket_endpoint(
                     })
                     continue
 
-                activity = _record_client_activity_event(
-                    scope_key,
-                    client_ip,
-                    normalized_client_id,
-                    "query_timestamps",
-                )
-                activity["ws_queries"] = int(activity["ws_queries"]) + 1
+                _record_metric("agent_queries")
 
                 key_status, key_value = _classify_llm_key(message.get("llm_api_key"))
                 if key_status == "legacy":
